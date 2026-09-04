@@ -28,6 +28,7 @@ import json
 import logging
 import sys
 import time
+import warnings
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -66,6 +67,15 @@ FAILURE_UNVERIFIED = "no_data_unverified"
 # How far back the TEFAS price endpoint reaches; a fund delisted before this
 # is indistinguishable from a code that never existed.
 PRICE_HISTORY_YEARS = 5
+
+# The same 5 years cap how much history can be *requested*, counted from
+# today rather than from `end_date`. tefas-crawler snaps anything longer to
+# its 60-month bucket and returns the truncated series without a word
+# (`_months_back` falls through to `_VALID_PERIODS[-1]`). Unchecked, that
+# clamp is invisible in the worst way: every fund comes back starting at the
+# 5-year mark, so every fund looks like it has a short history and TRIMMED
+# comes out empty. Clamp it here and say so.
+MAX_MONTHS = PRICE_HISTORY_YEARS * 12
 
 DEFAULT_MONTHS = 36
 
@@ -162,6 +172,8 @@ class FundDataset:
     requested_end: pd.Timestamp
     from_cache: bool = False
     fund_names: dict[str, str] = field(default_factory=dict)
+    # Things the caller asked for but did not get. Empty on a clean run.
+    notes: list[str] = field(default_factory=list)
 
     @property
     def ok_codes(self) -> list[str]:
@@ -196,7 +208,9 @@ def load_price_data(
     fund_codes : sequence of str
         Fund codes to fetch. Duplicates are dropped, order is preserved.
     months : int
-        How much history to ask for, counted back from `end_date`.
+        How much history to ask for, counted back from `end_date`. Clamped to
+        `MAX_MONTHS`; any clamping lands in `FundDataset.notes` and raises a
+        `UserWarning`.
     end_date : str | date | datetime, optional
         Right edge of the window. Defaults to today.
     client : TEFASClient, optional
@@ -220,7 +234,7 @@ def load_price_data(
         raise ValueError(f"months must be >= 1, got {months}")
 
     end = pd.Timestamp(_parse_date(end_date) if end_date else date.today())
-    start = end - pd.DateOffset(months=months)
+    start, notes = _resolve_start(end, months)
 
     cache_path = _cache_path(cache_dir, codes, start, end)
     cached = _read_cache(cache_path) if use_cache else None
@@ -243,6 +257,7 @@ def load_price_data(
         start=start,
         end=end,
         from_cache=from_cache,
+        notes=notes,
     )
 
 
@@ -256,6 +271,8 @@ def format_coverage_report(ds: FundDataset) -> str:
     add(f"COVERAGE REPORT   requested {span}   ({len(ds.requested_codes)} codes)")
     if ds.from_cache:
         add("(served from today's cache)")
+    for note in ds.notes:
+        add(f"!! {note}")
     add("=" * 72)
 
     add("")
@@ -416,6 +433,7 @@ def _build(
     start: pd.Timestamp,
     end: pd.Timestamp,
     from_cache: bool,
+    notes: Optional[list[str]] = None,
 ) -> FundDataset:
     fund_coverage = _per_fund_coverage(long_df, codes)
     fund_names = {c: cov.fund_name for c, cov in fund_coverage.items()}
@@ -441,6 +459,7 @@ def _build(
         requested_end=end,
         from_cache=from_cache,
         fund_names=fund_names,
+        notes=list(notes or []),
     )
 
 
@@ -488,6 +507,38 @@ def _classify_failures(
             )
 
     return out
+
+
+def _resolve_start(end: pd.Timestamp, months: int) -> tuple[pd.Timestamp, list[str]]:
+    """Left edge of the window we can actually get, plus what we had to give up.
+
+    Two ways to fall off the 5-year cliff: asking for more than 60 months, or
+    asking for a window whose *start* predates the cliff even though the span
+    is short (an `end_date` set well in the past). Both are clamped, and both
+    leave a note — a silently shortened window would make every fund look
+    newly launched.
+    """
+    notes: list[str] = []
+    start = end - pd.DateOffset(months=months)
+    earliest = pd.Timestamp(date.today()) - pd.DateOffset(months=MAX_MONTHS)
+
+    if months > MAX_MONTHS:
+        notes.append(
+            f"requested {months} months of history; TEFAS serves at most "
+            f"{MAX_MONTHS} — window shortened"
+        )
+
+    if start < earliest:
+        notes.append(
+            f"window would start {start.date()}, before TEFAS's earliest "
+            f"available {earliest.date()} — start moved forward"
+        )
+        start = earliest
+
+    for note in notes:
+        warnings.warn(note, UserWarning, stacklevel=3)
+
+    return start, notes
 
 
 def _per_fund_coverage(long_df: pd.DataFrame, codes: list[str]) -> dict[str, FundCoverage]:

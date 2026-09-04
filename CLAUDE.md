@@ -26,6 +26,9 @@ python -m src.data GAL AFO TI2 --months 36
 
 # Run analysis notebook
 jupyter notebook notebooks/01_data_collection_and_exploration.ipynb
+
+# Run the dashboard
+streamlit run app.py
 ```
 
 There is no linter or build system configured. The only test is `tests/smoke_test.py`.
@@ -36,8 +39,9 @@ There is no linter or build system configured. The only test is `tests/smoke_tes
 - `__init__()` - Creates the underlying `tefas.Crawler`. Takes no arguments.
 - `get_fund_history(fund_code, start_date, end_date)` - Fetches one fund in a single request. Dates accept `DD.MM.YYYY`, `YYYY-MM-DD`, `date` or `datetime`; defaults to the last 365 days. Returns an empty DataFrame (not an exception) when a fund has no data.
 - `get_multiple_funds(fund_codes, start_date, end_date, delay)` - Batch fetch with a 0.5s delay between requests. Defaults to `POPULAR_FUNDS`.
-- `list_fund_codes(refresh)` - Set of codes TEFAS currently lists, across all three fund kinds. Cached for the client's lifetime; raises `RuntimeError` rather than returning a partial registry.
-- `_fetch_fund_codes(kind, islem)` - One page of the fund registry. Both `islem` values are needed: neither alone lists every fund.
+- `list_funds(refresh)` - Code to title for every fund TEFAS currently lists (~2578), across all three fund kinds. Cached for the client's lifetime; raises `RuntimeError` rather than returning a partial registry.
+- `list_fund_codes(refresh)` - The same registry as a set of codes; thin wrapper over `list_funds`.
+- `_fetch_fund_codes(kind, islem)` - One page of the fund registry, as code to title. Both `islem` values are needed: neither alone lists every fund.
 - `_clean(df, fund_code)` - Renames crawler columns to the project schema, parses dates, deduplicates, sorts.
 - `_parse_date(value)` - Module-level date coercion helper.
 - `POPULAR_FUNDS` - Dict of 14 fund codes across 7 categories (Equity, Bond, Gold, Money Market, Variable, Commodity, Hedge). Titles were verified against live TEFAS data on 2026-09-04.
@@ -54,13 +58,23 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - `format_coverage_report(ds)` / `print_coverage_report(ds)` - Plain-text report.
 - `main()` - CLI entry point; `python -m src.data [CODES...] [--months N] [--no-cache]`.
 
+**`src/analysis.py`** - Analysis layer. Pure portfolio maths over a price matrix plus a weights dict; imports neither `tefas` nor `src.data`, prints nothing, persists nothing.
+- `analyze_basket(prices, weights)` - Returns a `BasketAnalysis`: correlation matrix (`None` for a single fund), diversification ratio, basket and per-fund annualised volatility, max drawdown, weekly observation count.
+- `find_fund_groups(correlation, weights, threshold=GROUP_THRESHOLD)` - Sets of funds where *every* pair clears the threshold (maximal cliques, not chains). Returns a `GroupingResult` of `FundGroup`s (codes, weight, weakest pair) heaviest first, plus `standalone` funds. A fund in several cliques is reported once, in the heaviest, so weights never exceed 100%. No groups is a normal result, not an error.
+- `to_weekly_returns`, `basket_value_series`, `max_drawdown` - The pieces, callable on their own.
+- Everything runs on weekly returns (`W-FRI`, last observed price): several Turkish funds price stalely, and daily returns would make a concentrated basket look diversified.
+
 **`tests/smoke_test.py`** - Fetches a year of prices for a few funds and reports row count, date range, duplicate dates, null/non-positive prices, and missing business days. Exits non-zero if any fund fails. Gaps of 1-2 business days are normal (Turkish public holidays).
 
 **`notebooks/`** - Jupyter notebooks for analysis. The notebook imports `TEFASClient` via `sys.path.append('..')` and `from src.tefas_client import TEFASClient`.
 
 **`data/`** - Output directory for CSV/Excel files (gitignored). Key outputs: `fund_data.csv` (raw prices), `fund_metrics.csv` (calculated metrics).
 
-**Empty stubs not yet written:** `app.py` (Streamlit dashboard), `src/analysis.py`.
+**`app.py`** - Streamlit dashboard, in Turkish. Contains no maths: it calls `load_price_data`, `analyze_basket` and `find_fund_groups`, then puts the result into plain language.
+- Two tiers. The top one states the result for the *trimmed* matrix in sentences a non-investor can read; everything quantitative sits under a collapsed "Teknik detay" section.
+- Never calls a basket safe or well diversified. It reports what it found and, when it found nothing, says so without reassuring.
+- The excluded-funds section is drawn only when `excluded_codes` is non-empty, below the main result, and carries the `full` matrix result plus the `below_weekly_threshold` warning.
+- Fund picker autocompletes over `list_funds()` labels ("GAL - GARANTİ PORTFÖY ..."), so searching by code and by fund name both work. Registry and price fetches are `@st.cache_data` with a one-day TTL.
 
 ## Key Details
 

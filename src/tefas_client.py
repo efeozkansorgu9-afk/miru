@@ -81,7 +81,7 @@ class TEFASClient:
 
     def __init__(self):
         self._crawler = Crawler()
-        self._registry: Optional[set] = None
+        self._registry: Optional[dict] = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -153,21 +153,37 @@ class TEFASClient:
             If any part of the registry could not be fetched. A partial
             registry is worse than none: it would label live funds invalid.
         """
+        return set(self.list_funds(refresh))
+
+    def list_funds(self, refresh: bool = False) -> dict:
+        """
+        Code to title for every fund TEFAS currently lists.
+
+        Same registry as `list_fund_codes`, keeping the titles the listing
+        endpoint already returns. A picker needs them: nobody searching for
+        a gold fund knows to type "AFO".
+
+        Raises
+        ------
+        RuntimeError
+            If any part of the registry could not be fetched. A partial
+            registry is worse than none: it would label live funds invalid.
+        """
         if self._registry is not None and not refresh:
             return self._registry
 
-        codes: set = set()
+        funds: dict = {}
         for kind in _FUND_KINDS:
             for islem in _LIST_ISLEM_VALUES:
                 try:
-                    codes |= self._fetch_fund_codes(kind, islem)
+                    funds.update(self._fetch_fund_codes(kind, islem))
                 except Exception as exc:
                     raise RuntimeError(
                         f"Could not list TEFAS funds (kind={kind}, islem={islem}): {exc}"
                     ) from exc
 
-        self._registry = codes
-        return codes
+        self._registry = funds
+        return funds
 
     def get_multiple_funds(
         self,
@@ -222,8 +238,8 @@ class TEFASClient:
     # Internals
     # ------------------------------------------------------------------
 
-    def _fetch_fund_codes(self, kind: str, islem: int) -> set:
-        """One page of the fund registry.
+    def _fetch_fund_codes(self, kind: str, islem: int) -> dict:
+        """One page of the fund registry, as code to title.
 
         Goes through the crawler's own session and endpoint rather than a
         fresh `requests` call, so headers and error handling stay in one
@@ -252,7 +268,11 @@ class TEFASClient:
             "getiriOrani": "1",
         }
         rows = self._crawler._do_post(self._crawler.list_endpoint, payload)
-        return {r["fonKodu"] for r in rows if r.get("fonKodu")}
+        return {
+            r["fonKodu"]: (r.get("fonUnvan") or "").strip()
+            for r in rows
+            if r.get("fonKodu")
+        }
 
     @staticmethod
     def _clean(df: pd.DataFrame, fund_code: str) -> pd.DataFrame:

@@ -49,6 +49,12 @@ MIN_WEEKLY_OBSERVATIONS = 100
 # holidays and TEFAS's publishing lag. Same slack applies at the recent end.
 COVERAGE_TOLERANCE_DAYS = 7
 
+# A clean year is ~252 trading days against ~262 business days: the ~10
+# missing ones are Turkish public holidays and hit every fund alike, so a
+# healthy series sits near 0.96. Below this, the fund has gaps of its own —
+# and a gappy fund silently narrows the inner join for the whole basket.
+MIN_COVERAGE_RATIO = 0.93
+
 # Why a fund produced nothing. Prose is for the report; the tag is what the
 # UI branches on — "no such fund" and "this fund closed" are different things
 # to tell someone.
@@ -84,10 +90,28 @@ class FundCoverage:
     first_date: pd.Timestamp
     last_date: pd.Timestamp
     row_count: int
+    expected_business_days: int
 
     @property
     def span_days(self) -> int:
         return int((self.last_date - self.first_date).days)
+
+    @property
+    def coverage_ratio(self) -> float:
+        """Rows delivered over business days in the fund's own date range.
+
+        Holidays put a healthy fund near 0.96, not 1.0. What this catches is
+        the fund with a hole in the middle of its series — which costs the
+        whole basket those dates in the inner join, invisibly, unless someone
+        is looking at this number.
+        """
+        if self.expected_business_days <= 0:
+            return 0.0
+        return self.row_count / self.expected_business_days
+
+    @property
+    def is_sparse(self) -> bool:
+        return self.coverage_ratio < MIN_COVERAGE_RATIO
 
 
 @dataclass(frozen=True)
@@ -143,6 +167,11 @@ class FundDataset:
     def ok_codes(self) -> list[str]:
         """Codes that returned usable data, in the order requested."""
         return [c for c in self.requested_codes if c not in self.failed_codes]
+
+    @property
+    def sparse_codes(self) -> list[str]:
+        """Funds with gaps inside their own range — they narrow the join."""
+        return [c for c, cov in self.fund_coverage.items() if cov.is_sparse]
 
 
 # ----------------------------------------------------------------------
@@ -231,22 +260,37 @@ def format_coverage_report(ds: FundDataset) -> str:
 
     add("")
     add("Per fund")
-    add(f"  {'code':<6} {'first':<12} {'last':<12} {'rows':>6}  name")
+    add(f"  {'code':<6} {'first':<12} {'last':<12} {'rows':>6} {'cov':>6}  name")
     for code in ds.requested_codes:
         cov = ds.fund_coverage.get(code)
         if cov is None:
             failure = ds.failed_codes.get(code)
             label = f"[{failure.kind}] {failure.reason}" if failure else "no data"
-            add(f"  {code:<6} {'—':<12} {'—':<12} {0:>6}  FAILED {label}")
+            add(f"  {code:<6} {'—':<12} {'—':<12} {0:>6} {'—':>6}  FAILED {label}")
             continue
+        mark = " ⚠️" if cov.is_sparse else ""
         add(
             f"  {code:<6} {cov.first_date.date()!s:<12} {cov.last_date.date()!s:<12} "
-            f"{cov.row_count:>6}  {cov.fund_name[:34]}"
+            f"{cov.row_count:>6} {cov.coverage_ratio:>5.0%}{mark or ' '}  {cov.fund_name[:32]}"
         )
 
     add("")
     add(_format_matrix("FULL     (all codes with data, inner join)", ds.full_coverage))
     add(_format_matrix("TRIMMED  (funds covering the whole window)", ds.trimmed_coverage))
+
+    add("")
+    if ds.sparse_codes:
+        add(f"Gappy series (coverage below {MIN_COVERAGE_RATIO:.0%} of business days)")
+        for code in ds.sparse_codes:
+            cov = ds.fund_coverage[code]
+            missing = cov.expected_business_days - cov.row_count
+            add(
+                f"  {code:<6} {cov.coverage_ratio:.0%} — {missing} business days missing "
+                f"inside {cov.first_date.date()}..{cov.last_date.date()}; "
+                f"these dates drop out of every matrix it joins"
+            )
+    else:
+        add("Gappy series: none (holiday-only gaps)")
 
     add("")
     if ds.failed_codes:
@@ -455,12 +499,14 @@ def _per_fund_coverage(long_df: pd.DataFrame, codes: list[str]) -> dict[str, Fun
         if code not in codes:
             continue
         names = grp["fund_name"].dropna()
+        first, last = grp["date"].min(), grp["date"].max()
         out[code] = FundCoverage(
             fund_code=code,
             fund_name=str(names.iloc[-1]) if len(names) else code,
-            first_date=grp["date"].min(),
-            last_date=grp["date"].max(),
+            first_date=first,
+            last_date=last,
             row_count=int(len(grp)),
+            expected_business_days=int(len(pd.bdate_range(first, last))),
         )
     # Report in the order the caller asked for.
     return {c: out[c] for c in codes if c in out}

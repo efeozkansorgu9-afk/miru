@@ -8,8 +8,9 @@ window, and how much of that window is usable" — no analysis, no UI.
 Two matrices are always produced and neither is preferred:
 
     full     every code that returned data, on their common dates
-    trimmed  only the funds that cover the whole requested window,
-             on *their* common dates
+    trimmed  the funds worth their cost to the window: a late starter is
+             dropped only when including it would shorten the window the
+             others share too much, on *their* common dates
 
 The caller compares "complete basket, short history" against "long history,
 incomplete basket" and decides. This module does not choose.
@@ -45,10 +46,18 @@ logger = logging.getLogger(__name__)
 # flag — hiding data or raising on it is the UI layer's call, not ours.
 MIN_WEEKLY_OBSERVATIONS = 100
 
-# A fund whose first price lands within this many days of the requested start
-# still counts as covering the window; the slack absorbs weekends, public
-# holidays and TEFAS's publishing lag. Same slack applies at the recent end.
+# Slack at the recent end: a fund whose last price is within this many days of
+# the newest price in the basket is still trading, not stale. The slack absorbs
+# weekends, public holidays and TEFAS's publishing lag.
 COVERAGE_TOLERANCE_DAYS = 7
+
+# How much of the common window one fund may cost before it is left out.
+# Exclusion is not free: a dropped fund takes its share of the basket out of
+# the analysis entirely. So the test is what including it actually costs the
+# others, not whether it happens to be younger than the request. A fund that
+# trims a 60-month window to 59 is worth keeping; one that trims 36 months to
+# 2 is not.
+MAX_WINDOW_LOSS = 0.20
 
 # A clean year is ~252 trading days against ~262 business days: the ~10
 # missing ones are Turkish public holidays and hit every fund alike, so a
@@ -199,6 +208,7 @@ def load_price_data(
     use_cache: bool = True,
     cache_dir: Path | str = CACHE_DIR,
     delay: float = 0.5,
+    max_window_loss: float = MAX_WINDOW_LOSS,
 ) -> FundDataset:
     """
     Fetch each fund, align the series and report coverage.
@@ -221,6 +231,10 @@ def load_price_data(
         Where cached frames live. Defaults to `data/cache`.
     delay : float
         Seconds between fund requests, matching TEFASClient's own pacing.
+    max_window_loss : float
+        The share of the common window a fund may cost and still be kept in
+        `trimmed`. Above it the fund is excluded, as it is when including it
+        would drop the window below `MIN_WEEKLY_OBSERVATIONS`.
 
     Returns
     -------
@@ -258,6 +272,7 @@ def load_price_data(
         end=end,
         from_cache=from_cache,
         notes=notes,
+        max_window_loss=max_window_loss,
     )
 
 
@@ -293,7 +308,7 @@ def format_coverage_report(ds: FundDataset) -> str:
 
     add("")
     add(_format_matrix("FULL     (all codes with data, inner join)", ds.full_coverage))
-    add(_format_matrix("TRIMMED  (funds covering the whole window)", ds.trimmed_coverage))
+    add(_format_matrix("TRIMMED  (funds worth their cost to the window)", ds.trimmed_coverage))
 
     add("")
     if ds.sparse_codes:
@@ -434,6 +449,7 @@ def _build(
     end: pd.Timestamp,
     from_cache: bool,
     notes: Optional[list[str]] = None,
+    max_window_loss: float = MAX_WINDOW_LOSS,
 ) -> FundDataset:
     fund_coverage = _per_fund_coverage(long_df, codes)
     fund_names = {c: cov.fund_name for c, cov in fund_coverage.items()}
@@ -441,7 +457,9 @@ def _build(
     ok = [c for c in codes if c in fund_coverage]
     full = _matrix(long_df, ok)
 
-    keep, excluded = _split_by_window(fund_coverage, ok, start, listed)
+    keep, excluded = _split_by_window(
+        fund_coverage, ok, listed, long_df, max_window_loss
+    )
     trimmed = _matrix(long_df, keep)
 
     return FundDataset(
@@ -586,18 +604,36 @@ def _matrix(long_df: pd.DataFrame, codes: list[str]) -> pd.DataFrame:
 def _split_by_window(
     fund_coverage: dict[str, FundCoverage],
     codes: list[str],
-    start: pd.Timestamp,
     listed: dict[str, bool],
+    long_df: pd.DataFrame,
+    max_window_loss: float = MAX_WINDOW_LOSS,
 ) -> tuple[list[str], dict[str, str]]:
     """
-    Keep the funds that cover the whole requested window.
+    Keep the funds worth keeping: the ones that do not cost the rest too much.
 
-    Intentionally not the longest-common-window subset search: a fund is
-    either long enough on its own or it is out, so the rule stays explainable
-    to whoever reads the report.
+    The question is not whether a fund is younger than the request. It is what
+    including it does to the window everyone shares, because that window is
+    what the analysis actually runs on. A fund that starts a month into a
+    five-year request costs the others almost nothing; a fund that starts two
+    months ago costs them everything. The first is worth keeping even though
+    neither covers the request in full, and the old rule threw out both.
+
+    So a late starter is excluded only when including it would either cost
+    more than `max_window_loss` of the common window, or push that window
+    below `MIN_WEEKLY_OBSERVATIONS` when dropping it would not. Both tests are
+    counted in weekly observations, the sample size everything downstream
+    rests on, so "20% shorter" means 20% fewer weeks to estimate from.
+
+    The cost is measured one fund at a time, always against the fund that
+    currently sets the common start. Removing it hands the constraint to the
+    next-latest, which is then judged the same way, so nothing is dropped on
+    account of a fund that has itself already been dropped.
+
+    Funds whose prices stop early are a separate matter and still go out
+    regardless of cost: a series that ended cannot be compared against one
+    that has not.
     """
     tolerance = pd.Timedelta(days=COVERAGE_TOLERANCE_DAYS)
-    required_start = start + tolerance
 
     # The recent edge is set by the data, not the calendar: today may be a
     # weekend and TEFAS publishes with a lag.
@@ -608,12 +644,7 @@ def _split_by_window(
 
     for code in codes:
         cov = fund_coverage[code]
-        if cov.first_date > required_start:
-            excluded[code] = (
-                f"starts {cov.first_date.date()}, after the requested {start.date()} "
-                f"(short history)"
-            )
-        elif latest is not None and cov.last_date < latest - tolerance:
+        if latest is not None and cov.last_date < latest - tolerance:
             # This is the closure the data *can* prove: the fund traded, then
             # stopped. If the registry has also dropped it, it is delisted
             # rather than merely suspended.
@@ -627,6 +658,30 @@ def _split_by_window(
             )
         else:
             keep.append(code)
+
+    while len(keep) > 1:
+        binder = max(keep, key=lambda c: fund_coverage[c].first_date)
+        rest = [c for c in keep if c != binder]
+
+        with_weeks = _matrix_coverage(_matrix(long_df, keep)).weekly_observations
+        without_weeks = _matrix_coverage(_matrix(long_df, rest)).weekly_observations
+        if without_weeks <= with_weeks:
+            # Nothing to gain: this fund is not what limits the window.
+            break
+
+        loss = 1 - with_weeks / without_weeks
+        crosses_threshold = (
+            with_weeks < MIN_WEEKLY_OBSERVATIONS <= without_weeks
+        )
+        if loss <= max_window_loss and not crosses_threshold:
+            break
+
+        excluded[binder] = (
+            f"starts {fund_coverage[binder].first_date.date()}; including it "
+            f"would cut the common window from {without_weeks} weeks to "
+            f"{with_weeks} weeks ({loss:.0%} shorter)"
+        )
+        keep = rest
 
     return keep, excluded
 
@@ -749,6 +804,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("codes", nargs="*", default=None, help="fund codes (default: demo basket)")
     parser.add_argument("--months", type=int, default=DEFAULT_MONTHS)
     parser.add_argument("--no-cache", action="store_true")
+    parser.add_argument(
+        "--max-window-loss",
+        type=float,
+        default=MAX_WINDOW_LOSS,
+        help="share of the common window a fund may cost before it is excluded",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -757,6 +818,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         args.codes or DEMO_BASKET,
         months=args.months,
         use_cache=not args.no_cache,
+        max_window_loss=args.max_window_loss,
     )
     print()
     print_coverage_report(ds)

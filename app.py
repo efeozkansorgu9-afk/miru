@@ -28,6 +28,7 @@ from src.analysis import (
     find_fund_groups,
 )
 from src.data import DEFAULT_MONTHS, MAX_MONTHS, FundDataset, load_price_data
+from src.inflation import CPISeries, RealReturn, load_cpi, real_return
 from src.tefas_client import TEFASClient
 
 # Geçmiş uzunluğunun alt sınırı arayüzün kararı: 12 aydan kısa bir pencere
@@ -92,6 +93,17 @@ def fund_registry() -> dict[str, str]:
 def fetch_dataset(codes: tuple[str, ...], months: int) -> FundDataset:
     """Fiyat matrislerini ve kapsama raporunu getirir."""
     return load_price_data(list(codes), months=months)
+
+
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def enflasyon() -> CPISeries | None:
+    """TÜFE endeksi, yoksa None. Enflasyon olmadan da sayfa çalışıyor."""
+    try:
+        return load_cpi()
+    except Exception:
+        # load_cpi beklenen hataları zaten None ile bildiriyor. Buradaki
+        # yakalama, beklenmeyen bir şeyde bile sayfanın açılması için.
+        return None
 
 
 @st.cache_data(show_spinner=False)
@@ -475,26 +487,91 @@ def korelasyon_haritasi(corr: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def reel_getiri(seri: pd.Series) -> RealReturn | None:
+    """Sepetin reel getirisi. TÜFE alınamadıysa None, sayfa nominalle devam eder."""
+    cpi = enflasyon()
+    if cpi is None:
+        return None
+    try:
+        return real_return(seri, cpi)
+    except Exception:
+        return None
+
+
 def sepet_degeri(value: pd.Series, toplam_tl: float) -> None:
-    """Sepetin lira değeri, üstünde toplam ve yıllık ortalama getiriyle."""
+    """Sepetin lira değeri, üstünde nominal ve reel getiriyle."""
     seri = value * toplam_tl
     toplam_getiri = float(seri.iloc[-1] / seri.iloc[0] - 1)
     yil = (seri.index[-1] - seri.index[0]).days / 365.25
     yillik = (1 + toplam_getiri) ** (1 / yil) - 1 if yil > 0 else float("nan")
 
-    c1, c2 = st.columns(2)
-    c1.metric("Toplam getiri", yuzde_isaretli(toplam_getiri))
-    c2.metric("Yıllık ortalama getiri", yuzde_isaretli(yillik))
+    reel = reel_getiri(seri)
+
+    if reel is None:
+        # TÜFE yoksa nominal sonuçlar hiç değişmeden, eskisi gibi duruyor.
+        c1, c2 = st.columns(2)
+        c1.metric("Toplam getiri", yuzde_isaretli(toplam_getiri))
+        c2.metric("Yıllık ortalama getiri", yuzde_isaretli(yillik))
+    else:
+        c1, c2 = st.columns(2)
+        c1.metric("Toplam getiri (nominal)", yuzde_isaretli(toplam_getiri))
+        c2.metric(
+            "Toplam getiri (enflasyondan arındırılmış)", yuzde_isaretli(reel.total)
+        )
+        c3, c4 = st.columns(2)
+        c3.metric("Yıllık ortalama getiri (nominal)", yuzde_isaretli(yillik))
+        c4.metric(
+            "Yıllık ortalama getiri (enflasyondan arındırılmış)",
+            yuzde_isaretli(reel.annual),
+        )
+
     st.caption(
         f"Başlangıçtaki {para(seri.iloc[0])} bugün {para(seri.iloc[-1])}. "
         f"Alım sonrası hiç yeniden dengelenmemiş."
     )
-    st.plotly_chart(deger_grafigi(seri), width="stretch")
+    if reel is not None:
+        st.caption(enflasyon_notu(reel))
+    st.caption(
+        "Yönetim ücreti fon fiyatına dahil, gösterilen getiri ücret düşülmüş "
+        "halidir. Vergi hesaba katılmamıştır."
+    )
+    st.plotly_chart(deger_grafigi(seri, reel), width="stretch")
 
 
-def deger_grafigi(seri: pd.Series) -> go.Figure:
-    fig = px.line(x=seri.index, y=seri.values, labels={"x": "", "y": ""})
-    fig.update_traces(hovertemplate="%{x|%d.%m.%Y}<br>%{y:,.0f} TL<extra></extra>")
+def enflasyon_notu(reel: RealReturn) -> str:
+    """Reel sayının neye dayandığı: dönemin enflasyonu ve endeksin son ayı."""
+    notlar = [
+        f"Aynı dönemde fiyatlar {yuzde_isaretli(reel.inflation_total)} arttı. "
+        f"Arındırılmış tutarlar bugünün parasıyla: TÜİK tüketici fiyat endeksinin "
+        f"o ayki değeri ayın tamamına uygulanıyor, günlere dağıtılmıyor."
+    ]
+    if reel.is_extrapolated:
+        son = reel.latest_cpi_month
+        notlar.append(
+            f"{AY_ADLARI[son.month - 1]} {son.year} sonrası için TÜFE henüz "
+            f"açıklanmadı, o günlere son açıklanan endeks uygulandı."
+        )
+    return " ".join(notlar)
+
+
+def deger_grafigi(seri: pd.Series, reel: RealReturn | None = None) -> go.Figure:
+    if reel is None:
+        fig = px.line(x=seri.index, y=seri.values, labels={"x": "", "y": ""})
+        fig.update_traces(hovertemplate="%{x|%d.%m.%Y}<br>%{y:,.0f} TL<extra></extra>")
+    else:
+        # İki çizgi de bugünün parasıyla bitiyor: reel çizgi, aynı sepetin
+        # geçmişteki değerinin bugün ne alacağını gösterdiği için yukarıdan
+        # başlıyor. Aradaki açıklık dönemin enflasyonu.
+        cerceve = pd.DataFrame(
+            {"Nominal": seri, "Enflasyondan arındırılmış": reel.real_value}
+        )
+        fig = px.line(cerceve, labels={"index": "", "value": "", "variable": ""})
+        fig.update_traces(
+            hovertemplate="%{x|%d.%m.%Y}<br>%{y:,.0f} TL<extra>%{fullData.name}</extra>"
+        )
+        fig.update_layout(
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, title=None)
+        )
     fig.update_yaxes(ticksuffix=" TL", tickformat=",.0f", separatethousands=True)
     # Plotly ay adlarını İngilizce basıyor. Sayısal biçim dilden bağımsız.
     fig.update_xaxes(tickformat="%m.%Y")

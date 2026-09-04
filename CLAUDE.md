@@ -27,6 +27,10 @@ python -m src.data GAL AFO TI2 --months 36
 # Run analysis notebook
 jupyter notebook notebooks/01_data_collection_and_exploration.ipynb
 
+# Print the CPI index and the inflation it implies (needs EVDS_API_KEY)
+python -m src.inflation
+python -m src.inflation --months 12 --no-cache
+
 # Run the dashboard
 streamlit run app.py
 ```
@@ -64,6 +68,12 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - `to_weekly_returns`, `basket_value_series`, `max_drawdown` - The pieces, callable on their own.
 - Everything runs on weekly returns (`W-FRI`, last observed price): several Turkish funds price stalely, and daily returns would make a concentrated basket look diversified.
 
+**`src/inflation.py`** - Inflation layer. Monthly Turkish CPI from TCMB EVDS, plus the arithmetic that restates a nominal value series in today's prices. Imports neither `tefas` nor `src.data`.
+- `load_cpi(months, end, api_key, use_cache, cache_dir, series)` - Returns a `CPISeries`, or **`None`** on any expected failure (no key, no network, rejected key, empty answer). It never raises for those: the real-return section is an extra the page works without.
+- `real_return(values, cpi)` - `RealReturn`: real and nominal total/annualised return, cumulative inflation, the deflated series, and `stale_months`. Raises only on caller errors (empty series, non-positive values, a window starting before the CPI series).
+- `deflate(values, cpi)` - The deflated series on its own.
+- `main()` - `python -m src.inflation [--months N] [--no-cache]` prints the index and the inflation it implies. This is the hand-check tool.
+
 **`tests/smoke_test.py`** - Fetches a year of prices for a few funds and reports row count, date range, duplicate dates, null/non-positive prices, and missing business days. Exits non-zero if any fund fails. Gaps of 1-2 business days are normal (Turkish public holidays).
 
 **`notebooks/`** - Jupyter notebooks for analysis. The notebook imports `TEFASClient` via `sys.path.append('..')` and `from src.tefas_client import TEFASClient`.
@@ -77,6 +87,7 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - Fund picker autocompletes over `list_funds()` labels ("GAL - GARANTİ PORTFÖY ..."), so searching by code and by fund name both work. Registry and price fetches are `@st.cache_data` with a one-day TTL.
 - The picker is a fixed selectbox plus an "Ekle" button; chosen funds are listed below it with their amount field and a "Kaldır" button, so the search box does not move as the list grows. Amounts start empty (`value=None`), and a fund with no amount is left out of the analysis with a message.
 - How loudly a group is reported scales with its weight: over 50% leads the headline, 25-50% gets a factual headline naming the funds, under 25% stays out of the headline entirely and lives in a sentence below plus the table's group label. The information is never dropped, only de-emphasised.
+- The "Sepet değeri" block (inside "Teknik detay") shows nominal and inflation-adjusted returns side by side, and the value chart draws both lines, whenever `load_cpi()` returns a series. When it returns `None` the page falls back to the plain nominal pair with no mention of inflation. A negative real return is printed as it is, with no softening. The fee/tax note sits under the block in both cases.
 - Tables are rendered as fixed-layout HTML (`tablo_ciz`), not `st.dataframe`: fund titles run to 60 characters, and only HTML gives a per-row `title` tooltip for the truncated name. `st.dataframe` draws to a canvas and cannot.
 
 ## Key Details
@@ -94,5 +105,10 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - A fund whose `coverage_ratio` falls below `MIN_COVERAGE_RATIO` (0.93) has gaps of its own, which narrow the common range for the whole basket. A healthy series sits near 0.96 after holidays.
 - A code that never existed and a fund delisted more than 5 years ago are **indistinguishable** — TEFAS answers both with an empty result and lists only currently-traded funds. Both land in `failed_codes` as `unknown_code`. A fund that closed recently still returns prices and instead shows up in `excluded_codes` as delisted.
 - `data.py` caches to `data/cache/*.parquet` keyed on codes + date range, reused only within the same day. Delete the directory to force a refetch.
+- EVDS moved during 2026: `evds2.tcmb.gov.tr/service/evds` now answers **every** request with a 302 to the single-page app, whatever the key. The working endpoint is `https://evds3.tcmb.gov.tr/igmevdsms-dis/series=<CODE>&startDate=DD-MM-YYYY&endDate=DD-MM-YYYY&type=json`, with the key in a `key` **header** (a URL `key=` parameter stopped working in April 2024). Parameters go in the path, not the query string. A bad key gives 401 `Invalid API Key`; a missing one gives 403.
+- `TP.FG.J0`, the CPI code every older example uses, **stopped in January 2026** when TÜİK rebased to 2025=100. `src.inflation` asks for `TP.TUKFIY2025.GENEL` first and falls back to `TP.GENENDEKS.T1` (the continued 2003=100 general index). Only ratios inside one series are used, so either answers the same question; the two agreed to 0.01pp over a 36-month window.
+- CPI is published around the **3rd of the following month**, so a basket running to today usually has a month with no index yet. That month carries the last published one, `RealReturn.stale_months` counts it, and the dashboard says so. It is never interpolated: the published index is a level for the whole month.
+- The CPI cache (`data/cache/cpi_*.parquet`) is keyed on months, not exact dates, and stays valid until the next release could plausibly have landed, so a whole month is normally one request. If the cached payload is already missing the month that should exist by now, it drops to a one-day TTL instead so a late release is picked up promptly.
+- `EVDS_API_KEY` comes from the environment or `.env` (gitignored). `python-dotenv` is optional: without it the environment variable still works.
 - The notebook calculates: total return, annualized return, volatility (annualized using 252 trading days), Sharpe ratio (risk-free rate ~40% for Turkey), and maximum drawdown
 - Python 3.10+ required

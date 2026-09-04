@@ -49,13 +49,25 @@ MIN_WEEKLY_OBSERVATIONS = 100
 # holidays and TEFAS's publishing lag. Same slack applies at the recent end.
 COVERAGE_TOLERANCE_DAYS = 7
 
+# Why a fund produced nothing. Prose is for the report; the tag is what the
+# UI branches on — "no such fund" and "this fund closed" are different things
+# to tell someone.
+FAILURE_UNKNOWN_CODE = "unknown_code"
+FAILURE_NO_PRICES_IN_WINDOW = "no_prices_in_window"
+FAILURE_NO_VALID_PRICES = "no_valid_prices"
+FAILURE_UNVERIFIED = "no_data_unverified"
+
+# How far back the TEFAS price endpoint reaches; a fund delisted before this
+# is indistinguishable from a code that never existed.
+PRICE_HISTORY_YEARS = 5
+
 DEFAULT_MONTHS = 36
 
 CACHE_DIR = Path("data/cache")
 
 # Bumped when the cached payload's shape changes, so old files are ignored
 # instead of misread.
-_CACHE_VERSION = 1
+_CACHE_VERSION = 2
 
 
 # ----------------------------------------------------------------------
@@ -76,6 +88,18 @@ class FundCoverage:
     @property
     def span_days(self) -> int:
         return int((self.last_date - self.first_date).days)
+
+
+@dataclass(frozen=True)
+class FundFailure:
+    """A code that produced no usable series, and why."""
+
+    fund_code: str
+    kind: str
+    reason: str
+
+    def __str__(self) -> str:
+        return self.reason
 
 
 @dataclass(frozen=True)
@@ -108,7 +132,7 @@ class FundDataset:
     trimmed_coverage: MatrixCoverage
     fund_coverage: dict[str, FundCoverage]
     excluded_codes: dict[str, str]
-    failed_codes: dict[str, str]
+    failed_codes: dict[str, FundFailure]
     requested_codes: list[str]
     requested_start: pd.Timestamp
     requested_end: pd.Timestamp
@@ -170,16 +194,22 @@ def load_price_data(
     start = end - pd.DateOffset(months=months)
 
     cache_path = _cache_path(cache_dir, codes, start, end)
-    long_df, failed, from_cache = _read_cache(cache_path) if use_cache else (None, None, False)
+    cached = _read_cache(cache_path) if use_cache else None
 
-    if long_df is None:
-        long_df, failed = _fetch_all(codes, start, end, client or TEFASClient(), delay)
+    if cached is not None:
+        long_df, raw_failures, listed, from_cache = *cached, True
+    else:
+        client = client or TEFASClient()
+        long_df, raw_failures = _fetch_all(codes, start, end, client, delay)
+        listed = _registry_flags(client, codes, long_df, raw_failures)
+        from_cache = False
         if use_cache:
-            _write_cache(cache_path, long_df, failed)
+            _write_cache(cache_path, long_df, raw_failures, listed)
 
     return _build(
         long_df=long_df,
-        failed_codes=failed,
+        raw_failures=raw_failures,
+        listed=listed,
         codes=codes,
         start=start,
         end=end,
@@ -205,8 +235,9 @@ def format_coverage_report(ds: FundDataset) -> str:
     for code in ds.requested_codes:
         cov = ds.fund_coverage.get(code)
         if cov is None:
-            reason = ds.failed_codes.get(code, "no data")
-            add(f"  {code:<6} {'—':<12} {'—':<12} {0:>6}  FAILED: {reason}")
+            failure = ds.failed_codes.get(code)
+            label = f"[{failure.kind}] {failure.reason}" if failure else "no data"
+            add(f"  {code:<6} {'—':<12} {'—':<12} {0:>6}  FAILED {label}")
             continue
         add(
             f"  {code:<6} {cov.first_date.date()!s:<12} {cov.last_date.date()!s:<12} "
@@ -220,8 +251,8 @@ def format_coverage_report(ds: FundDataset) -> str:
     add("")
     if ds.failed_codes:
         add("Failed (no usable data returned)")
-        for code, reason in ds.failed_codes.items():
-            add(f"  {code:<6} {reason}")
+        for code, failure in ds.failed_codes.items():
+            add(f"  {code:<6} [{failure.kind}] {failure.reason}")
     else:
         add("Failed: none")
 
@@ -252,24 +283,25 @@ def _fetch_all(
     end: pd.Timestamp,
     client: TEFASClient,
     delay: float,
-) -> tuple[pd.DataFrame, dict[str, str]]:
-    """Fetch every code, keeping the ones that fail instead of dropping them."""
+) -> tuple[pd.DataFrame, dict[str, dict]]:
+    """Fetch every code, keeping the ones that fail instead of dropping them.
+
+    Records only what was observed here; the registry lookup turns that into
+    a diagnosis later, so this stays cheap and cacheable.
+    """
     frames: list[pd.DataFrame] = []
-    failed: dict[str, str] = {}
+    raw: dict[str, dict] = {}
 
     for i, code in enumerate(codes, 1):
         logger.info("Fetching %s (%d/%d)", code, i, len(codes))
         df = client.get_fund_history(code, start.date(), end.date())
 
         if df.empty:
-            # TEFASClient returns an empty frame both for a transport error
-            # and for a code TEFAS does not know; we cannot tell them apart
-            # from here, so say what we observed rather than guess a cause.
-            failed[code] = "no rows returned (closed fund, invalid code, or fetch error)"
+            raw[code] = {"observed": "no_rows"}
         else:
             usable = df[df["price"].notna() & (df["price"] > 0)]
             if usable.empty:
-                failed[code] = f"{len(df)} rows returned but no valid prices"
+                raw[code] = {"observed": "no_valid_prices", "rows": int(len(df))}
             else:
                 frames.append(usable)
 
@@ -277,9 +309,43 @@ def _fetch_all(
             time.sleep(delay)
 
     if not frames:
-        return _empty_long(), failed
+        return _empty_long(), raw
 
-    return pd.concat(frames, ignore_index=True), failed
+    return pd.concat(frames, ignore_index=True), raw
+
+
+def _registry_flags(
+    client: TEFASClient,
+    codes: list[str],
+    long_df: pd.DataFrame,
+    raw_failures: dict[str, dict],
+) -> dict[str, bool]:
+    """Which requested codes TEFAS currently lists.
+
+    The history endpoint answers an invalid code and a delisted fund the same
+    way — empty — so the registry is the only thing that separates "no such
+    fund" from "this fund is gone". Looked up only when something actually
+    needs explaining: a code with no data, or a fund whose prices stop early.
+
+    Returns an empty dict if the registry is unavailable; callers degrade to
+    an unverified reason rather than accusing a live fund of not existing.
+    """
+    suspect = set(raw_failures)
+    if not long_df.empty:
+        last = long_df.groupby("fund_code")["date"].max()
+        stale_before = last.max() - pd.Timedelta(days=COVERAGE_TOLERANCE_DAYS)
+        suspect |= set(last[last < stale_before].index)
+
+    if not suspect:
+        return {}
+
+    try:
+        registry = client.list_fund_codes()
+    except Exception as exc:
+        logger.warning("Fund registry unavailable, failures stay unverified: %s", exc)
+        return {}
+
+    return {code: code in registry for code in codes}
 
 
 def _empty_long() -> pd.DataFrame:
@@ -300,7 +366,8 @@ def _empty_long() -> pd.DataFrame:
 
 def _build(
     long_df: pd.DataFrame,
-    failed_codes: dict[str, str],
+    raw_failures: dict[str, dict],
+    listed: dict[str, bool],
     codes: list[str],
     start: pd.Timestamp,
     end: pd.Timestamp,
@@ -312,7 +379,7 @@ def _build(
     ok = [c for c in codes if c in fund_coverage]
     full = _matrix(long_df, ok)
 
-    keep, excluded = _split_by_window(fund_coverage, ok, start)
+    keep, excluded = _split_by_window(fund_coverage, ok, start, listed)
     trimmed = _matrix(long_df, keep)
 
     return FundDataset(
@@ -322,13 +389,61 @@ def _build(
         trimmed_coverage=_matrix_coverage(trimmed),
         fund_coverage=fund_coverage,
         excluded_codes=excluded,
-        failed_codes={c: failed_codes.get(c, "no data") for c in codes if c not in fund_coverage},
+        failed_codes=_classify_failures(
+            [c for c in codes if c not in fund_coverage], raw_failures, listed
+        ),
         requested_codes=codes,
         requested_start=start,
         requested_end=end,
         from_cache=from_cache,
         fund_names=fund_names,
     )
+
+
+def _classify_failures(
+    codes: list[str],
+    raw_failures: dict[str, dict],
+    listed: dict[str, bool],
+) -> dict[str, FundFailure]:
+    """Turn "returned nothing" into something a user can act on."""
+    cutoff = (date.today() - pd.DateOffset(years=PRICE_HISTORY_YEARS)).date()
+    out: dict[str, FundFailure] = {}
+
+    for code in codes:
+        observed = raw_failures.get(code, {}).get("observed", "no_rows")
+
+        if observed == "no_valid_prices":
+            rows = raw_failures[code].get("rows", 0)
+            out[code] = FundFailure(
+                code,
+                FAILURE_NO_VALID_PRICES,
+                f"{rows} rows returned, none with a usable price",
+            )
+        elif code not in listed:
+            # Registry unavailable: say what we saw, do not guess a cause.
+            out[code] = FundFailure(
+                code,
+                FAILURE_UNVERIFIED,
+                "no prices returned; fund registry unavailable, cause unverified",
+            )
+        elif listed[code]:
+            out[code] = FundFailure(
+                code,
+                FAILURE_NO_PRICES_IN_WINDOW,
+                "listed on TEFAS but returned no prices for this window",
+            )
+        else:
+            # Not in the registry and nothing in the price API's 5-year reach.
+            # A fund delisted before that cutoff leaves no trace TEFAS will
+            # serve, so it is genuinely indistinguishable from a typo here.
+            out[code] = FundFailure(
+                code,
+                FAILURE_UNKNOWN_CODE,
+                f"not a TEFAS fund code today, and no prices since {cutoff} — "
+                f"invalid code, or a fund closed before then",
+            )
+
+    return out
 
 
 def _per_fund_coverage(long_df: pd.DataFrame, codes: list[str]) -> dict[str, FundCoverage]:
@@ -375,6 +490,7 @@ def _split_by_window(
     fund_coverage: dict[str, FundCoverage],
     codes: list[str],
     start: pd.Timestamp,
+    listed: dict[str, bool],
 ) -> tuple[list[str], dict[str, str]]:
     """
     Keep the funds that cover the whole requested window.
@@ -401,8 +517,16 @@ def _split_by_window(
                 f"(short history)"
             )
         elif latest is not None and cov.last_date < latest - tolerance:
+            # This is the closure the data *can* prove: the fund traded, then
+            # stopped. If the registry has also dropped it, it is delisted
+            # rather than merely suspended.
+            gone = listed.get(code)
+            state = {True: "still listed, suspended?", False: "delisted"}.get(
+                gone, "registry unverified"
+            )
             excluded[code] = (
-                f"last price {cov.last_date.date()}, stale against {latest.date()}"
+                f"last price {cov.last_date.date()}, stale against "
+                f"{latest.date()} ({state})"
             )
         else:
             keep.append(code)
@@ -441,33 +565,44 @@ def _cache_path(cache_dir: Path | str, codes: list[str], start, end) -> Path:
     return Path(cache_dir) / f"prices_{digest}.parquet"
 
 
-def _read_cache(path: Path) -> tuple[Optional[pd.DataFrame], Optional[dict[str, str]], bool]:
-    """Return the cached frame if it was written today, else nothing."""
+def _read_cache(
+    path: Path,
+) -> Optional[tuple[pd.DataFrame, dict[str, dict], dict[str, bool]]]:
+    """Return the cached frame if it was written today, else None."""
     meta_path = path.with_suffix(".json")
     if not path.exists():
-        return None, None, False
+        return None
 
     written = date.fromtimestamp(path.stat().st_mtime)
     if written != date.today():
         logger.info("Cache %s is from %s, refetching", path.name, written)
-        return None, None, False
+        return None
 
     try:
         df = pd.read_parquet(path)
-        failed = json.loads(meta_path.read_text())["failed_codes"] if meta_path.exists() else {}
+        meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
     except Exception as exc:  # corrupt or half-written cache: just refetch
         logger.warning("Ignoring unreadable cache %s: %s", path.name, exc)
-        return None, None, False
+        return None
 
     logger.info("Loaded %d rows from cache %s", len(df), path.name)
-    return df, failed, True
+    # Registry flags are cached too, so a cached run diagnoses failures
+    # exactly the way the fetching run did.
+    return df, meta.get("raw_failures", {}), meta.get("listed", {})
 
 
-def _write_cache(path: Path, long_df: pd.DataFrame, failed: dict[str, str]) -> None:
+def _write_cache(
+    path: Path,
+    long_df: pd.DataFrame,
+    raw_failures: dict[str, dict],
+    listed: dict[str, bool],
+) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         long_df.to_parquet(path, index=False)
-        path.with_suffix(".json").write_text(json.dumps({"failed_codes": failed}, indent=2))
+        path.with_suffix(".json").write_text(
+            json.dumps({"raw_failures": raw_failures, "listed": listed}, indent=2)
+        )
     except Exception as exc:  # a cache we cannot write is not a fatal error
         logger.warning("Could not write cache %s: %s", path.name, exc)
 
@@ -507,8 +642,9 @@ def _format_matrix(label: str, cov: MatrixCoverage) -> str:
 # CLI
 # ----------------------------------------------------------------------
 
-# Three long-running funds, one 2026 launch, one code TEFAS does not know.
-DEMO_BASKET = ["GAL", "AFO", "TI2", "KCR", "ZZZZ"]
+# Three long-running funds, one 2026 launch, one closed fund, one code that
+# was never a fund at all.
+DEMO_BASKET = ["GAL", "AFO", "TI2", "KCR", "IAL", "ZZZZ"]
 
 
 def main(argv: Optional[list[str]] = None) -> int:

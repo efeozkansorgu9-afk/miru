@@ -20,6 +20,16 @@ DateLike = Union[str, date, datetime]
 # Columns returned by the TEFAS history endpoint
 _COLUMNS = ["date", "code", "title", "price", "category_rank", "category_total"]
 
+# The three fund kinds TEFAS keeps separate registries for: securities funds,
+# pension funds, exchange-traded funds.
+_FUND_KINDS = ("YAT", "EMK", "BYF")
+
+# The fund-list endpoint answers differently depending on `islem`, and neither
+# answer is complete: islem=1 carries brand-new funds but drops some
+# established ones (KCR yes, GAL no), islem=0 does the reverse. Only the union
+# of the two is the actual registry, so we ask for both.
+_LIST_ISLEM_VALUES = (0, 1)
+
 
 def _parse_date(value: DateLike) -> date:
     """Accept DD.MM.YYYY, YYYY-MM-DD, date or datetime and return a date."""
@@ -71,6 +81,7 @@ class TEFASClient:
 
     def __init__(self):
         self._crawler = Crawler()
+        self._registry: Optional[set] = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -120,6 +131,43 @@ class TEFASClient:
             return pd.DataFrame()
 
         return self._clean(df, fund_code)
+
+    def list_fund_codes(self, refresh: bool = False) -> set:
+        """
+        Fund codes TEFAS currently lists, across all three fund kinds.
+
+        Exists to tell an invalid code apart from a real fund that returned no
+        prices: the history endpoint answers both with an empty result, so the
+        registry is the only signal available.
+
+        Note the registry holds *currently listed* funds only. A fund that has
+        been closed and delisted is absent from it — and so is a typo. TEFAS
+        exposes no historical registry, so those two cases cannot be
+        separated here; see `get_fund_history` for the case that can (a fund
+        that closed recently still returns prices, ending on its last
+        trading day).
+
+        Raises
+        ------
+        RuntimeError
+            If any part of the registry could not be fetched. A partial
+            registry is worse than none: it would label live funds invalid.
+        """
+        if self._registry is not None and not refresh:
+            return self._registry
+
+        codes: set = set()
+        for kind in _FUND_KINDS:
+            for islem in _LIST_ISLEM_VALUES:
+                try:
+                    codes |= self._fetch_fund_codes(kind, islem)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Could not list TEFAS funds (kind={kind}, islem={islem}): {exc}"
+                    ) from exc
+
+        self._registry = codes
+        return codes
 
     def get_multiple_funds(
         self,
@@ -173,6 +221,38 @@ class TEFASClient:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _fetch_fund_codes(self, kind: str, islem: int) -> set:
+        """One page of the fund registry.
+
+        Goes through the crawler's own session and endpoint rather than a
+        fresh `requests` call, so headers and error handling stay in one
+        place. `Crawler._list_fund_codes` hardcodes islem=1, hence the
+        open-coded payload here.
+        """
+        payload = {
+            "dil": "TR",
+            "fonTipi": kind,
+            "kurucuKodu": None,
+            "sfonTurKod": None,
+            "fonTurAciklama": None,
+            "islem": islem,
+            "fonTurKod": None,
+            "fonGrubu": None,
+            "donemGetiri1a": "1",
+            "donemGetiri3a": "1",
+            "donemGetiri6a": "1",
+            "donemGetiri1y": "1",
+            "donemGetiriyb": "1",
+            "donemGetiri3y": "1",
+            "donemGetiri5y": "1",
+            "basTarih": None,
+            "bitTarih": None,
+            "calismaTipi": 2,
+            "getiriOrani": "1",
+        }
+        rows = self._crawler._do_post(self._crawler.list_endpoint, payload)
+        return {r["fonKodu"] for r in rows if r.get("fonKodu")}
 
     @staticmethod
     def _clean(df: pd.DataFrame, fund_code: str) -> pd.DataFrame:

@@ -3,3 +3,4 @@ pandas
 numpy
 plotly
 tefas-crawler
+pyarrow  # parquet cache in src/data.py

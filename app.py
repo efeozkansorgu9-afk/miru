@@ -14,6 +14,7 @@ bir dile çevirmek ve teknik ayrıntıyı isteyene ayrıca göstermek.
 from __future__ import annotations
 
 from html import escape
+from typing import NamedTuple
 
 import pandas as pd
 import plotly.express as px
@@ -61,6 +62,16 @@ table.fr th, table.fr td { text-align: left; padding: 0.45rem 0.6rem;
            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 table.fr th { font-weight: 600; opacity: 0.7; }
 table.fr td.sayi, table.fr th.sayi { text-align: right; }
+/* Oranı hücrenin altına ince bir çubuk olarak çiziyoruz: sayı yerinde
+   kalıyor, sütun genişlemiyor, satır yüksekliği değişmiyor. */
+table.fr td.cubuk { position: relative; }
+table.fr td.cubuk::after {
+    content: ""; position: absolute; left: 0.6rem; right: 0.6rem;
+    bottom: 0.2rem; height: 3px; border-radius: 2px;
+    background: linear-gradient(to right,
+        rgba(128,128,128,0.75) 0 var(--oran),
+        rgba(128,128,128,0.15) var(--oran) 100%);
+}
 </style>
 """
 
@@ -72,6 +83,10 @@ _YUZDE_EKI_ONLAR = {0: "'ı", 1: "'u", 2: "'si", 3: "'u", 4: "'ı", 5: "'si",
 
 _SAYI_KELIME = {2: "iki", 3: "üç", 4: "dört", 5: "beş", 6: "altı", 7: "yedi",
                 8: "sekiz", 9: "dokuz", 10: "on"}
+
+# Sepet değeri grafiğinin ölçeği. Varsayılan normal; logaritmik olan,
+# fonlardan biri diğerlerini kat kat geçtiğinde erken dönemi okunur tutuyor.
+OLCEKLER = ["Normal", "Logaritmik"]
 
 # Grubun sepetteki payı, başlığın ne kadar yer kaplayacağını belirliyor.
 BASKIN_PAY = 0.50
@@ -302,6 +317,19 @@ def dagilim_tablosu(
     tablo_ciz(("Fon", "Adı", "Tutar", "Payı", "Durum"), satirlar, ad_sutunu=1)
 
 
+class Cubuk(NamedTuple):
+    """
+    Sayı ve onun sütundaki en büyüğe oranı.
+
+    Yan yana yazılmış yüzdelerde büyüklük farkı algılanmıyor: %143 ile %8
+    aynı genişlikte iki metin. Oranı hücrenin altındaki çubuğa çizince fark
+    okunmadan görülüyor.
+    """
+
+    metin: str
+    oran: float  # 0 ile 1 arası
+
+
 def tablo_ciz(basliklar: tuple[str, ...], satirlar: list[tuple], ad_sutunu: int) -> None:
     """
     Sabit sütun genişlikli tablo.
@@ -310,6 +338,8 @@ def tablo_ciz(basliklar: tuple[str, ...], satirlar: list[tuple], ad_sutunu: int)
     kaydırmadan okunur tutmanın yolu bu. `st.dataframe` tabloyu canvas'a
     çizdiği için hücre üstünde tooltip gösteremiyor, o yüzden burada
     kullanılmıyor.
+
+    Bir hücre `Cubuk` ise sayının altına oranı kadar dolu bir çubuk çiziliyor.
     """
     genislikler = {0: "11%", 1: "40%", 2: "17%", 3: "10%", 4: "22%"}
     sayi_sutunlari = {2, 3}
@@ -323,6 +353,13 @@ def tablo_ciz(basliklar: tuple[str, ...], satirlar: list[tuple], ad_sutunu: int)
     for satir in satirlar:
         hucreler = []
         for i, deger in enumerate(satir):
+            if isinstance(deger, Cubuk):
+                oran = max(0.0, min(1.0, float(deger.oran)))
+                hucreler.append(
+                    f'<td class="sayi cubuk" style="--oran:{oran * 100:.1f}%">'
+                    f'{escape(deger.metin)}</td>'
+                )
+                continue
             metin = str(deger)
             sinif = "sayi" if i in sayi_sutunlari else ""
             if i == ad_sutunu:
@@ -417,7 +454,10 @@ def teknik_detay(
     etiket: str,
     toplam_tl: float,
 ) -> None:
-    with st.expander("Teknik detay"):
+    # Ölçek düğmesi bu panelin içinde ve her dokunuşta sayfa baştan
+    # çalışıyor. `key` verilen expander durumunu koruduğu için panel açık
+    # kalıyor; anahtarsız hali her koşuda kapanırdı.
+    with st.expander("Teknik detay", key="teknik_detay"):
         st.caption(
             f"{etiket}. {tarih(analysis.start)} ile {tarih(analysis.end)} arası, "
             f"{analysis.weekly_observations} haftalık gözlem. Bütün ölçüler "
@@ -448,13 +488,25 @@ def teknik_detay(
             )
 
         st.markdown("**Fon oynaklıkları (yıllık)**")
+        oynakliklar = sorted(
+            analysis.fund_volatility.items(), key=lambda kv: (-kv[1], kv[0])
+        )
+        en_oynak = oynakliklar[0][1]
         tablo_ciz(
             ("Fon", "Adı", "Payı", "Oynaklık"),
             [
-                (kod, ds.fund_names.get(kod, ""), yuzde(analysis.weights[kod]), yuzde(vol))
-                for kod, vol in analysis.fund_volatility.items()
+                (
+                    kod,
+                    ds.fund_names.get(kod, ""),
+                    yuzde(analysis.weights[kod]),
+                    Cubuk(yuzde(vol), vol / en_oynak if en_oynak > 0 else 0.0),
+                )
+                for kod, vol in oynakliklar
             ],
             ad_sutunu=1,
+        )
+        st.caption(
+            "En oynak fon en üstte. Çubuklar sepetin en oynak fonuna göre ölçekli."
         )
 
         st.markdown("**Sepet değeri**")
@@ -535,7 +587,12 @@ def sepet_degeri(value: pd.Series, toplam_tl: float) -> None:
         "Yönetim ücreti fon fiyatına dahil, gösterilen getiri ücret düşülmüş "
         "halidir. Vergi hesaba katılmamıştır."
     )
-    st.plotly_chart(deger_grafigi(seri, reel), width="stretch")
+    olcek = st.segmented_control(
+        "Ölçek", OLCEKLER, default=OLCEKLER[0], required=True, key="deger_olcegi"
+    )
+    st.plotly_chart(
+        deger_grafigi(seri, reel, logaritmik=olcek == "Logaritmik"), width="stretch"
+    )
 
 
 def enflasyon_notu(reel: RealReturn) -> str:
@@ -554,7 +611,11 @@ def enflasyon_notu(reel: RealReturn) -> str:
     return " ".join(notlar)
 
 
-def deger_grafigi(seri: pd.Series, reel: RealReturn | None = None) -> go.Figure:
+def deger_grafigi(
+    seri: pd.Series,
+    reel: RealReturn | None = None,
+    logaritmik: bool = False,
+) -> go.Figure:
     if reel is None:
         fig = px.line(x=seri.index, y=seri.values, labels={"x": "", "y": ""})
         fig.update_traces(hovertemplate="%{x|%d.%m.%Y}<br>%{y:,.0f} TL<extra></extra>")
@@ -565,6 +626,10 @@ def deger_grafigi(seri: pd.Series, reel: RealReturn | None = None) -> go.Figure:
         cerceve = pd.DataFrame(
             {"Nominal": seri, "Enflasyondan arındırılmış": reel.real_value}
         )
+        # Fiyat matrisinin dizin adı "date" ve px onu eksen başlığı yapıyor.
+        # Adı silince başlık da gidiyor, veri katmanı dizini ne adlandırırsa
+        # adlandırsın.
+        cerceve.index.name = None
         fig = px.line(cerceve, labels={"index": "", "value": "", "variable": ""})
         fig.update_traces(
             hovertemplate="%{x|%d.%m.%Y}<br>%{y:,.0f} TL<extra>%{fullData.name}</extra>"
@@ -573,6 +638,15 @@ def deger_grafigi(seri: pd.Series, reel: RealReturn | None = None) -> go.Figure:
             legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, title=None)
         )
     fig.update_yaxes(ticksuffix=" TL", tickformat=",.0f", separatethousands=True)
+    if logaritmik:
+        # Bir fon diğerlerini kat kat geçtiğinde normal ölçekte sepetin erken
+        # dönemi düz çizgiye yapışıyor. Logaritmada eşit yüzde değişim eşit
+        # dikey mesafe demek, o yüzden başlangıçtaki hareket de görünüyor.
+        #
+        # dtick "D2": her onluk basamakta yalnız 1, 2 ve 5 etiketleniyor.
+        # Plotly'nin varsayılanı 1'den 9'a kadar hepsini yazıyor ve etiketler
+        # eksenin alt ucunda üst üste biniyor.
+        fig.update_yaxes(type="log", dtick="D2")
     # Plotly ay adlarını İngilizce basıyor. Sayısal biçim dilden bağımsız.
     fig.update_xaxes(tickformat="%m.%Y")
     # Türkçe ayraçlar: binlik nokta, ondalık virgül.

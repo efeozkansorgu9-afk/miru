@@ -4,3 +4,5 @@ __pycache__/
 .streamlit/secrets.toml
 data/
 cache/
+.env
+fonradar.code-workspace

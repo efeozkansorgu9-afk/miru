@@ -27,10 +27,13 @@ from src.analysis import (
     analyze_basket,
     find_fund_groups,
 )
-from src.data import DEFAULT_MONTHS, FundDataset, load_price_data
+from src.data import DEFAULT_MONTHS, MAX_MONTHS, FundDataset, load_price_data
 from src.tefas_client import TEFASClient
 
-MONTH_CHOICES = [12, 24, 36, 48, 60]
+# Geçmiş uzunluğunun alt sınırı arayüzün kararı: 12 aydan kısa bir pencere
+# haftalık gözlem eşiğinin çok altında kalıyor. Üst sınır TEFAS'ın verdiği
+# kadarı, onu data katmanı söylüyor.
+MIN_MONTHS = 12
 
 AY_ADLARI = [
     "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
@@ -587,13 +590,67 @@ def girdi_formu(registry: dict[str, str] | None) -> tuple[dict[str, float | None
             )
             sil.button("Kaldır", key=f"sil_{kod}", on_click=_fon_cikar, args=(kod,))
 
-    aylar = st.select_slider(
-        "Geçmiş uzunluğu",
-        options=MONTH_CHOICES,
-        value=DEFAULT_MONTHS,
-        format_func=lambda a: f"{a} ay",
-    )
+    aylar = donem_secimi()
     return tutarlar, aylar, st.button("Analiz et", type="primary")
+
+
+def _aylar_slider_degisti() -> None:
+    st.session_state["aylar"] = int(st.session_state["aylar_slider"])
+    st.session_state.pop("aylar_notu", None)
+
+
+def _aylar_kutusu_degisti() -> None:
+    """Kutuya yazılan değeri aralığa çeker ve ne yaptığını not eder."""
+    ham = st.session_state.get("aylar_kutu")
+    if ham is None:
+        return
+    ham = int(ham)
+    kirpik = max(MIN_MONTHS, min(MAX_MONTHS, ham))
+    st.session_state["aylar"] = kirpik
+    if kirpik != ham:
+        st.session_state["aylar_notu"] = (
+            f"{ham} ay istendi. Aralık {MIN_MONTHS} ile {MAX_MONTHS} ay arası, "
+            f"{kirpik} aya çekildi."
+        )
+    else:
+        st.session_state.pop("aylar_notu", None)
+
+
+def donem_secimi() -> int:
+    """
+    Geçmiş uzunluğu: kaydırıcı ve kutu, tek bir değeri paylaşıyor.
+
+    İki widget aynı session_state anahtarını taşıyamıyor, o yüzden doğru
+    değer ayrı bir anahtarda (`aylar`) duruyor ve iki widget da her koşuda
+    oradan dolduruluyor. Hangisi oynatılırsa oynatılsın diğeri onu izliyor.
+    """
+    st.session_state.setdefault("aylar", DEFAULT_MONTHS)
+    st.session_state["aylar_slider"] = st.session_state["aylar"]
+    st.session_state["aylar_kutu"] = st.session_state["aylar"]
+
+    kaydirici, kutu = st.columns([4, 1], vertical_alignment="bottom")
+    kaydirici.slider(
+        "Geçmiş uzunluğu",
+        min_value=MIN_MONTHS,
+        max_value=MAX_MONTHS,
+        step=1,
+        format="%d ay",
+        key="aylar_slider",
+        on_change=_aylar_slider_degisti,
+    )
+    # Kutuda min_value/max_value yok: aralık dışını widget sessizce kırpsın
+    # istemiyoruz, kullanıcı ne yazdığını ve nereye çekildiğini görsün.
+    kutu.number_input(
+        "Ay",
+        step=1,
+        key="aylar_kutu",
+        on_change=_aylar_kutusu_degisti,
+        label_visibility="collapsed",
+    )
+    if st.session_state.get("aylar_notu"):
+        st.caption(st.session_state["aylar_notu"])
+
+    return int(st.session_state["aylar"])
 
 
 def main() -> None:

@@ -9,9 +9,10 @@ takes a date × fund DataFrame and a dict of lot sizes, and it neither prints
 nor persists anything — which is what makes it testable by hand and safe to
 call from a notebook, a script or a dashboard alike.
 
-    from src.analysis import analyze_basket
+    from src.analysis import analyze_basket, find_fund_groups
     result = analyze_basket(prices, {"GAL": 10_000, "AFO": 5_000})
     result.diversification_ratio
+    find_fund_groups(result.correlation, result.weights).groups
 """
 
 from __future__ import annotations
@@ -35,6 +36,11 @@ WEEKS_PER_YEAR = 52
 # stale marks time to catch up, so the correlation reflects the funds rather
 # than their pricing calendars.
 WEEKLY_RULE = "W-FRI"
+
+# Default pair correlation above which two funds count as moving together.
+# 0.85 is deliberately strict: at that level a pair contributes almost
+# nothing to diversification, which is the claim a group is making.
+GROUP_THRESHOLD = 0.85
 
 
 # ----------------------------------------------------------------------
@@ -77,6 +83,41 @@ class BasketAnalysis:
     @property
     def is_single_fund(self) -> bool:
         return len(self.weights) == 1
+
+
+@dataclass(frozen=True)
+class FundGroup:
+    """A set of funds where *every* pair correlates above the threshold."""
+
+    codes: tuple[str, ...]
+    weight: float  # fraction of the basket, 0..1
+    min_correlation: float  # the weakest pair inside the group
+
+    @property
+    def size(self) -> int:
+        return len(self.codes)
+
+
+@dataclass(frozen=True)
+class Standalone:
+    """A fund that pairs with nothing above the threshold."""
+
+    code: str
+    weight: float
+
+
+@dataclass(frozen=True)
+class GroupingResult:
+    """Groups plus the leftovers, for one correlation matrix."""
+
+    groups: list[FundGroup]  # sorted by weight, heaviest first
+    standalone: list[Standalone]  # sorted by weight, heaviest first
+    threshold: float
+
+    @property
+    def grouped_weight(self) -> float:
+        """Share of the basket sitting inside a group. Never exceeds 1.0."""
+        return sum(g.weight for g in self.groups)
 
 
 # ----------------------------------------------------------------------
@@ -206,6 +247,73 @@ def max_drawdown(value: pd.Series) -> Drawdown:
     )
 
 
+def find_fund_groups(
+    correlation: Optional[pd.DataFrame],
+    weights: Mapping[str, float],
+    threshold: float = GROUP_THRESHOLD,
+) -> GroupingResult:
+    """
+    Find sets of funds that all move together, and the funds that don't.
+
+    A group is a set in which *every* pair correlates at or above
+    `threshold` — not a chain. If A-B and B-C both clear the threshold but
+    A-C falls well below it, then A, B and C are not one group: A and C are
+    only related through B, and calling them a single bloc would overstate
+    the concentration. Chained (single-linkage) clustering makes exactly
+    that mistake, so this walks the maximal fully-connected subsets instead.
+
+    A fund can sit in more than one such subset. Each fund is reported once,
+    in the heaviest group it belongs to, so the reported weights partition
+    the basket and never sum above 100%.
+
+    Parameters
+    ----------
+    correlation : pd.DataFrame or None
+        Square fund × fund correlation matrix, as produced by
+        `analyze_basket` (`BasketAnalysis.correlation`). `None` — a
+        single-fund basket — yields no groups and that one fund standalone.
+    weights : mapping of str to float
+        Lot sizes or fractions; normalised internally, so the scale does not
+        matter. Must cover exactly the funds in `correlation`.
+    threshold : float
+        Minimum pair correlation for two funds to count as moving together.
+        Only positive correlations group: a pair that moves in opposite
+        directions is diversification, not concentration, whatever a
+        negative threshold would nominally admit.
+
+    Returns
+    -------
+    GroupingResult
+        Possibly with an empty `groups` list — a basket where nothing moves
+        together is a normal, and good, result, not an error.
+    """
+    if correlation is None:
+        codes = list(weights)
+        w = _normalize_weights(weights, codes)
+        return GroupingResult(
+            groups=[],
+            standalone=_standalone_list(codes, w),
+            threshold=float(threshold),
+        )
+
+    codes = list(correlation.columns)
+    if list(correlation.index) != codes:
+        raise ValueError("correlation must be square with matching row/column labels")
+    w = _normalize_weights(weights, codes)
+
+    neighbours = _adjacency(correlation, codes, threshold)
+    cliques = [c for c in _maximal_cliques(codes, neighbours) if len(c) >= 2]
+
+    groups = _assign_disjoint(cliques, w, correlation)
+    grouped = {code for g in groups for code in g.codes}
+
+    return GroupingResult(
+        groups=groups,
+        standalone=_standalone_list([c for c in codes if c not in grouped], w),
+        threshold=float(threshold),
+    )
+
+
 # ----------------------------------------------------------------------
 # Internals
 # ----------------------------------------------------------------------
@@ -271,3 +379,111 @@ def _diversification_ratio(weighted_vol: float, basket_vol: float) -> float:
 
 def _annualize(weekly_vol: float) -> float:
     return float(weekly_vol) * np.sqrt(WEEKS_PER_YEAR)
+
+
+def _adjacency(
+    correlation: pd.DataFrame,
+    codes: list[str],
+    threshold: float,
+) -> dict[str, set[str]]:
+    """Who moves with whom: an edge per pair at or above the threshold.
+
+    Anything not strictly positive is dropped regardless of the threshold,
+    and a NaN — which is what a flat, zero-variance series correlates to —
+    is treated as no edge rather than as a match.
+    """
+    neighbours: dict[str, set[str]] = {c: set() for c in codes}
+    for i, a in enumerate(codes):
+        for b in codes[i + 1:]:
+            rho = correlation.at[a, b]
+            if pd.isna(rho) or rho <= 0 or rho < threshold:
+                continue
+            neighbours[a].add(b)
+            neighbours[b].add(a)
+    return neighbours
+
+
+def _maximal_cliques(
+    codes: list[str],
+    neighbours: Mapping[str, set[str]],
+) -> list[tuple[str, ...]]:
+    """
+    Every maximal fully-connected subset, via plain Bron-Kerbosch.
+
+    Exponential in the worst case, which is fine here: a basket holds 2-15
+    funds, so the recursion is over a graph small enough that the pivotless
+    version stays both fast and readable.
+    """
+    order = {c: i for i, c in enumerate(codes)}
+    found: list[tuple[str, ...]] = []
+
+    def expand(clique: set[str], candidates: set[str], excluded: set[str]) -> None:
+        if not candidates and not excluded:
+            found.append(tuple(sorted(clique, key=order.__getitem__)))
+            return
+        for code in sorted(candidates, key=order.__getitem__):
+            expand(
+                clique | {code},
+                candidates & neighbours[code],
+                excluded & neighbours[code],
+            )
+            candidates = candidates - {code}
+            excluded = excluded | {code}
+
+    expand(set(), set(codes), set())
+    return found
+
+
+def _assign_disjoint(
+    cliques: list[tuple[str, ...]],
+    weights: Mapping[str, float],
+    correlation: pd.DataFrame,
+) -> list[FundGroup]:
+    """
+    Turn overlapping cliques into a partition, heaviest group first.
+
+    Repeatedly takes the heaviest remaining candidate and removes its funds
+    from the others. A clique stripped of some members is still fully
+    connected, so what is left of a candidate stays a valid group — it just
+    may shrink below two funds, at which point it stops being one.
+    """
+    groups: list[FundGroup] = []
+    taken: set[str] = set()
+
+    while True:
+        candidates = []
+        for clique in cliques:
+            members = tuple(c for c in clique if c not in taken)
+            if len(members) < 2:
+                continue
+            candidates.append((sum(weights[c] for c in members), members))
+        if not candidates:
+            return groups
+
+        # Heaviest wins; ties go to the larger group, then to fund order, so
+        # the same basket always groups the same way.
+        weight, members = max(candidates, key=lambda c: (c[0], len(c[1]), c[1]))
+        groups.append(
+            FundGroup(
+                codes=members,
+                weight=float(weight),
+                min_correlation=_min_pair_correlation(members, correlation),
+            )
+        )
+        taken.update(members)
+
+
+def _min_pair_correlation(codes: tuple[str, ...], correlation: pd.DataFrame) -> float:
+    """The weakest link in a group — how tightly it actually holds together."""
+    return float(
+        min(
+            correlation.at[a, b]
+            for i, a in enumerate(codes)
+            for b in codes[i + 1:]
+        )
+    )
+
+
+def _standalone_list(codes: list[str], weights: Mapping[str, float]) -> list[Standalone]:
+    ungrouped = [Standalone(code=c, weight=float(weights[c])) for c in codes]
+    return sorted(ungrouped, key=lambda s: (-s.weight, s.code))

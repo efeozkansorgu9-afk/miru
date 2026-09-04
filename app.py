@@ -13,6 +13,8 @@ bir dile çevirmek ve teknik ayrıntıyı isteyene ayrıca göstermek.
 
 from __future__ import annotations
 
+from html import escape
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -39,6 +41,37 @@ AY_ADLARI = [
 # gerekiyor, çünkü ters hareket eden fon çifti gruplamaya girmez ama teknik
 # detayda bilgi taşır.
 HEATMAP_SCALE = "RdBu_r"
+
+# Fon adları 60 karaktere kadar çıkıyor ve tabloyu yatay kaydırmaya zorluyor.
+# Tabloyu sabit sütun genişlikleriyle kendimiz çiziyoruz: ad kısaltılıp tam
+# hali title'a konuyor, çünkü st.dataframe'i canvas'a çiziyor ve hücre
+# üstünde tooltip göstermiyor.
+AD_UZUNLUGU = 34
+
+TABLO_STILI = """
+<style>
+table.fr { width: 100%; table-layout: fixed; border-collapse: collapse;
+           font-size: 0.875rem; margin-bottom: 1rem; }
+table.fr th, table.fr td { text-align: left; padding: 0.45rem 0.6rem;
+           border-bottom: 1px solid rgba(128,128,128,0.25);
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+table.fr th { font-weight: 600; opacity: 0.7; }
+table.fr td.sayi, table.fr th.sayi { text-align: right; }
+</style>
+"""
+
+# Yüzdeler Türkçede okundukları gibi ek alıyor: %26'sı, %30'u, %40'ı.
+_YUZDE_EKI_BIRLER = {0: "'ı", 1: "'i", 2: "'si", 3: "'ü", 4: "'ü", 5: "'i",
+                     6: "'sı", 7: "'si", 8: "'i", 9: "'u"}
+_YUZDE_EKI_ONLAR = {0: "'ı", 1: "'u", 2: "'si", 3: "'u", 4: "'ı", 5: "'si",
+                    6: "'ı", 7: "'i", 8: "'i", 9: "'ı", 10: "'ü"}
+
+_SAYI_KELIME = {2: "iki", 3: "üç", 4: "dört", 5: "beş", 6: "altı", 7: "yedi",
+                8: "sekiz", 9: "dokuz", 10: "on"}
+
+# Grubun sepetteki payı, başlığın ne kadar yer kaplayacağını belirliyor.
+BASKIN_PAY = 0.50
+KAYDA_DEGER_PAY = 0.25
 
 
 # ----------------------------------------------------------------------
@@ -81,6 +114,31 @@ def yuzde(x: float) -> str:
 
 def para(x: float) -> str:
     return f"{x:,.0f} TL".replace(",", ".")
+
+
+def yuzde_isaretli(x: float) -> str:
+    """Getiri için: eksi işareti yüzdenin önünde durur."""
+    if pd.isna(x):
+        return "hesaplanamadı"
+    return f"-%{abs(round(x * 100))}" if x < 0 else f"%{round(x * 100)}"
+
+
+def yuzde_eki(oran: float) -> str:
+    """'%26' + ek -> \"%26'sı\". Ek, sayının okunuşuna göre değişiyor."""
+    n = round(oran * 100)
+    if n == 100:
+        return "'ü"
+    if n % 10 == 0:
+        return _YUZDE_EKI_ONLAR.get(n // 10, "'ı")
+    return _YUZDE_EKI_BIRLER[n % 10]
+
+
+def sayi_kelime(n: int) -> str:
+    return _SAYI_KELIME.get(n, str(n))
+
+
+def kisalt(metin: str, n: int = AD_UZUNLUGU) -> str:
+    return metin if len(metin) <= n else metin[: n - 1].rstrip() + "…"
 
 
 def tarih(ts: pd.Timestamp) -> str:
@@ -147,6 +205,17 @@ def birlikte_hareket_cumlesi(kodlar: tuple[str, ...], min_corr: float) -> str:
     return f"{kod_listesi(kodlar)} {nasil}. {dusus}"
 
 
+def orta_pay_basligi(groups: GroupingResult, onek: str, pay: float) -> str:
+    """Payın dörtte bir ile yarı arasında olduğu hal: bildirim tonu."""
+    if len(groups.groups) == 1:
+        g = groups.groups[0]
+        return (
+            f"{onek} {yuzde(pay)}{yuzde_eki(pay)} birlikte hareket eden "
+            f"{sayi_kelime(len(g.codes))} fonda: {kod_listesi(g.codes)}."
+        )
+    return f"{onek} {yuzde(pay)}{yuzde_eki(pay)} birlikte hareket eden fon gruplarında."
+
+
 def ana_sonuc(
     groups: GroupingResult,
     analysis: BasketAnalysis,
@@ -164,27 +233,36 @@ def ana_sonuc(
         )
         return
 
-    if groups.groups:
-        pay = groups.grouped_weight
-        if kismi:
-            st.subheader(f"İncelemeye giren paranın {yuzde(pay)}'i birlikte hareket eden fonlarda.")
-        else:
-            st.subheader(f"Paranın {yuzde(pay)}'i birlikte hareket eden fonlarda.")
-        for g in groups.groups:
-            st.write(birlikte_hareket_cumlesi(g.codes, g.min_correlation))
-    else:
+    pay = groups.grouped_weight
+    onek = "İncelemeye giren paranın" if kismi else "Paranın"
+
+    if not groups.groups:
         st.subheader("Birlikte hareket eden fon çifti bulunamadı.")
         st.write(
             "Fonlarının hiçbiri diğeriyle yüksek korelasyon göstermiyor. "
             "Bu, sepetinin risksiz olduğu anlamına gelmez. Aynı ekonomik şoka "
             "birlikte tepki verebilirler."
         )
+    elif pay > BASKIN_PAY:
+        st.subheader(f"{onek} yarısından fazlası birlikte hareket eden fonlarda.")
+        for g in groups.groups:
+            st.write(birlikte_hareket_cumlesi(g.codes, g.min_correlation))
+    elif pay >= KAYDA_DEGER_PAY:
+        st.subheader(orta_pay_basligi(groups, onek, pay))
+        for g in groups.groups:
+            st.write(birlikte_hareket_cumlesi(g.codes, g.min_correlation))
+    else:
+        # Pay küçük. Başlık grubu öne çıkarmıyor ama bilgi durmaya devam
+        # ediyor: hemen altında bir cümle, tabloda da grup etiketi.
+        st.subheader(f"{onek} çoğu ayrı hareket eden fonlarda.")
+        st.write(
+            f"Birlikte hareket eden fonlar da var. Sepetin {yuzde(pay)}"
+            f"{yuzde_eki(pay)} tutuyorlar. Tabloda grup olarak işaretli."
+        )
+        for g in groups.groups:
+            st.write(birlikte_hareket_cumlesi(g.codes, g.min_correlation))
 
-    st.dataframe(
-        dagilim_tablosu(groups, analysis, isimler, tutarlar),
-        hide_index=True,
-        width="stretch",
-    )
+    dagilim_tablosu(groups, analysis, isimler, tutarlar)
 
 
 def dagilim_tablosu(
@@ -192,31 +270,59 @@ def dagilim_tablosu(
     analysis: BasketAnalysis,
     isimler: dict[str, str],
     tutarlar: dict[str, float],
-) -> pd.DataFrame:
-    """Fon fon ağırlık listesi, gruplar üstte."""
+) -> None:
+    """Fon fon ağırlık listesi, gruplar üstte. Sabit genişlik, kaydırma yok."""
     satirlar = []
     for i, g in enumerate(groups.groups, 1):
         for kod in g.codes:
             satirlar.append(
-                {
-                    "Fon": kod,
-                    "Adı": isimler.get(kod, ""),
-                    "Tutar": para(tutarlar.get(kod, 0.0)),
-                    "Payı": yuzde(analysis.weights[kod]),
-                    "Durum": f"{i}. grup, toplam {yuzde(g.weight)}",
-                }
+                (kod, isimler.get(kod, ""), para(tutarlar.get(kod, 0.0)),
+                 yuzde(analysis.weights[kod]), f"{i}. grup, toplam {yuzde(g.weight)}")
             )
-    for s in groups.standalone:
+    for s_ in groups.standalone:
         satirlar.append(
-            {
-                "Fon": s.code,
-                "Adı": isimler.get(s.code, ""),
-                "Tutar": para(tutarlar.get(s.code, 0.0)),
-                "Payı": yuzde(s.weight),
-                "Durum": "Tek başına",
-            }
+            (s_.code, isimler.get(s_.code, ""), para(tutarlar.get(s_.code, 0.0)),
+             yuzde(s_.weight), "Tek başına")
         )
-    return pd.DataFrame(satirlar)
+    tablo_ciz(("Fon", "Adı", "Tutar", "Payı", "Durum"), satirlar, ad_sutunu=1)
+
+
+def tablo_ciz(basliklar: tuple[str, ...], satirlar: list[tuple], ad_sutunu: int) -> None:
+    """
+    Sabit sütun genişlikli tablo.
+
+    Fon adı sütunu kısaltılıp tam adı `title` olarak veriliyor: tabloyu
+    kaydırmadan okunur tutmanın yolu bu. `st.dataframe` tabloyu canvas'a
+    çizdiği için hücre üstünde tooltip gösteremiyor, o yüzden burada
+    kullanılmıyor.
+    """
+    genislikler = {0: "11%", 1: "40%", 2: "17%", 3: "10%", 4: "22%"}
+    sayi_sutunlari = {2, 3}
+
+    ust = "".join(
+        f'<th class="{"sayi" if i in sayi_sutunlari else ""}" '
+        f'style="width:{genislikler.get(i, "auto")}">{escape(b)}</th>'
+        for i, b in enumerate(basliklar)
+    )
+    govde = []
+    for satir in satirlar:
+        hucreler = []
+        for i, deger in enumerate(satir):
+            metin = str(deger)
+            sinif = "sayi" if i in sayi_sutunlari else ""
+            if i == ad_sutunu:
+                hucreler.append(
+                    f'<td class="{sinif}" title="{escape(metin)}">{escape(kisalt(metin))}</td>'
+                )
+            else:
+                hucreler.append(f'<td class="{sinif}">{escape(metin)}</td>')
+        govde.append("<tr>" + "".join(hucreler) + "</tr>")
+
+    st.markdown(
+        TABLO_STILI + f"<table class='fr'><thead><tr>{ust}</tr></thead>"
+        f"<tbody>{''.join(govde)}</tbody></table>",
+        unsafe_allow_html=True,
+    )
 
 
 def disarida_kalanlar(
@@ -256,17 +362,14 @@ def disarida_kalanlar(
 
     st.markdown(f"**Bütün fonlar dahil edildiğinde ({kisa}lık dönem):**")
     if groups.groups:
-        st.write(f"Paranın {yuzde(groups.grouped_weight)}'i birlikte hareket eden fonlarda.")
+        gpay = groups.grouped_weight
+        st.write(f"Paranın {yuzde(gpay)}{yuzde_eki(gpay)} birlikte hareket eden fonlarda.")
         for g in groups.groups:
             st.write(birlikte_hareket_cumlesi(g.codes, g.min_correlation))
     else:
         st.write("Bu dönemde birlikte hareket eden fon çifti bulunamadı.")
 
-    st.dataframe(
-        dagilim_tablosu(groups, analysis, isimler, tam_tutarlar),
-        hide_index=True,
-        width="stretch",
-    )
+    dagilim_tablosu(groups, analysis, isimler, tam_tutarlar)
 
     if ds.full_coverage.below_weekly_threshold:
         st.warning(
@@ -280,7 +383,6 @@ def basarisiz_kodlar(ds: FundDataset) -> None:
     """Hiç veri dönmeyen kodlar. Sessizce atlanmıyor."""
     if not ds.failed_codes:
         return
-    st.divider()
     for kod, fail in ds.failed_codes.items():
         if fail.kind == "unknown_code":
             st.error(f"{kod}: TEFAS'ta böyle bir fon listelenmiyor. Kodu kontrol et.")
@@ -298,6 +400,7 @@ def teknik_detay(
     groups: GroupingResult,
     ds: FundDataset,
     etiket: str,
+    toplam_tl: float,
 ) -> None:
     with st.expander("Teknik detay"):
         st.caption(
@@ -330,25 +433,17 @@ def teknik_detay(
             )
 
         st.markdown("**Fon oynaklıkları (yıllık)**")
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "Fon": kod,
-                        "Adı": ds.fund_names.get(kod, ""),
-                        "Payı": yuzde(analysis.weights[kod]),
-                        "Oynaklık": yuzde(vol),
-                    }
-                    for kod, vol in analysis.fund_volatility.items()
-                ]
-            ),
-            hide_index=True,
-            width="stretch",
+        tablo_ciz(
+            ("Fon", "Adı", "Payı", "Oynaklık"),
+            [
+                (kod, ds.fund_names.get(kod, ""), yuzde(analysis.weights[kod]), yuzde(vol))
+                for kod, vol in analysis.fund_volatility.items()
+            ],
+            ad_sutunu=1,
         )
 
         st.markdown("**Sepet değeri**")
-        st.caption("Başlangıçta 1.00 kabul edilmiş, alım sonrası hiç yeniden dengelenmemiş.")
-        st.plotly_chart(deger_grafigi(analysis.basket_value), width="stretch")
+        sepet_degeri(analysis.basket_value, toplam_tl)
 
         seyrek = [k for k in ds.sparse_codes if k in analysis.weights]
         if seyrek:
@@ -377,9 +472,31 @@ def korelasyon_haritasi(corr: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def deger_grafigi(value: pd.Series) -> go.Figure:
-    fig = px.line(x=value.index, y=value.values, labels={"x": "", "y": ""})
-    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=300)
+def sepet_degeri(value: pd.Series, toplam_tl: float) -> None:
+    """Sepetin lira değeri, üstünde toplam ve yıllık ortalama getiriyle."""
+    seri = value * toplam_tl
+    toplam_getiri = float(seri.iloc[-1] / seri.iloc[0] - 1)
+    yil = (seri.index[-1] - seri.index[0]).days / 365.25
+    yillik = (1 + toplam_getiri) ** (1 / yil) - 1 if yil > 0 else float("nan")
+
+    c1, c2 = st.columns(2)
+    c1.metric("Toplam getiri", yuzde_isaretli(toplam_getiri))
+    c2.metric("Yıllık ortalama getiri", yuzde_isaretli(yillik))
+    st.caption(
+        f"Başlangıçtaki {para(seri.iloc[0])} bugün {para(seri.iloc[-1])}. "
+        f"Alım sonrası hiç yeniden dengelenmemiş."
+    )
+    st.plotly_chart(deger_grafigi(seri), width="stretch")
+
+
+def deger_grafigi(seri: pd.Series) -> go.Figure:
+    fig = px.line(x=seri.index, y=seri.values, labels={"x": "", "y": ""})
+    fig.update_traces(hovertemplate="%{x|%d.%m.%Y}<br>%{y:,.0f} TL<extra></extra>")
+    fig.update_yaxes(ticksuffix=" TL", tickformat=",.0f", separatethousands=True)
+    # Plotly ay adlarını İngilizce basıyor. Sayısal biçim dilden bağımsız.
+    fig.update_xaxes(tickformat="%m.%Y")
+    # Türkçe ayraçlar: binlik nokta, ondalık virgül.
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=300, separators=",.")
     return fig
 
 
@@ -388,39 +505,87 @@ def deger_grafigi(value: pd.Series) -> go.Figure:
 # ----------------------------------------------------------------------
 
 
-def girdi_formu(registry: dict[str, str] | None) -> tuple[dict[str, float], int, bool]:
-    """Fon seçimi, tutarlar ve dönem. Sepet ve 'analiz et' basıldı mı döner."""
+def _fon_ekle() -> None:
+    """Arama kutusundaki fonu sepete alır ve kutuyu boşaltır."""
+    etiket = st.session_state.get("fon_arama")
+    kod = st.session_state.get("_etiketler", {}).get(etiket)
+    if kod and kod not in st.session_state["secili_fonlar"]:
+        st.session_state["secili_fonlar"].append(kod)
+    st.session_state["fon_arama"] = None
+    st.session_state.pop("sepet", None)
+
+
+def _kod_ekle() -> None:
+    """Fon listesi alınamadığında elle yazılan kod."""
+    kod = (st.session_state.get("kod_girisi") or "").strip().upper()
+    if kod and kod not in st.session_state["secili_fonlar"]:
+        st.session_state["secili_fonlar"].append(kod)
+    st.session_state["kod_girisi"] = ""
+    st.session_state.pop("sepet", None)
+
+
+def _fon_cikar(kod: str) -> None:
+    if kod in st.session_state["secili_fonlar"]:
+        st.session_state["secili_fonlar"].remove(kod)
+    st.session_state.pop(f"tutar_{kod}", None)
+    st.session_state.pop("sepet", None)
+
+
+def girdi_formu(registry: dict[str, str] | None) -> tuple[dict[str, float | None], int, bool]:
+    """
+    Fon seçimi, tutarlar ve dönem.
+
+    Arama kutusu en üstte ve sabit: seçilen fonlar altına ekleniyor, böylece
+    liste uzadıkça kutu yerinden oynamıyor.
+    """
     st.markdown("### Sepetin")
+    st.session_state.setdefault("secili_fonlar", [])
 
     if registry:
-        etiketler = {f"{kod} - {ad}" if ad else kod: kod for kod, ad in sorted(registry.items())}
-        secilen = st.multiselect(
-            "Fonlar",
-            options=sorted(etiketler),
-            help="Fon kodundan ya da adından arayabilirsin.",
+        etiketler = {f"{k} - {v}" if v else k: k for k, v in sorted(registry.items())}
+        st.session_state["_etiketler"] = etiketler
+        ara, ekle = st.columns([5, 1], vertical_alignment="bottom")
+        ara.selectbox(
+            "Fon ara",
+            options=list(etiketler),
+            index=None,
+            key="fon_arama",
             placeholder="Fon kodu veya adı yaz",
+            help="Fon kodundan ya da adından arayabilirsin.",
         )
-        kodlar = [etiketler[e] for e in secilen]
+        ekle.button("Ekle", on_click=_fon_ekle, width="stretch")
     else:
         st.warning(
             "TEFAS fon listesi alınamadı, otomatik tamamlama çalışmıyor. "
-            "Kodları virgülle ayırarak yazabilirsin."
+            "Fon kodunu elle yazabilirsin."
         )
-        ham = st.text_input("Fonlar", placeholder="GAL, AFO, TI2")
-        kodlar = [k.strip().upper() for k in ham.split(",") if k.strip()]
+        ara, ekle = st.columns([5, 1], vertical_alignment="bottom")
+        ara.text_input("Fon kodu", key="kod_girisi", placeholder="GAL")
+        ekle.button("Ekle", on_click=_kod_ekle, width="stretch")
 
-    tutarlar: dict[str, float] = {}
-    if kodlar:
-        st.markdown("### Tutarlar")
-        for satir in range(0, len(kodlar), 3):
-            for kod, sutun in zip(kodlar[satir : satir + 3], st.columns(3)):
-                tutarlar[kod] = sutun.number_input(
-                    f"{kod} (TL)",
-                    min_value=0.0,
-                    value=10_000.0,
-                    step=1_000.0,
-                    key=f"tutar_{kod}",
-                )
+    secili = st.session_state["secili_fonlar"]
+    tutarlar: dict[str, float | None] = {}
+
+    if not secili:
+        st.caption("Henüz fon eklemedin. Yukarıdan ara ve Ekle'ye bas.")
+    else:
+        st.markdown("### Seçtiğin fonlar")
+        for kod in list(secili):
+            ad, tutar, sil = st.columns([4, 2, 1], vertical_alignment="center")
+            adi = (registry or {}).get(kod, "")
+            # Kod ve ad tek satırda: satır yükselmeyince tutar kutusu ve
+            # kaldır butonu hizada kalıyor.
+            ad.markdown(f"**{kod}** · {kisalt(adi, 38)}" if adi else f"**{kod}**")
+            tutarlar[kod] = tutar.number_input(
+                f"{kod} tutarı",
+                key=f"tutar_{kod}",
+                value=None,
+                min_value=0.0,
+                step=1_000.0,
+                placeholder="Tutar giriniz",
+                label_visibility="collapsed",
+            )
+            sil.button("Kaldır", key=f"sil_{kod}", on_click=_fon_cikar, args=(kod,))
 
     aylar = st.select_slider(
         "Geçmiş uzunluğu",
@@ -456,13 +621,13 @@ def main() -> None:
     if not tutarlar:
         st.info("Önce en az bir fon seç.")
         return
-    pozitif = {k: v for k, v in tutarlar.items() if v > 0}
+    pozitif = {k: float(v) for k, v in tutarlar.items() if v}
     if not pozitif:
-        st.error("Tutarların hepsi sıfır. En az bir fona sıfırdan büyük bir tutar gir.")
+        st.error("Hiçbir fona tutar girilmedi. Her fonun yanındaki kutuya tutarını yaz.")
         return
     if len(pozitif) < len(tutarlar):
         atlanan = kod_listesi([k for k in tutarlar if k not in pozitif])
-        st.info(f"{atlanan} sıfır tutarla girildiği için incelemeye alınmadı.")
+        st.info(f"{atlanan} için tutar girilmediği için incelemeye alınmadı.")
 
     with st.spinner("TEFAS'tan fiyatlar alınıyor."):
         try:
@@ -471,6 +636,7 @@ def main() -> None:
             st.error(f"Veri alınamadı: {exc}")
             return
 
+    st.divider()
     basarisiz_kodlar(ds)
 
     ana_matris = ds.trimmed
@@ -506,7 +672,7 @@ def main() -> None:
         if len(ana_matris.columns) > 1
         else f"{ana_matris.columns[0]} fonunun dönemi"
     )
-    teknik_detay(analysis, groups, ds, etiket)
+    teknik_detay(analysis, groups, ds, etiket, sum(ana_tutarlar.values()))
 
 
 if __name__ == "__main__":

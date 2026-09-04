@@ -75,6 +75,9 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - Never calls a basket safe or well diversified. It reports what it found and, when it found nothing, says so without reassuring.
 - The excluded-funds section is drawn only when `excluded_codes` is non-empty, below the main result, and carries the `full` matrix result plus the `below_weekly_threshold` warning.
 - Fund picker autocompletes over `list_funds()` labels ("GAL - GARANTİ PORTFÖY ..."), so searching by code and by fund name both work. Registry and price fetches are `@st.cache_data` with a one-day TTL.
+- The picker is a fixed selectbox plus an "Ekle" button; chosen funds are listed below it with their amount field and a "Kaldır" button, so the search box does not move as the list grows. Amounts start empty (`value=None`), and a fund with no amount is left out of the analysis with a message.
+- How loudly a group is reported scales with its weight: over 50% leads the headline, 25-50% gets a factual headline naming the funds, under 25% stays out of the headline entirely and lives in a sentence below plus the table's group label. The information is never dropped, only de-emphasised.
+- Tables are rendered as fixed-layout HTML (`tablo_ciz`), not `st.dataframe`: fund titles run to 60 characters, and only HTML gives a per-row `title` tooltip for the truncated name. `st.dataframe` draws to a canvas and cannot.
 
 ## Key Details
 

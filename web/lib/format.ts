@@ -8,20 +8,7 @@
  * number is *read*, and "3 yıl" and "5 hafta" do not take the same one.
  */
 
-const AY_ADLARI = [
-  "Ocak",
-  "Şubat",
-  "Mart",
-  "Nisan",
-  "Mayıs",
-  "Haziran",
-  "Temmuz",
-  "Ağustos",
-  "Eylül",
-  "Ekim",
-  "Kasım",
-  "Aralık",
-];
+import { AY_ADLARI } from "@/lib/date";
 
 /* ------------------------------------------------------------------ */
 /* Numbers                                                             */

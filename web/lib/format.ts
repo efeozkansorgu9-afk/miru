@@ -1,0 +1,191 @@
+/**
+ * Turkish number, money and date formatting.
+ *
+ * Every sentence in this product is written on the frontend, so the pieces
+ * those sentences are built from live here rather than being reinvented in
+ * each component. Ported from `app.py`, which had the same job and worked out
+ * the same edge cases: a percentage takes a suffix that depends on how the
+ * number is *read*, and "3 yıl" and "5 hafta" do not take the same one.
+ */
+
+const AY_ADLARI = [
+  "Ocak",
+  "Şubat",
+  "Mart",
+  "Nisan",
+  "Mayıs",
+  "Haziran",
+  "Temmuz",
+  "Ağustos",
+  "Eylül",
+  "Ekim",
+  "Kasım",
+  "Aralık",
+];
+
+/* ------------------------------------------------------------------ */
+/* Numbers                                                             */
+/* ------------------------------------------------------------------ */
+
+/** 0.38 becomes "%38". Turkish puts the sign before the number. */
+export function yuzde(x: number): string {
+  return `%${Math.round(x * 100)}`;
+}
+
+/**
+ * A percentage that can be negative, for returns.
+ *
+ * The minus sign goes in front of the whole thing, not between the sign and
+ * the digits: "-%12", never "%-12".
+ */
+export function yuzdeIsaretli(x: number): string {
+  if (!Number.isFinite(x)) return "hesaplanamadı";
+  const n = Math.round(Math.abs(x) * 100);
+  return x < 0 ? `-%${n}` : `%${n}`;
+}
+
+/** Two decimals, for a ratio nobody reads as a percentage. */
+export function oran(x: number): string {
+  return x.toFixed(2).replace(".", ",");
+}
+
+/** Lira, rounded to whole units and grouped the Turkish way: "1.250.000 TL". */
+export function para(x: number): string {
+  const sign = x < 0 ? "-" : "";
+  const whole = Math.round(Math.abs(x));
+  return `${sign}${whole.toLocaleString("tr-TR", { maximumFractionDigits: 0 })} TL`;
+}
+
+/**
+ * The suffix a percentage takes when it becomes the subject of a sentence.
+ *
+ * "%26" plus a suffix is "%26'sı", because it is read "yüzde yirmi altı".
+ * The suffix follows the last spoken syllable, so it is chosen from the last
+ * digit, and from the tens when the number ends in zero. Getting this wrong
+ * is the difference between a sentence a Turkish speaker reads without
+ * noticing and one that reads like a machine wrote it.
+ */
+const EKI_BIRLER: Record<number, string> = {
+  0: "'ı",
+  1: "'i",
+  2: "'si",
+  3: "'ü",
+  4: "'ü",
+  5: "'i",
+  6: "'sı",
+  7: "'si",
+  8: "'i",
+  9: "'u",
+};
+
+const EKI_ONLAR: Record<number, string> = {
+  0: "'ı",
+  1: "'u",
+  2: "'si",
+  3: "'u",
+  4: "'ı",
+  5: "'si",
+  6: "'ı",
+  7: "'i",
+  8: "'i",
+  9: "'ı",
+  10: "'ü",
+};
+
+export function yuzdeEki(x: number): string {
+  const n = Math.round(x * 100);
+  if (n === 100) return "'ü";
+  if (n % 10 === 0) return EKI_ONLAR[n / 10] ?? "'ı";
+  return EKI_BIRLER[n % 10];
+}
+
+const SAYI_KELIME: Record<number, string> = {
+  2: "iki",
+  3: "üç",
+  4: "dört",
+  5: "beş",
+  6: "altı",
+  7: "yedi",
+  8: "sekiz",
+  9: "dokuz",
+  10: "on",
+};
+
+/** "iki fonda" reads better than "2 fonda" for the small counts we get. */
+export function sayiKelime(n: number): string {
+  return SAYI_KELIME[n] ?? String(n);
+}
+
+/* ------------------------------------------------------------------ */
+/* Dates and spans                                                     */
+/* ------------------------------------------------------------------ */
+
+/** "2026-09-04" becomes "4 Eylül 2026". Parsed as a plain calendar date. */
+export function tarih(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${d} ${AY_ADLARI[m - 1]} ${y}`;
+}
+
+/** "2026-08" becomes "Ağustos 2026". */
+export function ayYil(iso: string): string {
+  const [y, m] = iso.split("-").map(Number);
+  if (!y || !m) return iso;
+  return `${AY_ADLARI[m - 1]} ${y}`;
+}
+
+/** Whole days between two ISO dates. */
+export function gunFarki(baslangic: string, bitis: string): number {
+  const a = Date.parse(`${baslangic}T00:00:00Z`);
+  const b = Date.parse(`${bitis}T00:00:00Z`);
+  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+  return Math.round((b - a) / 86_400_000);
+}
+
+/** A day count as something a person would say: "3 yıl", "2 ay", "5 hafta". */
+export function sure(gunSayisi: number): string {
+  if (gunSayisi >= 350) return `${Math.round(gunSayisi / 365)} yıl`;
+  if (gunSayisi >= 25) return `${Math.round(gunSayisi / 30)} ay`;
+  return `${Math.max(1, Math.round(gunSayisi / 7))} hafta`;
+}
+
+/**
+ * "2 ay" becomes "2 ayla".
+ *
+ * The instrumental suffix fuses with a word ending in a consonant and takes a
+ * buffer after a vowel, which is why this cannot be a single appended string.
+ */
+export function sureIle(metin: string): string {
+  if (metin.endsWith("hafta")) return `${metin}yla`;
+  if (metin.endsWith("yıl") || metin.endsWith("ay")) return `${metin}la`;
+  return `${metin} ile`;
+}
+
+/** Length of a matrix window, or null when it has none. */
+export function araligiSure(start: string | null, end: string | null): string | null {
+  if (!start || !end) return null;
+  return sure(gunFarki(start, end));
+}
+
+/* ------------------------------------------------------------------ */
+/* Lists and text                                                      */
+/* ------------------------------------------------------------------ */
+
+/** ["A", "B", "C"] becomes "A, B ve C". */
+export function kodListesi(kodlar: readonly string[]): string {
+  const list = [...kodlar];
+  if (list.length === 0) return "";
+  if (list.length === 1) return list[0];
+  return `${list.slice(0, -1).join(", ")} ve ${list[list.length - 1]}`;
+}
+
+/**
+ * Shorten a fund title so a fixed width column stays readable.
+ *
+ * The full title always goes into a `title` attribute next to it: shortening
+ * is a layout decision, and nothing the user might need should only exist in
+ * the truncated form.
+ */
+export function kisalt(metin: string, n = 44): string {
+  return metin.length <= n ? metin : `${metin.slice(0, n - 1).trimEnd()}…`;
+}

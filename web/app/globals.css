@@ -80,6 +80,18 @@
   --color-attention-surface-strong: oklch(0.421 0.095 57.708);
 
   /* ------------------------------------------------------------------
+     Chart and heatmap colours.
+
+     Deliberately outside the money vocabulary above. A correlation of 0.9
+     is not good news or bad news, and a second line on a chart is not the
+     losing one, so neither may be painted in gain green or loss red. Two
+     hues far enough apart to tell apart at one pixel wide, each with a dark
+     theme partner for the same reason the money colours have one.
+     ------------------------------------------------------------------ */
+  --color-series-alt-light: oklch(0.55 0.105 205);
+  --color-series-alt-dark: oklch(0.78 0.105 205);
+
+  /* ------------------------------------------------------------------
      Neutrals. A faintly warm grey rather than a pure one, so the brand
      purple sits on it without the page reading blue and cold.
      ------------------------------------------------------------------ */
@@ -221,6 +233,7 @@
   --color-positive: var(--positive);
   --color-negative: var(--negative);
   --color-caution: var(--caution);
+  --color-series-alt: var(--series-alt);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -245,6 +258,7 @@
   --positive: var(--color-gain);
   --negative: var(--color-loss);
   --caution: var(--color-attention);
+  --series-alt: var(--color-series-alt-light);
 }
 
 .dark {
@@ -266,6 +280,7 @@
   --positive: var(--color-gain-strong);
   --negative: var(--color-loss-strong);
   --caution: var(--color-attention-strong);
+  --series-alt: var(--color-series-alt-dark);
 }
 
 @layer base {
@@ -307,6 +322,55 @@
   @media (prefers-reduced-motion: reduce) {
     .theme-transition,
     .theme-transition * {
+      transition: none;
+    }
+  }
+}
+
+/* ====================================================================
+   Disclosure
+   ====================================================================
+   The technical panel is a native `<details>`, animated in CSS.
+
+   Native because the content has to be in the document whether or not any
+   JavaScript ran: these are the numbers behind the finding, and a panel that
+   is empty until a bundle arrives is a panel that is sometimes empty. The
+   browser also gives the keyboard behaviour, the accessible name and the
+   find-in-page expansion for free.
+
+   `::details-content` is what makes it open smoothly. `interpolate-size`
+   is what lets `block-size` animate to `auto`, which is the whole trick:
+   without it the only animatable end state is a pixel height nobody knows
+   in advance. Browsers without either simply snap open, which is the
+   correct thing to lose.
+   ==================================================================== */
+@layer utilities {
+  .disclosure {
+    interpolate-size: allow-keywords;
+  }
+
+  .disclosure::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size 300ms var(--ease-out-soft),
+      content-visibility 300ms allow-discrete;
+  }
+
+  .disclosure[open]::details-content {
+    block-size: auto;
+  }
+
+  /* The marker is drawn by the summary itself, so the default triangle goes. */
+  .disclosure > summary::-webkit-details-marker {
+    display: none;
+  }
+  .disclosure > summary {
+    list-style: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .disclosure::details-content {
       transition: none;
     }
   }

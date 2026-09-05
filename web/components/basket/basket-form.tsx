@@ -28,17 +28,28 @@ import { StagedTable } from "./staged-table";
  * to look is not a judgement a user is equipped to make, and getting it wrong
  * quietly changes the answer, so the analysis uses everything there is.
  */
-export function BasketForm() {
+export function BasketForm({
+  onAnalyze,
+  busy = false,
+}: {
+  /** Hands the basket to whoever owns the result. Called only when valid. */
+  onAnalyze: (
+    mode: "simple" | "staged",
+    funds: BasketFund[],
+    purchases: PurchaseRow[],
+  ) => void;
+  /** True while the analysis is in flight; the button says so and locks. */
+  busy?: boolean;
+}) {
   const [funds, setFunds] = useState<BasketFund[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [staged, setStaged] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const reduceMotion = useReducedMotion();
 
   const chosen = useMemo(() => new Set(funds.map((f) => f.code)), [funds]);
 
   const check = staged ? checkStagedBasket(purchases) : checkSimpleBasket(funds);
-  const canAnalyze = check.canAnalyze && !submitting;
+  const canAnalyze = check.canAnalyze && !busy;
 
   function addFund(fund: SearchableFund) {
     setFunds((current) => [
@@ -92,10 +103,7 @@ export function BasketForm() {
   function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!canAnalyze) return;
-    // The result screen is the next step. For now the button proves it can
-    // only be pressed when the basket is actually answerable.
-    setSubmitting(true);
-    window.setTimeout(() => setSubmitting(false), 1400);
+    onAnalyze(staged ? "staged" : "simple", funds, purchases);
   }
 
   return (
@@ -190,7 +198,7 @@ export function BasketForm() {
           className="inline-flex items-center gap-2.5 rounded-control bg-accent px-8 py-4 text-body font-medium text-accent-ink transition-all hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent"
         >
           <AnimatePresence mode="wait" initial={false}>
-            {submitting ? (
+            {busy ? (
               <motion.span
                 key="busy"
                 initial={reduceMotion ? false : { opacity: 0 }}
@@ -217,15 +225,15 @@ export function BasketForm() {
         </button>
 
         <p className="text-caption text-ink-subtle" aria-live="polite">
-          {buttonHint(check.hasErrors, canAnalyze, submitting)}
+          {buttonHint(check.hasErrors, canAnalyze, busy)}
         </p>
       </div>
     </form>
   );
 }
 
-function buttonHint(hasErrors: boolean, canAnalyze: boolean, submitting: boolean): string {
-  if (submitting) return "Fon fiyatları getiriliyor.";
+function buttonHint(hasErrors: boolean, canAnalyze: boolean, busy: boolean): string {
+  if (busy) return "Fon fiyatları getiriliyor.";
   if (hasErrors) return "Kırmızı ile işaretli alanları düzeltin.";
   if (!canAnalyze) return "En az bir fon ve tutarı girin.";
   return "";

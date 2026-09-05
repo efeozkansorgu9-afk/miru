@@ -1,4 +1,5 @@
 import { BasketWorkspace } from "@/components/basket/basket-workspace";
+import { Column } from "@/components/column";
 import { Reveal } from "@/components/reveal";
 
 /**
@@ -12,7 +13,7 @@ import { Reveal } from "@/components/reveal";
 export default function Home() {
   return (
     <div>
-      <div className="mx-auto w-full max-w-page px-gutter pt-section">
+      <Column className="pt-section">
         <Reveal className="max-w-prose">
           <p className="text-overline uppercase text-accent">Sepet incelemesi</p>
           <h1 className="mt-4 text-display-lg text-balance">
@@ -24,7 +25,7 @@ export default function Home() {
             söyleyelim.
           </p>
         </Reveal>
-      </div>
+      </Column>
 
       <BasketWorkspace />
     </div>

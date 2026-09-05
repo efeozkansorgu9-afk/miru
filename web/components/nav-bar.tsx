@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { Column } from "@/components/column";
 import { SITE } from "@/lib/site";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -23,7 +24,7 @@ export const NAV_ITEMS: NavItem[] = [];
 export function NavBar() {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-canvas/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 w-full max-w-page items-center justify-between gap-6 px-gutter">
+      <Column className="flex h-16 items-center justify-between gap-6">
         <Link
           href="/"
           className="flex items-center gap-2.5 rounded-control text-ink"
@@ -50,7 +51,7 @@ export function NavBar() {
           )}
           <ThemeToggle />
         </div>
-      </div>
+      </Column>
     </header>
   );
 }

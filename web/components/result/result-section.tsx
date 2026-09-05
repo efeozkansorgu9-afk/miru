@@ -14,6 +14,7 @@
  */
 
 import type { AnalyzeRequest, AnalyzeResponse } from "@/lib/api";
+import { Column } from "@/components/column";
 import { Reveal } from "@/components/reveal";
 import { ScrollRise } from "@/components/scroll-rise";
 import {
@@ -43,13 +44,13 @@ export function ResultSection({ state }: { state: ResultState }) {
 
   return (
     <div className="border-t border-border bg-canvas-sunken">
-      <div className="mx-auto w-full max-w-page px-gutter py-section">
+      <Column className="py-section">
         {state.phase === "loading" && <Loading />}
         {state.phase === "error" && <Failure title={state.title} body={state.body} />}
         {state.phase === "ready" && (
           <Result request={state.request} response={state.response} />
         )}
-      </div>
+      </Column>
     </div>
   );
 }

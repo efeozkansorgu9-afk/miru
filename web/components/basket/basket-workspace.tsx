@@ -21,6 +21,7 @@ import { analyze } from "@/lib/api";
 import { buildSimpleRequest, buildStagedRequest } from "@/lib/request";
 import type { BuildResult } from "@/lib/request";
 import { errorMessage } from "@/lib/result";
+import { Column } from "@/components/column";
 import { ResultSection } from "@/components/result/result-section";
 import type { ResultState } from "@/components/result/result-section";
 import { BasketForm } from "./basket-form";
@@ -71,16 +72,18 @@ export function BasketWorkspace() {
 
   return (
     <>
-      <div className="mx-auto w-full max-w-page px-gutter pt-section pb-section">
-        <div className="max-w-4xl">
-          <BasketForm
-            busy={state.phase === "loading"}
-            onAnalyze={(mode, funds, purchases) =>
-              run(mode === "staged" ? buildStagedRequest(purchases) : buildSimpleRequest(funds))
-            }
-          />
-        </div>
-      </div>
+      {/* The form fills the column rather than sitting in a narrower box
+          inside it. Anything less lines up with the result section on the
+          left and stops short of it on the right, which is exactly what
+          being off centre looks like. */}
+      <Column className="pt-section pb-section">
+        <BasketForm
+          busy={state.phase === "loading"}
+          onAnalyze={(mode, funds, purchases) =>
+            run(mode === "staged" ? buildStagedRequest(purchases) : buildSimpleRequest(funds))
+          }
+        />
+      </Column>
 
       {/* `scroll-mt` clears the sticky header, which is 4rem tall. */}
       <div ref={anchor} className="scroll-mt-16">

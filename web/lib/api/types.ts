@@ -41,6 +41,17 @@ export type ReturnBasis = "lump_sum" | "held_units";
 
 export type Mode = "simple" | "staged";
 
+/**
+ * How to read the lira figure on a holding.
+ *
+ * "current_value": what it is worth today, held since `date`.
+ * "paid": the money that went in on `date`.
+ *
+ * Both may be mixed across one basket. The server turns either into units
+ * bought on a date, so everything downstream is computed one way.
+ */
+export type AmountBasis = "paid" | "current_value";
+
 /** Why a code returned nothing usable. */
 export type FailureKind =
   | "unknown_code"
@@ -58,6 +69,14 @@ export type ExclusionKind = "stale_series" | "window_cost";
 export interface FundAmount {
   code: string;
   amount: number;
+  /** Defaults to "current_value" server side. */
+  basis?: AmountBasis;
+  /**
+   * ISO date. Required when `basis` is "paid": an amount paid says nothing
+   * without the day it was paid. Optional for "current_value", which falls
+   * back to the start of the available window.
+   */
+  date?: string | null;
 }
 
 export interface PurchaseIn {
@@ -65,6 +84,8 @@ export interface PurchaseIn {
   date: string;
   code: string;
   amount: number;
+  /** Defaults to "paid", which is what a dated purchase normally means. */
+  basis?: AmountBasis;
 }
 
 /** Send `funds` or `purchases`, never both and never neither. */
@@ -170,11 +191,16 @@ export interface Fill {
   date: string;
   /** The trading day it actually bought on. */
   fill_date: string;
+  /** The lira that went in. Derived when the holding was stated at today's value. */
   amount: number;
   price: number;
   units: number;
   was_shifted: boolean;
   shifted_days: number;
+  basis: AmountBasis;
+  /** What the request said, before conversion. Equals `amount` when paid. */
+  stated_amount: number;
+  was_converted: boolean;
 }
 
 /** Two lines, never one: a deposit makes `market_value` jump on its own. */
@@ -197,6 +223,8 @@ export interface PurchasePlan {
   first_purchase: string;
   is_single_dated: boolean;
   shifted_fills: Fill[];
+  /** Holdings whose cost was worked back from what they are worth today. */
+  converted_fills: Fill[];
   value_series: StagedValueSeries;
 }
 

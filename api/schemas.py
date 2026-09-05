@@ -59,6 +59,11 @@ ReturnBasis = Literal["lump_sum", "held_units"]
 
 Mode = Literal["simple", "staged"]
 
+# How to read the lira figure on a holding. Mirrors `analysis.PURCHASE_BASES`;
+# the assert below keeps the two from drifting apart silently.
+AmountBasis = Literal["paid", "current_value"]
+assert set(AmountBasis.__args__) == set(an.PURCHASE_BASES)
+
 
 # ----------------------------------------------------------------------
 # Requests
@@ -66,10 +71,46 @@ Mode = Literal["simple", "staged"]
 
 
 class FundAmount(BaseModel):
-    """One line of a simple basket: this much lira in this fund."""
+    """One holding, stated the way its owner happens to know it.
+
+    People know a holding in one of two ways and rarely both: what they paid
+    for it, or what a portfolio screen says it is worth today. `basis` says
+    which, and the two may be mixed freely across one basket.
+
+    Either way the server turns it into units bought on a date, and every
+    number after that is computed one way. See `analysis.build_purchase_plan`.
+    """
 
     code: str = Field(min_length=1, max_length=20, examples=["GAL"])
     amount: float = Field(gt=0, examples=[10000.0])
+    basis: AmountBasis = Field(
+        default="current_value",
+        description=(
+            "'current_value': the amount is what the holding is worth today, "
+            "held since `date`. 'paid': the amount is the money that went in "
+            "on `date`."
+        ),
+    )
+    date: Optional[_date] = Field(
+        default=None,
+        examples=["2024-03-15"],
+        description=(
+            "When the holding started. Required for basis 'paid', since an "
+            "amount paid says nothing without the day it was paid. Optional "
+            "for 'current_value', which falls back to the start of the "
+            "available window."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _paid_needs_a_date(self) -> "FundAmount":
+        if self.basis == "paid" and self.date is None:
+            raise ValueError(
+                "a 'paid' amount needs the date it was paid; without it the "
+                "units it bought are unknowable. Use 'current_value' if you "
+                "only know what the holding is worth now."
+            )
+        return self
 
 
 class PurchaseIn(BaseModel):
@@ -83,6 +124,14 @@ class PurchaseIn(BaseModel):
     date: _date = Field(examples=["2024-01-15"])
     code: str = Field(min_length=1, max_length=20, examples=["GAL"])
     amount: float = Field(gt=0, examples=[5000.0])
+    basis: AmountBasis = Field(
+        default="paid",
+        description=(
+            "Defaults to 'paid', which is what a dated purchase normally "
+            "means. 'current_value' reads the amount as what that tranche is "
+            "worth today instead."
+        ),
+    )
 
 
 class AnalyzeRequest(BaseModel):
@@ -380,11 +429,18 @@ class Fill(BaseModel):
     code: str
     date: str
     fill_date: str
+    # The lira that went in on `fill_date`. Derived, not given, when the
+    # holding was stated at today's value.
     amount: float
     price: float
     units: float
     was_shifted: bool
     shifted_days: int
+    basis: AmountBasis
+    # What the request actually said, before conversion. Equal to `amount`
+    # for a paid holding.
+    stated_amount: float
+    was_converted: bool
 
     @classmethod
     def from_dataclass(cls, f: an.Fill) -> "Fill":
@@ -397,6 +453,9 @@ class Fill(BaseModel):
             units=f.units,
             was_shifted=f.was_shifted,
             shifted_days=f.shifted_days,
+            basis=f.basis,
+            stated_amount=f.stated_amount,
+            was_converted=f.was_converted,
         )
 
 
@@ -439,6 +498,8 @@ class PurchasePlan(BaseModel):
     first_purchase: str
     is_single_dated: bool
     shifted_fills: list[Fill]
+    # Holdings whose cost was worked back from what they are worth today.
+    converted_fills: list[Fill]
     value_series: StagedValueSeries
 
     @classmethod
@@ -455,6 +516,7 @@ class PurchasePlan(BaseModel):
             first_purchase=p.first_purchase.strftime("%Y-%m-%d"),
             is_single_dated=p.is_single_dated,
             shifted_fills=[Fill.from_dataclass(f) for f in p.shifted_fills],
+            converted_fills=[Fill.from_dataclass(f) for f in p.converted_fills],
             value_series=StagedValueSeries.from_frame(p.value_series),
         )
 

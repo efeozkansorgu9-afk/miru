@@ -68,6 +68,24 @@ XIRR_TOLERANCE = 1e-9  # judged against the size of the cash flows, not absolute
 # XIRR discounts in calendar years, by the usual 365-day convention.
 DAYS_PER_YEAR = 365.0
 
+# How the lira figure attached to a purchase should be read.
+#
+# People know their holdings in one of two ways and rarely both. Some
+# remember what they paid; most read a portfolio screen that tells them what
+# it is worth now. Both describe the same thing — a number of units bought on
+# a date — and this layer converts either into that, so nothing downstream
+# has to care which way it arrived.
+#
+#   BASIS_PAID           the money that went in on `date`
+#                        units = amount / price on the fill date
+#
+#   BASIS_CURRENT_VALUE  what the holding is worth on the last priced day
+#                        units = amount / the last price, and those units are
+#                        then treated as having been bought on `date`
+BASIS_PAID = "paid"
+BASIS_CURRENT_VALUE = "current_value"
+PURCHASE_BASES = (BASIS_PAID, BASIS_CURRENT_VALUE)
+
 # Columns of `PurchasePlan.value_series`. Two lines, never one: the market
 # value jumps on the day money goes in, and a single line would show that
 # jump exactly as it shows a gain.
@@ -102,11 +120,16 @@ PurchaseInput = Union["Purchase", tuple, list]
 
 @dataclass(frozen=True)
 class Purchase:
-    """One deposit: this much lira into this fund on this date."""
+    """One holding, stated either as what it cost or as what it is worth.
+
+    `basis` says which. It defaults to `BASIS_PAID`, so a `(date, code,
+    amount)` triple still means what it always meant.
+    """
 
     date: pd.Timestamp
     code: str
     amount: float
+    basis: str = BASIS_PAID
 
 
 @dataclass(frozen=True)
@@ -122,13 +145,27 @@ class Fill:
     code: str
     date: pd.Timestamp
     fill_date: pd.Timestamp
+    # The lira that went in on `fill_date`. For a holding stated at today's
+    # value this is derived rather than given: the units it buys today, priced
+    # on the day they were bought. That is what the money must have been for
+    # the holding to be worth what the user says it is now, and it is the
+    # figure XIRR discounts.
     amount: float
     price: float
     units: float
+    basis: str = BASIS_PAID
+    # What the caller actually said, before any conversion. Equal to `amount`
+    # for a paid holding; today's value for one stated that way.
+    stated_amount: float = 0.0
 
     @property
     def was_shifted(self) -> bool:
         return self.fill_date != self.date
+
+    @property
+    def was_converted(self) -> bool:
+        """True when `amount` was worked back from today's value."""
+        return self.basis == BASIS_CURRENT_VALUE
 
     @property
     def shifted_days(self) -> int:
@@ -162,6 +199,11 @@ class PurchasePlan:
     def is_single_dated(self) -> bool:
         """True when every purchase bought on the same day."""
         return len({f.fill_date for f in self.fills}) == 1
+
+    @property
+    def converted_fills(self) -> tuple[Fill, ...]:
+        """Holdings whose cost was worked back from today's value."""
+        return tuple(f for f in self.fills if f.was_converted)
 
 
 @dataclass(frozen=True)
@@ -258,10 +300,13 @@ def analyze_basket(
         of `prices`. Taken as the basket's composition exactly as given — a
         basket bought in one go, described by what sits in it.
     purchases : iterable, optional
-        Dated deposits, each a `Purchase` or a `(date, fund_code, amount)`
-        triple. The same fund may appear as often as it was bought into.
-        Buys only: a non-positive amount is rejected rather than read as a
-        sale.
+        Dated deposits, each a `Purchase`, a `(date, fund_code, amount)`
+        triple, or a `(date, fund_code, amount, basis)` quadruple. The same
+        fund may appear as often as it was bought into. Buys only: a
+        non-positive amount is rejected rather than read as a sale.
+
+        See `build_purchase_plan` for what `basis` does. Mixing the two in
+        one basket is supported and is the point of the field.
 
         The weights this produces are **today's market value** — units
         bought at each purchase date's price, summed per fund, priced at the
@@ -416,8 +461,16 @@ def build_purchase_plan(
     prices : pd.DataFrame
         Date × fund price matrix, as for `analyze_basket`.
     purchases : iterable
-        `Purchase` objects or `(date, fund_code, amount)` triples. Dates
-        accept `str`, `date`, `datetime` or `pd.Timestamp`.
+        `Purchase` objects, `(date, fund_code, amount)` triples, or
+        `(date, fund_code, amount, basis)` quadruples. Dates accept `str`,
+        `date`, `datetime` or `pd.Timestamp`.
+
+        `basis` is `"paid"` (the default) when the amount is the money that
+        went in on that date, or `"current_value"` when it is what the
+        holding is worth on the last priced day. The two may be mixed freely
+        in one list: both are turned into units bought on a date before
+        anything else runs, so weights, XIRR and returns are computed exactly
+        one way.
 
     Returns
     -------
@@ -689,19 +742,31 @@ def _coerce_purchases(purchases: Iterable["PurchaseInput"]) -> list[Purchase]:
     """Whatever the caller passed, as validated `Purchase` objects."""
     out: list[Purchase] = []
     for position, item in enumerate(purchases):
+        basis = BASIS_PAID
         if isinstance(item, Purchase):
-            when, code, amount = item.date, item.code, item.amount
+            when, code, amount, basis = item.date, item.code, item.amount, item.basis
         elif isinstance(item, (tuple, list)):
-            if len(item) != 3:
+            # The fourth value is optional, so every existing three value
+            # caller keeps meaning exactly what it meant.
+            if len(item) == 3:
+                when, code, amount = item
+            elif len(item) == 4:
+                when, code, amount, basis = item
+            else:
                 raise ValueError(
-                    f"purchase {position} must be (date, fund_code, amount), "
-                    f"got {len(item)} values: {item!r}"
+                    f"purchase {position} must be (date, fund_code, amount) "
+                    f"with an optional basis, got {len(item)} values: {item!r}"
                 )
-            when, code, amount = item
         else:
             raise ValueError(
                 f"purchase {position} must be a Purchase or a "
                 f"(date, fund_code, amount) triple, got {type(item).__name__}"
+            )
+
+        if basis not in PURCHASE_BASES:
+            raise ValueError(
+                f"purchase {position} has basis {basis!r}; expected one of "
+                f"{list(PURCHASE_BASES)}"
             )
 
         try:
@@ -719,7 +784,14 @@ def _coerce_purchases(purchases: Iterable["PurchaseInput"]) -> list[Purchase]:
                 f"positive; this layer models purchases only, not sales"
             )
 
-        out.append(Purchase(date=_to_timestamp(when), code=str(code), amount=amount))
+        out.append(
+            Purchase(
+                date=_to_timestamp(when),
+                code=str(code),
+                amount=amount,
+                basis=basis,
+            )
+        )
 
     if not out:
         raise ValueError("no purchases given — nothing to analyse")
@@ -761,14 +833,33 @@ def _fill_purchases(
 
         fill_date = index[position]
         price = float(prices.at[fill_date, item.code])
+
+        if item.basis == BASIS_CURRENT_VALUE:
+            # The user is describing the holding by what it is worth now, so
+            # the units follow from today's price. Those same units are then
+            # treated as bought on `date`, and what they cost that day is
+            # what the money must have been. Working the cost back this way,
+            # rather than assuming the stated figure went in on the date, is
+            # the whole point: a fund that has doubled since would otherwise
+            # be credited with twice the money it was actually given, and
+            # every return in the answer would be wrong.
+            last_price = float(prices.iloc[-1][item.code])
+            units = item.amount / last_price
+            amount = units * price
+        else:
+            units = item.amount / price
+            amount = item.amount
+
         fills.append(
             Fill(
                 code=item.code,
                 date=item.date,
                 fill_date=fill_date,
-                amount=item.amount,
+                amount=amount,
                 price=price,
-                units=item.amount / price,
+                units=units,
+                basis=item.basis,
+                stated_amount=item.amount,
             )
         )
 

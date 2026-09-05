@@ -270,17 +270,18 @@ def _analyse_matrix(
     codes = set(prices.columns)
 
     if request.mode == "simple":
-        basket = {f.code: f.amount for f in request.funds if f.code in codes}
-        purchases = None
+        basket, purchases = _simple_basket(request, prices, codes)
     else:
         basket = None
         purchases = [
-            an.Purchase(date=p.date, code=p.code, amount=p.amount)
+            an.Purchase(date=p.date, code=p.code, amount=p.amount, basis=p.basis)
             for p in request.purchases
             if p.code in codes
         ]
-        if not purchases:
-            return "no_funds", None
+
+    # Nothing of this basket survived the cut to this matrix.
+    if not (purchases or basket):
+        return "no_funds", None
 
     try:
         return "ok", an.analyze_basket(prices, basket, purchases=purchases)
@@ -305,6 +306,47 @@ def _analyse_matrix(
         raise _invalid("purchases" if request.mode == "staged" else "funds", message)
 
 
+def _simple_basket(
+    request: sc.AnalyzeRequest,
+    prices: pd.DataFrame,
+    codes: set[str],
+) -> tuple[Optional[dict[str, float]], Optional[list[an.Purchase]]]:
+    """Decide whether a `funds` basket is plain weights or dated holdings.
+
+    A basket where nothing carries a date and everything is stated at today's
+    value is the request this service has always answered: the amounts *are*
+    the composition, and it still goes down the weights path untouched, so
+    those callers see byte for byte what they saw before.
+
+    The moment a date or a `paid` amount appears, the basket is describing
+    holdings in time rather than a snapshot, and only the purchase path can
+    answer it. Mixed baskets land here too, which is the point: `paid` and
+    `current_value` become units bought on a date before anything else runs,
+    so one basket holding both is not a special case downstream.
+
+    A `current_value` holding with no date is anchored to the first day of
+    the matrix. That is not a guess: it is exactly what the weights path
+    already assumes when it buys the whole basket on day one, so the two
+    agree rather than quietly differing.
+    """
+    wanted = [f for f in request.funds if f.code in codes]
+
+    plain = all(f.date is None and f.basis == "current_value" for f in wanted)
+    if plain:
+        return {f.code: f.amount for f in wanted}, None
+
+    start = prices.index[0].date()
+    return None, [
+        an.Purchase(
+            date=f.date if f.date is not None else start,
+            code=f.code,
+            amount=f.amount,
+            basis=f.basis,
+        )
+        for f in wanted
+    ]
+
+
 def _pair(
     analysis: Optional[an.BasketAnalysis],
     threshold: float,
@@ -322,11 +364,17 @@ def _real_return(
 ) -> tuple[str, Optional[sc.RealReturn]]:
     """The basket restated in today's prices, when the CPI is available.
 
-    Measured on `basket_value`, the deposit-free series, in both modes. In
-    staged mode that makes it a statement about the holding rather than
-    about the investor — see `schemas.RealReturn.basis`. Deflating the
-    staged market value instead would fold every deposit into the return,
-    which is the arithmetic staged mode exists to correct.
+    Measured on `basket_value`, the deposit-free series, either way. When the
+    basket was resolved into purchases that makes it a statement about the
+    holding rather than about the investor — see `schemas.RealReturn.basis`.
+    Deflating the staged market value instead would fold every deposit into
+    the return, which is the arithmetic the purchase path exists to correct.
+
+    The branch is on how the basket was actually *analysed*, not on which
+    request field carried it. A `funds` basket with dates on it is resolved
+    into purchases, and calling that a lump sum would both mislabel it and
+    scale the series by a sum of amounts that are not commensurable: some
+    stated as what was paid, some as what the holding is worth today.
 
     Scaled to lira before deflating. The returns themselves are ratios and
     do not care, but `real_value` is a series someone will plot with a lira
@@ -335,18 +383,20 @@ def _real_return(
     if analysis is None:
         return "not_applicable", None
 
-    if request.mode == "simple":
-        # Same convention as the Streamlit app: the series opens at what was
-        # put in.
-        scale = sum(f.amount for f in request.funds if f.code in analysis.weights)
+    plan = analysis.purchases
+    if plan is None:
+        # A plain weights basket: the amounts are the composition, and the
+        # series opens at what is in it. Same convention as the Streamlit app.
         basis: sc.ReturnBasis = "lump_sum"
+        scale = sum(f.amount for f in request.funds if f.code in analysis.weights)
         series = analysis.basket_value * scale
     else:
-        # The one lira figure that is certain in staged mode is what the
-        # holding is worth now, so anchor the series to it at the far end.
-        plan = analysis.purchases
+        # The one lira figure that is certain here is what the holding is
+        # worth now, so anchor the series to it at the far end.
         basis = "held_units"
-        series = analysis.basket_value * (plan.total_value / float(analysis.basket_value.iloc[-1]))
+        series = analysis.basket_value * (
+            plan.total_value / float(analysis.basket_value.iloc[-1])
+        )
 
     cpi = inf.load_cpi()
     if cpi is None:

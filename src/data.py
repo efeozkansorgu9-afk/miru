@@ -73,6 +73,14 @@ FAILURE_NO_PRICES_IN_WINDOW = "no_prices_in_window"
 FAILURE_NO_VALID_PRICES = "no_valid_prices"
 FAILURE_UNVERIFIED = "no_data_unverified"
 
+# Why a fund that *did* return data was still left out of TRIMMED. Same
+# split of duties as the failure kinds above: the sentence is for the
+# report, the tag is what a caller branches on. The two are different
+# things to tell someone — one fund stopped trading, the other is simply
+# younger than the basket — and they are not interchangeable.
+EXCLUSION_STALE_SERIES = "stale_series"
+EXCLUSION_WINDOW_COST = "window_cost"
+
 # How far back the TEFAS price endpoint reaches; a fund delisted before this
 # is indistinguishable from a code that never existed.
 PRICE_HISTORY_YEARS = 5
@@ -146,6 +154,18 @@ class FundFailure:
 
 
 @dataclass(frozen=True)
+class FundExclusion:
+    """A fund with usable prices that TRIMMED still leaves out, and why."""
+
+    fund_code: str
+    kind: str
+    reason: str
+
+    def __str__(self) -> str:
+        return self.reason
+
+
+@dataclass(frozen=True)
 class MatrixCoverage:
     """The common window of one price matrix and how well sampled it is."""
 
@@ -174,7 +194,7 @@ class FundDataset:
     full_coverage: MatrixCoverage
     trimmed_coverage: MatrixCoverage
     fund_coverage: dict[str, FundCoverage]
-    excluded_codes: dict[str, str]
+    excluded_codes: dict[str, FundExclusion]
     failed_codes: dict[str, FundFailure]
     requested_codes: list[str]
     requested_start: pd.Timestamp
@@ -335,8 +355,8 @@ def format_coverage_report(ds: FundDataset) -> str:
     add("")
     if ds.excluded_codes:
         add("Dropped from TRIMMED")
-        for code, reason in ds.excluded_codes.items():
-            add(f"  {code:<6} {reason}")
+        for code, exclusion in ds.excluded_codes.items():
+            add(f"  {code:<6} [{exclusion.kind}] {exclusion.reason}")
     else:
         add("Dropped from TRIMMED: none")
 
@@ -607,7 +627,7 @@ def _split_by_window(
     listed: dict[str, bool],
     long_df: pd.DataFrame,
     max_window_loss: float = MAX_WINDOW_LOSS,
-) -> tuple[list[str], dict[str, str]]:
+) -> tuple[list[str], dict[str, FundExclusion]]:
     """
     Keep the funds worth keeping: the ones that do not cost the rest too much.
 
@@ -640,7 +660,7 @@ def _split_by_window(
     latest = max((c.last_date for c in fund_coverage.values()), default=None)
 
     keep: list[str] = []
-    excluded: dict[str, str] = {}
+    excluded: dict[str, FundExclusion] = {}
 
     for code in codes:
         cov = fund_coverage[code]
@@ -652,9 +672,13 @@ def _split_by_window(
             state = {True: "still listed, suspended?", False: "delisted"}.get(
                 gone, "registry unverified"
             )
-            excluded[code] = (
-                f"last price {cov.last_date.date()}, stale against "
-                f"{latest.date()} ({state})"
+            excluded[code] = FundExclusion(
+                fund_code=code,
+                kind=EXCLUSION_STALE_SERIES,
+                reason=(
+                    f"last price {cov.last_date.date()}, stale against "
+                    f"{latest.date()} ({state})"
+                ),
             )
         else:
             keep.append(code)
@@ -676,10 +700,14 @@ def _split_by_window(
         if loss <= max_window_loss and not crosses_threshold:
             break
 
-        excluded[binder] = (
-            f"starts {fund_coverage[binder].first_date.date()}; including it "
-            f"would cut the common window from {without_weeks} weeks to "
-            f"{with_weeks} weeks ({loss:.0%} shorter)"
+        excluded[binder] = FundExclusion(
+            fund_code=binder,
+            kind=EXCLUSION_WINDOW_COST,
+            reason=(
+                f"starts {fund_coverage[binder].first_date.date()}; including "
+                f"it would cut the common window from {without_weeks} weeks "
+                f"to {with_weeks} weeks ({loss:.0%} shorter)"
+            ),
         )
         keep = rest
 

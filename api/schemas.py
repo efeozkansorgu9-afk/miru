@@ -274,6 +274,26 @@ class FundFailure(BaseModel):
         return cls(fund_code=f.fund_code, kind=f.kind, reason=f.reason)
 
 
+class FundExclusion(BaseModel):
+    """A fund with prices that the trimmed matrix leaves out. Mirrors
+    `data.FundExclusion`.
+
+    `kind` is the field to branch on — `stale_series` for a fund whose
+    prices stopped early, `window_cost` for one that would shorten the
+    window the rest share. `reason` is an English diagnostic for logs, and
+    carries the numbers behind the decision; like `FundFailure.reason` it is
+    not a string to put on a screen, in any language.
+    """
+
+    fund_code: str
+    kind: str
+    reason: str
+
+    @classmethod
+    def from_dataclass(cls, e: dl.FundExclusion) -> "FundExclusion":
+        return cls(fund_code=e.fund_code, kind=e.kind, reason=e.reason)
+
+
 class Coverage(BaseModel):
     """The whole coverage report. Mirrors `data.FundDataset` minus the frames."""
 
@@ -285,15 +305,15 @@ class Coverage(BaseModel):
     full_coverage: MatrixCoverage
     trimmed_coverage: MatrixCoverage
     fund_coverage: dict[str, FundCoverage]
-    # Funds that returned data but were left out of the trimmed matrix. The
-    # value is `data.py`'s English diagnostic: it tags failures with a
-    # `kind` but not exclusions, so there is nothing machine-readable here
-    # to branch on beyond the fact of exclusion.
-    excluded_codes: dict[str, str]
+    # Funds that returned data but were left out of the trimmed matrix,
+    # each tagged with a `kind` the same way a failure is.
+    excluded_codes: dict[str, FundExclusion]
     failed_codes: dict[str, FundFailure]
     fund_names: dict[str, str]
     # Things the request asked for and did not get, e.g. a window clamped to
-    # MAX_MONTHS. English, diagnostic, same caveat as `excluded_codes`.
+    # MAX_MONTHS. English and diagnostic, and unlike `excluded_codes` and
+    # `failed_codes` it carries no `kind`: a note is a free-text remark
+    # about the request, not one of a closed set of outcomes.
     notes: list[str]
     from_cache: bool
 
@@ -310,7 +330,10 @@ class Coverage(BaseModel):
             fund_coverage={
                 c: FundCoverage.from_dataclass(v) for c, v in ds.fund_coverage.items()
             },
-            excluded_codes=dict(ds.excluded_codes),
+            excluded_codes={
+                c: FundExclusion.from_dataclass(v)
+                for c, v in ds.excluded_codes.items()
+            },
             failed_codes={
                 c: FundFailure.from_dataclass(v) for c, v in ds.failed_codes.items()
             },

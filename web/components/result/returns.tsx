@@ -22,7 +22,7 @@
  * front of someone that they never spent.
  */
 
-import { para, yuzdeIsaretli } from "@/lib/format";
+import { ayYil, tarih, yuzdeIsaretli, para } from "@/lib/format";
 import { UCRET_NOTU, XIRR_NOTU, heldGetiriNotu, stagedGetiriNotu } from "@/lib/result";
 import type { ReturnFigures } from "@/lib/result";
 import type { RealReturn } from "@/lib/api";
@@ -41,9 +41,16 @@ export function Returns({
   return (
     <section aria-labelledby="getiri" className="scroll-mt-24">
       <p className="text-overline uppercase text-ink-subtle">Getiri</p>
-      <h2 id="getiri" className="mt-4 text-display-sm">
-        {staged ? "Elinizdeki fonların dönem getirisi" : "Sepetin getirisi"}
+      <h2 id="getiri" className="mt-4 text-display-sm text-balance">
+        {staged ? "Elinizdeki fonların getirisi" : "Sepetin getirisi"}
       </h2>
+      {/* The period belongs in the heading, not in a note underneath it. The
+          correlation above runs on every day these funds shared and this runs
+          on the days the money was in, and a reader who cannot see which is
+          which will read one number as the other. */}
+      <p className="mt-2 text-lead text-ink-muted">
+        {tarih(figures.start)} ile {tarih(figures.end)} arası
+      </p>
 
       {/* Equal columns, so neither figure is the headline and the other the
           asterisk. On a phone they stack and stay the same size. */}
@@ -108,7 +115,7 @@ export function Returns({
             ? stagedGetiriNotu(figures.start, figures.end)
             : heldGetiriNotu(figures.start)}
         </p>
-        {realReturn && <p>{enflasyonNotu(realReturn)}</p>}
+        {real && realReturn && <p>{enflasyonNotu(real.inflation, realReturn)}</p>}
         <p>{UCRET_NOTU}</p>
       </div>
     </section>
@@ -144,23 +151,24 @@ function Metric({
   );
 }
 
-/** What the real figure rests on: the period's inflation and how fresh it is. */
-function enflasyonNotu(real: RealReturn): string {
+/**
+ * What the real figure rests on: the period's inflation and how fresh it is.
+ *
+ * `inflation` is measured over the same days as the returns beside it, which
+ * is not what `RealReturn.inflation_total` holds: that one covers the whole
+ * price matrix. The rest of the note is about the index itself and is the
+ * same either way.
+ */
+function enflasyonNotu(inflation: number, real: RealReturn): string {
   const base =
-    `Aynı dönemde fiyatlar ${yuzdeIsaretli(real.inflation_total)} arttı. ` +
+    `Aynı dönemde fiyatlar ${yuzdeIsaretli(inflation)} arttı. ` +
     `Arındırılmış tutarlar bugünün parasıyla. TÜİK tüketici fiyat endeksinin ` +
     `o ayki değeri ayın tamamına uygulanıyor, günlere dağıtılmıyor.`;
 
   if (!real.is_extrapolated) return base;
 
-  const [y, m] = real.latest_cpi_month.split("-").map(Number);
-  const ay = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("tr-TR", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
   return (
-    `${base} ${ay} sonrası için TÜFE henüz açıklanmadı, o günlere son ` +
-    `açıklanan endeks uygulandı.`
+    `${base} ${ayYil(real.latest_cpi_month)} sonrası için TÜFE henüz ` +
+    `açıklanmadı, o günlere son açıklanan endeks uygulandı.`
   );
 }

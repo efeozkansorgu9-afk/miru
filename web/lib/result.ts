@@ -365,9 +365,10 @@ export interface ReturnFigures {
    * "staged" means the basket was described as dated deposits, so the lira
    * that went in is known and `xirr` is the investor's own return.
    *
-   * "held" means it was described by what it is worth now. Nobody said what
-   * was paid, so the opening figure is what this same holding was worth at
-   * the start of the window, not money anyone handed over.
+   * "held" means it was described by what it is worth now, with no date on
+   * it. Nobody said what was paid, so the opening figure is what this same
+   * holding was worth at the start of the window, not money anyone handed
+   * over.
    */
   kind: "held" | "staged";
   /** Lira in at the start: money deposited, or the holding's opening value. */
@@ -384,8 +385,45 @@ export interface ReturnFigures {
    * the basket was described as dated deposits.
    */
   xirr: number | null;
+  /** The window every figure above is measured over. Say it on screen. */
   start: string;
   end: string;
+}
+
+/**
+ * The window the return figures cover.
+ *
+ * The correlation window and the return window are not the same window, and
+ * conflating them is how a basket bought last September comes to be reported
+ * as up 1052 percent. Correlation wants every day the funds traded together,
+ * because a coefficient from a few months is not one to act on. A return
+ * wants the days the money was actually in: what the holding did before it
+ * was bought is not the owner's return by any reading.
+ *
+ * So the return window starts at the earliest day money landed, and only a
+ * basket with no dates on it at all falls back to the whole matrix, which is
+ * the only period such a basket can be talking about.
+ */
+export function returnWindow(analysis: BasketAnalysis): { start: string; end: string } {
+  const plan = analysis.purchases;
+  if (!plan || plan.fills.length === 0) {
+    return { start: analysis.start, end: analysis.end };
+  }
+  // `fill_date`, not the requested date: a purchase dated on a weekend buys
+  // on the next trading day, and that is the day the units started working.
+  const first = plan.fills.reduce(
+    (earliest, fill) => (fill.fill_date < earliest ? fill.fill_date : earliest),
+    plan.fills[0].fill_date,
+  );
+  return { start: first < analysis.start ? analysis.start : first, end: analysis.end };
+}
+
+/** Index of `date` in a dated series, or the first day on or after it. */
+function indexOfDate(dates: string[], date: string): number {
+  const exact = dates.indexOf(date);
+  if (exact >= 0) return exact;
+  const after = dates.findIndex((d) => d >= date);
+  return after >= 0 ? after : 0;
 }
 
 export function returnFigures(
@@ -397,32 +435,51 @@ export function returnFigures(
 
   const plan = analysis.purchases;
   const scale = basketScale(analysis, request);
-  const series = analysis.basket_value.values;
-  const first = series[0] ?? 1;
-  const last = series.at(-1) ?? 1;
+  const bv = analysis.basket_value;
+  const window = returnWindow(analysis);
+  const from = indexOfDate(bv.dates, window.start);
 
-  const total = first > 0 ? last / first - 1 : 0;
-  const years = gunFarki(analysis.start, analysis.end) / 365.25;
-  const annual = years > 0 ? (1 + total) ** (1 / years) - 1 : Number.NaN;
+  // `basket_value` is deposit free and normalised, so the ratio between any
+  // two of its days is the return over exactly those days.
+  const opened = bv.values[from] ?? 1;
+  const last = bv.values.at(-1) ?? 1;
+  const nominalTotal = opened > 0 ? last / opened - 1 : 0;
+  const years = gunFarki(window.start, window.end) / 365.25;
 
   const real = response.real_return;
+  // The deflated series carries the same dates, so the real return over a
+  // sub window is its own ratio over those dates. Reading `real.total` here
+  // instead would restate the whole matrix, which is the bug this fixes.
+  const rv = real?.real_value.values;
+  const usableReal =
+    rv !== undefined && rv.length === bv.values.length && (rv[from] ?? 0) > 0;
+  const realTotal = usableReal ? (rv.at(-1) ?? 1) / rv[from] - 1 : 0;
 
   return {
     kind: plan ? "staged" : "held",
-    opening: plan ? plan.total_invested : scale,
+    opening: plan ? plan.total_invested : scale * opened,
     value: plan ? plan.total_value : scale * last,
-    gain: plan ? plan.absolute_gain : scale * last - scale,
-    // The server's figures are preferred when it computed them: they come
-    // from the same CPI arithmetic as the real pair, so the two agree.
-    nominalTotal: real ? real.nominal_total : total,
-    nominalAnnual: real ? real.nominal_annual : annual,
-    real: real
-      ? { total: real.total, annual: real.annual, inflation: real.inflation_total }
+    gain: plan ? plan.absolute_gain : scale * (last - opened),
+    nominalTotal,
+    nominalAnnual: annualise(nominalTotal, years),
+    real: usableReal
+      ? {
+          total: realTotal,
+          annual: annualise(realTotal, years),
+          // Inflation is what the gap between the two returns is made of.
+          inflation: (1 + nominalTotal) / (1 + realTotal) - 1,
+        }
       : null,
     xirr: plan ? plan.xirr : null,
-    start: analysis.start,
-    end: analysis.end,
+    start: window.start,
+    end: window.end,
   };
+}
+
+/** A total return spread over a period, as a yearly rate. */
+function annualise(total: number, years: number): number {
+  if (!(years > 0) || total <= -1) return Number.NaN;
+  return (1 + total) ** (1 / years) - 1;
 }
 
 export const UCRET_NOTU =

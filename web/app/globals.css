@@ -210,6 +210,13 @@
   /* Reading measure. Prose wider than this is hard to track back from the
      end of one line to the start of the next. */
   --container-prose: 68ch;
+  /* The measure for the one centred paragraph on the page, and shorter than
+     prose for exactly the reason prose is capped at all: a centred line
+     starts somewhere new every time, so the eye has further to travel back
+     and less to aim at. Narrow enough to shorten the lines, wide enough that
+     the sentence still lands in two of them, which was measured rather than
+     guessed: at 600px it becomes three. */
+  --container-lede: 40rem;
   /* The page is a column, not a canvas. At 80rem the headings and tables ran
      nearly to both edges of a laptop screen while the paragraphs inside them
      stopped at 68ch, so every block of text looked pinned to the left of a

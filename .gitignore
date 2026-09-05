@@ -6,3 +6,8 @@ data/
 cache/
 .env
 fonradar.code-workspace
+
+# web/ frontend
+node_modules/
+.next/
+next-env.d.ts

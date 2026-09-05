@@ -92,6 +92,35 @@
   --color-series-alt-dark: oklch(0.78 0.105 205);
 
   /* ------------------------------------------------------------------
+     The two grounds.
+
+     Neither is a pure colour. Pure white is a light source rather than a
+     surface: over a long page of numbers it glares, and every card laid on
+     it has to be drawn with a border because there is no lighter shade left
+     to lift it with. Pure black is the same mistake inverted, and on OLED it
+     smears when the page scrolls.
+
+     So paper is warm, at a chroma low enough (0.004) that it reads as light
+     rather than as beige, and night keeps the brand hue at 286 so the purple
+     sits in the same family as the ground it is on instead of floating over
+     a neutral grey. Night has four steps because dark surfaces lift by
+     getting lighter, and one step is not a ladder. Note that `night-sunken`
+     is *lighter* than `night`, which is not a contradiction: in the dark
+     theme a recess is still drawn by lifting, because there is nothing below
+     a near black to recede into. It reads as a well against the cards it
+     sits inside, and as a panel against the page it sits on.
+     ------------------------------------------------------------------ */
+  --color-paper: oklch(0.988 0.0035 85);
+  --color-paper-sunken: oklch(0.971 0.005 85);
+
+  --color-night: oklch(0.168 0.012 286);
+  --color-night-sunken: oklch(0.187 0.013 286);
+  --color-night-raised: oklch(0.208 0.013 286);
+  --color-night-high: oklch(0.246 0.014 286);
+  --color-night-line: oklch(0.283 0.014 286);
+  --color-night-line-strong: oklch(0.345 0.015 286);
+
+  /* ------------------------------------------------------------------
      Neutrals. A faintly warm grey rather than a pure one, so the brand
      purple sits on it without the page reading blue and cold.
      ------------------------------------------------------------------ */
@@ -181,7 +210,14 @@
   /* Reading measure. Prose wider than this is hard to track back from the
      end of one line to the start of the next. */
   --container-prose: 68ch;
-  --container-page: 80rem;
+  /* The page is a column, not a canvas. At 80rem the headings and tables ran
+     nearly to both edges of a laptop screen while the paragraphs inside them
+     stopped at 68ch, so every block of text looked pinned to the left of a
+     lot of nothing. 64rem is wide enough for a five column table and narrow
+     enough that the whole thing reads as one centred column. The text inside
+     stays left aligned; centring the words themselves would make every line
+     start in a different place. */
+  --container-page: 64rem;
 
   --radius-card: 1rem;
   --radius-control: 0.625rem;
@@ -235,15 +271,18 @@
   --color-caution: var(--caution);
   --color-series-alt: var(--series-alt);
 
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-jakarta);
+  --font-display: var(--font-bricolage);
   --font-mono: var(--font-geist-mono);
 }
 
 :root {
   color-scheme: light;
 
-  --canvas: var(--color-slate-0);
-  --canvas-sunken: var(--color-slate-50);
+  --canvas: var(--color-paper);
+  --canvas-sunken: var(--color-paper-sunken);
+  /* White, on a ground that is not: this is what lets a card lift without a
+     shadow, which on a page of tables is a great many shadows avoided. */
   --surface: var(--color-slate-0);
   --surface-raised: var(--color-slate-0);
   --border: var(--color-slate-200);
@@ -264,12 +303,14 @@
 .dark {
   color-scheme: dark;
 
-  --canvas: var(--color-slate-1000);
-  --canvas-sunken: var(--color-slate-1000);
-  --surface: var(--color-slate-950);
-  --surface-raised: var(--color-slate-900);
-  --border: var(--color-slate-850);
-  --border-strong: var(--color-slate-800);
+  --canvas: var(--color-night);
+  --canvas-sunken: var(--color-night-sunken);
+  --surface: var(--color-night-raised);
+  --surface-raised: var(--color-night-high);
+  /* The lines rise with the surfaces they sit on. Left where they were, a
+     border on a lifted card would be darker than the card. */
+  --border: var(--color-night-line);
+  --border-strong: var(--color-night-line-strong);
   --ink: var(--color-slate-50);
   --ink-muted: var(--color-slate-400);
   --ink-subtle: var(--color-slate-500);
@@ -292,6 +333,26 @@
        keep at display sizes. */
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* The display face, on the things that are actually headings.
+     Applied here rather than through a utility on each one, because a
+     heading that quietly renders in the body face is a mistake nobody sees
+     until the page is printed. Everything else on the page, numbers
+     included, stays in the reading face. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display), var(--font-sans), ui-sans-serif, sans-serif;
+  }
+
+  /* Anchors and in-page jumps glide rather than cut, on the same terms as
+     everything else that moves here. */
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
   }
 
   /* One visible focus ring everywhere, in the brand colour, offset from the
@@ -372,6 +433,53 @@
   @media (prefers-reduced-motion: reduce) {
     .disclosure::details-content {
       transition: none;
+    }
+  }
+}
+
+/* ====================================================================
+   Arriving on scroll
+   ====================================================================
+   A result page is a column of sections a reader scrolls through once. Each
+   one lifting into place as it comes up softens that, and the whole effect
+   is over inside the first fifth of the section's entry: this is a screen
+   full of numbers someone is trying to read, and a page where things are
+   still moving while you read them is a tiring page.
+
+   Driven by the scroll position rather than by a timer, so it cannot run
+   ahead of the reader, and cannot fire for six sections at once the moment
+   an analysis lands.
+
+   Crucially it is `animation-timeline`, not JavaScript. An IntersectionObserver
+   version has to ship `opacity: 0` in the markup and rely on a bundle
+   arriving to take it away, which for a page whose job is showing someone
+   numbers about their money is the wrong thing to get wrong. Here the whole
+   rule is inside `@supports`: a browser without scroll-driven animations
+   applies no animation at all and simply shows the content, which is the
+   right thing to lose.
+   ==================================================================== */
+@keyframes section-rise {
+  from {
+    opacity: 0;
+    transform: translateY(1.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    @layer utilities {
+      .scroll-rise {
+        animation: section-rise linear both;
+        animation-timeline: view();
+        /* Finished well before the section is fully on screen, so nothing is
+           still animating by the time it is being read. Scrolling back up
+           reverses it only as the section leaves at the bottom. */
+        animation-range: entry 0% entry 45%;
+      }
     }
   }
 }

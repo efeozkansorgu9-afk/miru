@@ -15,6 +15,7 @@
 
 import type { AnalyzeRequest, AnalyzeResponse } from "@/lib/api";
 import { Reveal } from "@/components/reveal";
+import { ScrollRise } from "@/components/scroll-rise";
 import {
   analysisStatusText,
   chartData,
@@ -98,25 +99,25 @@ function Result({
       </Reveal>
 
       {(excluded || Object.keys(coverage.failed_codes).length > 0) && (
-        <Reveal delay={60} className="space-y-8">
+        <ScrollRise className="space-y-8">
           <ExcludedFunds response={response} request={request} />
           <FailedCodes coverage={coverage} />
-        </Reveal>
+        </ScrollRise>
       )}
 
       {figures && (
-        <Reveal delay={90}>
+        <ScrollRise>
           <Returns figures={figures} realReturn={response.real_return} />
-        </Reveal>
+        </ScrollRise>
       )}
 
       {chart && chart.points.length > 1 && (
-        <Reveal delay={120}>
+        <ScrollRise>
           <ValueChart data={chart} staged={analysis.purchases !== null} />
-        </Reveal>
+        </ScrollRise>
       )}
 
-      <Reveal delay={150}>
+      <ScrollRise>
         <TechnicalDetails
           analysis={analysis}
           grouping={grouping}
@@ -126,7 +127,7 @@ function Result({
             coverage.trimmed_coverage.end,
           )}
         />
-      </Reveal>
+      </ScrollRise>
     </div>
   );
 }

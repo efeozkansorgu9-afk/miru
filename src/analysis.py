@@ -13,12 +13,26 @@ call from a notebook, a script or a dashboard alike.
     result = analyze_basket(prices, {"GAL": 10_000, "AFO": 5_000})
     result.diversification_ratio
     find_fund_groups(result.correlation, result.weights).groups
+
+A basket bought in instalments is passed as dated purchases instead of lot
+sizes. The maths downstream is unchanged; only where the weights come from
+differs — market value today rather than the amounts that were paid in:
+
+    result = analyze_basket(prices, purchases=[
+        ("2024-01-15", "GAL", 5_000),
+        ("2024-07-01", "GAL", 5_000),
+        ("2025-02-03", "AFO", 4_000),
+    ])
+    result.purchases.xirr
+    result.purchases.value_series  # market_value and invested, two lines
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
-from typing import Mapping, Optional
+from datetime import date as _date, datetime
+from typing import Iterable, Mapping, Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -42,6 +56,24 @@ WEEKLY_RULE = "W-FRI"
 # nothing to diversification, which is the claim a group is making.
 GROUP_THRESHOLD = 0.85
 
+# XIRR solver bounds. The lower one is a floor, not a guess: at -99.99% a
+# year a holding has effectively gone to zero, and anything the solver finds
+# below that is it walking off rather than an answer about the basket. The
+# upper one exists only so a bracket exists at all. A root outside the pair
+# is reported as no root — see `xirr`.
+XIRR_BOUNDS = (-0.9999, 1e6)
+XIRR_ITERATIONS = 200
+XIRR_TOLERANCE = 1e-9  # judged against the size of the cash flows, not absolutely
+
+# XIRR discounts in calendar years, by the usual 365-day convention.
+DAYS_PER_YEAR = 365.0
+
+# Columns of `PurchasePlan.value_series`. Two lines, never one: the market
+# value jumps on the day money goes in, and a single line would show that
+# jump exactly as it shows a gain.
+VALUE_COLUMN = "market_value"
+INVESTED_COLUMN = "invested"
+
 
 # ----------------------------------------------------------------------
 # Result types
@@ -63,6 +95,75 @@ class Drawdown:
         return int((self.trough_date - self.peak_date).days)
 
 
+# What `analyze_basket(purchases=...)` accepts per row: a `Purchase`, or the
+# plain triple most callers already have on hand.
+PurchaseInput = Union["Purchase", tuple, list]
+
+
+@dataclass(frozen=True)
+class Purchase:
+    """One deposit: this much lira into this fund on this date."""
+
+    date: pd.Timestamp
+    code: str
+    amount: float
+
+
+@dataclass(frozen=True)
+class Fill:
+    """A purchase as the price matrix could actually execute it.
+
+    `date` is the day the money was meant to go in; `fill_date` is the
+    trading day it bought units on. The two differ when the request landed
+    on a weekend or a public holiday, and `was_shifted` says so rather than
+    leaving the caller to compare dates and guess whether it mattered.
+    """
+
+    code: str
+    date: pd.Timestamp
+    fill_date: pd.Timestamp
+    amount: float
+    price: float
+    units: float
+
+    @property
+    def was_shifted(self) -> bool:
+        return self.fill_date != self.date
+
+    @property
+    def shifted_days(self) -> int:
+        return int((self.fill_date - self.date).days)
+
+
+@dataclass(frozen=True)
+class PurchasePlan:
+    """What a list of purchases holds today, and what it cost to get there."""
+
+    fills: tuple[Fill, ...]  # chronological
+    units: dict[str, float]  # per fund, summed over all of its purchases
+    market_value: dict[str, float]  # per fund, at the last priced day
+    total_invested: float  # lira paid in, undiscounted
+    total_value: float  # what those units are worth on `valued_on`
+    absolute_gain: float  # total_value - total_invested, in lira
+    xirr: Optional[float]  # annualised; None when the solve did not converge
+    valued_on: pd.Timestamp
+    value_series: pd.DataFrame = field(repr=False)  # VALUE_ and INVESTED_COLUMN
+
+    @property
+    def shifted_fills(self) -> tuple[Fill, ...]:
+        """Purchases that did not land on the day they were dated."""
+        return tuple(f for f in self.fills if f.was_shifted)
+
+    @property
+    def first_purchase(self) -> pd.Timestamp:
+        return self.fills[0].fill_date
+
+    @property
+    def is_single_dated(self) -> bool:
+        """True when every purchase bought on the same day."""
+        return len({f.fill_date for f in self.fills}) == 1
+
+
 @dataclass(frozen=True)
 class BasketAnalysis:
     """Everything computed for one basket over one price matrix."""
@@ -79,10 +180,20 @@ class BasketAnalysis:
     end: pd.Timestamp
     weekly_returns: pd.DataFrame = field(repr=False)
     basket_value: pd.Series = field(repr=False)
+    # Set only when the basket was described as dated purchases. `weights`
+    # then comes from `purchases.market_value`, and everything the plan
+    # knows that a lot-size basket cannot — XIRR, what was paid in, when —
+    # lives here rather than being flattened into the fields above.
+    purchases: Optional[PurchasePlan] = None
 
     @property
     def is_single_fund(self) -> bool:
         return len(self.weights) == 1
+
+    @property
+    def is_staged(self) -> bool:
+        """True when the basket was bought over more than one day."""
+        return self.purchases is not None and not self.purchases.is_single_dated
 
 
 @dataclass(frozen=True)
@@ -127,33 +238,76 @@ class GroupingResult:
 
 def analyze_basket(
     prices: pd.DataFrame,
-    weights: Mapping[str, float],
+    weights: Optional[Mapping[str, float]] = None,
+    *,
+    purchases: Optional[Iterable["PurchaseInput"]] = None,
 ) -> BasketAnalysis:
     """
     Analyse a basket of funds over an aligned price matrix.
+
+    Give it either `weights` or `purchases`, never both.
 
     Parameters
     ----------
     prices : pd.DataFrame
         Date × fund price matrix, DatetimeIndex, one column per fund, no
         missing values. Align it before calling (see `src.data`).
-    weights : mapping of str to float
+    weights : mapping of str to float, optional
         Lot sizes in lira. Normalised internally, so absolute scale does not
         matter; the ratios between funds do. Must cover exactly the columns
-        of `prices`.
+        of `prices`. Taken as the basket's composition exactly as given — a
+        basket bought in one go, described by what sits in it.
+    purchases : iterable, optional
+        Dated deposits, each a `Purchase` or a `(date, fund_code, amount)`
+        triple. The same fund may appear as often as it was bought into.
+        Buys only: a non-positive amount is rejected rather than read as a
+        sale.
+
+        The weights this produces are **today's market value** — units
+        bought at each purchase date's price, summed per fund, priced at the
+        last day of the matrix — not the lira that went in. That is the
+        basket's real concentration: money that went into a fund that has
+        since doubled occupies twice the room it was given.
+
+        Note that this differs from passing the same amounts as `weights`,
+        which are read as-is. A single purchase per fund on the matrix's
+        first day gives an identical value series, drawdown and correlation,
+        but weights that have drifted with the prices since.
 
     Returns
     -------
     BasketAnalysis
+        With `purchases` set to the resolved `PurchasePlan` when dated
+        purchases were given, and `None` when lot sizes were.
 
     Raises
     ------
     ValueError
         On empty or misaligned input, missing or non-positive prices,
-        negative weights, a non-positive total weight, or fewer than two
-        weekly observations to estimate from.
+        negative weights, a non-positive total weight, fewer than two weekly
+        observations to estimate from, neither or both of `weights` and
+        `purchases`, or a purchase this matrix cannot execute (see
+        `build_purchase_plan`).
     """
     prices = _validate_prices(prices)
+
+    if (weights is None) == (purchases is None):
+        raise ValueError(
+            "give exactly one of weights (a basket bought in one go) or "
+            "purchases (dated deposits) — not both, and not neither"
+        )
+
+    plan: Optional[PurchasePlan] = None
+    if purchases is not None:
+        plan = build_purchase_plan(prices, purchases)
+        unbought = [c for c in prices.columns if c not in plan.market_value]
+        if unbought:
+            raise ValueError(
+                f"priced funds with no purchases: {unbought} — pass a matrix "
+                f"covering exactly the funds that were bought"
+            )
+        weights = plan.market_value
+
     w = _normalize_weights(weights, list(prices.columns))
 
     returns = to_weekly_returns(prices)
@@ -163,7 +317,18 @@ def analyze_basket(
             f"{len(returns)} — the price matrix spans too short a window"
         )
 
-    value = basket_value_series(prices, w)
+    # A deposit-free series in both cases: volatility and drawdown measured
+    # on the staged market value would read every deposit as a recovery and
+    # every stretch before one as a shallower fall. For purchases that means
+    # the units actually held, carried across the whole window — the honest
+    # counterfactual for "what would today's holding have done" — and not
+    # the market-value weights re-bought at day-one prices, which would put
+    # money in on a day it was not there.
+    value = (
+        held_value_series(prices, plan.units)
+        if plan is not None
+        else basket_value_series(prices, w)
+    )
 
     # Weekly volatility per fund, and the basket's own. The basket series is
     # sampled the same way the funds are so the ratio compares like with like.
@@ -186,6 +351,7 @@ def analyze_basket(
         end=prices.index[-1],
         weekly_returns=returns,
         basket_value=value,
+        purchases=plan,
     )
 
 
@@ -217,6 +383,190 @@ def basket_value_series(prices: pd.DataFrame, weights: Mapping[str, float]) -> p
     first = prices.iloc[0]
     units = pd.Series({c: weights[c] / first[c] for c in prices.columns})
     return (prices * units).sum(axis=1)
+
+
+def build_purchase_plan(
+    prices: pd.DataFrame,
+    purchases: Iterable["PurchaseInput"],
+) -> PurchasePlan:
+    """
+    Resolve dated deposits against a price matrix into units, value and XIRR.
+
+    Each purchase buys `amount / price` units at the price of its fill date,
+    and those units are then held: nothing is sold, nothing rebalanced. Per
+    fund the units are summed and marked at the last priced day, which is
+    what `analyze_basket` weights the basket by.
+
+    Fill dates
+    ----------
+    A purchase dated on a day the funds did not price — a weekend, a public
+    holiday, a day the matrix's inner join dropped — fills on the **next**
+    priced day. `PurchasePlan.shifted_fills` lists every purchase this
+    happened to, so a caller can say so rather than quietly reporting units
+    bought at a price on a date the user never named.
+
+    A purchase dated *before* the matrix starts is an error, not a shift.
+    Moving it forward would silently answer a different question — one about
+    a shorter holding period — and the resulting return would flatter or
+    punish the fund for weeks the user never held it. Widen the window or
+    fix the date.
+
+    Parameters
+    ----------
+    prices : pd.DataFrame
+        Date × fund price matrix, as for `analyze_basket`.
+    purchases : iterable
+        `Purchase` objects or `(date, fund_code, amount)` triples. Dates
+        accept `str`, `date`, `datetime` or `pd.Timestamp`.
+
+    Returns
+    -------
+    PurchasePlan
+
+    Raises
+    ------
+    ValueError
+        On an empty list, a malformed entry, a non-positive amount, a fund
+        the matrix does not price, a date before the matrix starts, or a
+        date after its last priced day.
+    """
+    prices = _validate_prices(prices)
+    fills = _fill_purchases(prices, _coerce_purchases(purchases))
+
+    units: dict[str, float] = {}
+    for fill in fills:
+        units[fill.code] = units.get(fill.code, 0.0) + fill.units
+
+    last = prices.iloc[-1]
+    valued_on = prices.index[-1]
+    market_value = {code: held * float(last[code]) for code, held in units.items()}
+
+    total_invested = float(sum(f.amount for f in fills))
+    total_value = float(sum(market_value.values()))
+
+    # Money out is negative on the day it left, the holding is one positive
+    # flow on the day it is valued. One sign change, so the rate is unique.
+    cashflows = [(f.fill_date, -f.amount) for f in fills]
+    cashflows.append((valued_on, total_value))
+
+    return PurchasePlan(
+        fills=fills,
+        units=units,
+        market_value=market_value,
+        total_invested=total_invested,
+        total_value=total_value,
+        absolute_gain=total_value - total_invested,
+        xirr=xirr(cashflows),
+        valued_on=valued_on,
+        value_series=_purchase_value_series(prices, fills),
+    )
+
+
+def xirr(
+    cashflows: Sequence[tuple],
+    bounds: tuple[float, float] = XIRR_BOUNDS,
+) -> Optional[float]:
+    """
+    The annual rate that discounts a dated cash flow series to zero.
+
+    A plain percentage gain is the wrong number for a basket bought in
+    instalments: it credits lira that arrived last month with the same
+    working time as lira that arrived three years ago. XIRR asks instead
+    what constant annual rate, applied to each deposit for exactly as long
+    as it was invested, arrives at today's value.
+
+    Solved by bisection rather than Newton. Deposits followed by one
+    valuation give a single sign change, so the NPV is monotone in the rate
+    and bisection cannot be thrown off by a bad starting point the way
+    Newton can — and when there is no root inside `bounds` it says so
+    instead of returning wherever it happened to stop.
+
+    Parameters
+    ----------
+    cashflows : sequence of (date, amount)
+        Negative out, positive in. Dates accept `str`, `date`, `datetime` or
+        `pd.Timestamp`.
+    bounds : (float, float)
+        Rate bracket to search. Defaults to `XIRR_BOUNDS`.
+
+    Returns
+    -------
+    float or None
+        `None` — never a made-up number — when the flows do not admit a rate
+        at all (fewer than two flows, all on one day, or all one sign) or
+        when the solve does not converge inside `bounds`.
+    """
+    flows = [(_to_timestamp(when), float(amount)) for when, amount in cashflows]
+    if len(flows) < 2:
+        return None
+
+    anchor = min(when for when, _ in flows)
+    dated = [((when - anchor).days / DAYS_PER_YEAR, amount) for when, amount in flows]
+
+    if max(years for years, _ in dated) <= 0:
+        # Everything on one day. No time passed for a rate to act over, so
+        # there is no annual rate to report — only an absolute gain.
+        return None
+    if not any(a > 0 for _, a in dated) or not any(a < 0 for _, a in dated):
+        return None
+
+    scale = sum(abs(a) for _, a in dated)
+
+    def npv(rate: float) -> float:
+        return sum(amount / (1.0 + rate) ** years for years, amount in dated)
+
+    low, high = bounds
+    try:
+        f_low, f_high = npv(low), npv(high)
+    except (OverflowError, ZeroDivisionError):
+        return None
+    if not math.isfinite(f_low) or not math.isfinite(f_high) or f_low * f_high > 0:
+        # No sign change across the bracket: any root lies outside the range
+        # of rates worth reporting.
+        return None
+
+    for _ in range(XIRR_ITERATIONS):
+        middle = (low + high) / 2.0
+        try:
+            f_middle = npv(middle)
+        except (OverflowError, ZeroDivisionError):
+            return None
+        if not math.isfinite(f_middle):
+            return None
+        if f_low * f_middle <= 0:
+            high, f_high = middle, f_middle
+        else:
+            low, f_low = middle, f_middle
+
+    rate = (low + high) / 2.0
+    if abs(npv(rate)) > XIRR_TOLERANCE * scale:
+        return None
+    return float(rate)
+
+
+def held_value_series(prices: pd.DataFrame, units: Mapping[str, float]) -> pd.Series:
+    """
+    Value of a fixed unit holding across the window, normalised to 1.0.
+
+    The counterpart to `basket_value_series` for a basket described by the
+    units it actually holds rather than by the lira that went in. Used for
+    staged purchases, where the two differ: money that arrived in month 30
+    bought its units at month 30's price, and pretending it bought at the
+    window's opening price would misstate both the holding and its history.
+
+    Normalised so the two functions return comparable series. Volatility and
+    drawdown do not care about the scale anyway.
+    """
+    missing = [c for c in prices.columns if c not in units]
+    if missing:
+        raise ValueError(f"no units held for priced funds {missing}")
+
+    held = pd.Series({c: float(units[c]) for c in prices.columns})
+    value = (prices * held).sum(axis=1)
+    first = float(value.iloc[0])
+    if first <= 0:
+        raise ValueError("holding is worth nothing at the start of the window")
+    return value / first
 
 
 def max_drawdown(value: pd.Series) -> Drawdown:
@@ -319,6 +669,143 @@ def find_fund_groups(
 # ----------------------------------------------------------------------
 
 
+def _to_timestamp(value) -> pd.Timestamp:
+    """A date in any of the shapes a caller reasonably has, at midnight."""
+    if isinstance(value, pd.Timestamp):
+        stamp = value
+    elif isinstance(value, (datetime, _date, str)):
+        stamp = pd.Timestamp(value)
+    else:
+        raise ValueError(
+            f"cannot read {value!r} as a date — pass a str, date, datetime "
+            f"or pd.Timestamp"
+        )
+    if pd.isna(stamp):
+        raise ValueError(f"cannot read {value!r} as a date")
+    return stamp.normalize()
+
+
+def _coerce_purchases(purchases: Iterable["PurchaseInput"]) -> list[Purchase]:
+    """Whatever the caller passed, as validated `Purchase` objects."""
+    out: list[Purchase] = []
+    for position, item in enumerate(purchases):
+        if isinstance(item, Purchase):
+            when, code, amount = item.date, item.code, item.amount
+        elif isinstance(item, (tuple, list)):
+            if len(item) != 3:
+                raise ValueError(
+                    f"purchase {position} must be (date, fund_code, amount), "
+                    f"got {len(item)} values: {item!r}"
+                )
+            when, code, amount = item
+        else:
+            raise ValueError(
+                f"purchase {position} must be a Purchase or a "
+                f"(date, fund_code, amount) triple, got {type(item).__name__}"
+            )
+
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"purchase {position} has a non-numeric amount: {amount!r}"
+            ) from None
+        if not amount > 0:
+            # Also catches NaN. Sales are not modelled: with units leaving
+            # the basket, today's holding no longer follows from the
+            # purchase list alone, and every number here rests on that.
+            raise ValueError(
+                f"purchase {position} has amount {amount} — amounts must be "
+                f"positive; this layer models purchases only, not sales"
+            )
+
+        out.append(Purchase(date=_to_timestamp(when), code=str(code), amount=amount))
+
+    if not out:
+        raise ValueError("no purchases given — nothing to analyse")
+    return out
+
+
+def _fill_purchases(
+    prices: pd.DataFrame,
+    purchases: list[Purchase],
+) -> tuple[Fill, ...]:
+    """Match each purchase to the day it could actually have bought units."""
+    index = prices.index
+    priced = set(prices.columns)
+    fills: list[Fill] = []
+
+    for item in purchases:
+        if item.code not in priced:
+            raise ValueError(
+                f"purchase in {item.code} on {item.date.date()} has no prices "
+                f"— the matrix covers {sorted(priced)}"
+            )
+        if item.date < index[0]:
+            raise ValueError(
+                f"purchase in {item.code} is dated {item.date.date()}, before "
+                f"its prices start on {index[0].date()} — widen the window or "
+                f"correct the date; moving the purchase forward would quietly "
+                f"answer a question about a shorter holding period"
+            )
+
+        # First priced day at or after the request: a weekend or holiday
+        # purchase buys on the next trading day, as it would in reality.
+        position = int(index.searchsorted(item.date, side="left"))
+        if position >= len(index):
+            raise ValueError(
+                f"purchase in {item.code} is dated {item.date.date()}, after "
+                f"the last priced day {index[-1].date()} — there is no "
+                f"trading day left to buy on"
+            )
+
+        fill_date = index[position]
+        price = float(prices.at[fill_date, item.code])
+        fills.append(
+            Fill(
+                code=item.code,
+                date=item.date,
+                fill_date=fill_date,
+                amount=item.amount,
+                price=price,
+                units=item.amount / price,
+            )
+        )
+
+    return tuple(sorted(fills, key=lambda f: (f.fill_date, f.code)))
+
+
+def _purchase_value_series(
+    prices: pd.DataFrame,
+    fills: tuple[Fill, ...],
+) -> pd.DataFrame:
+    """
+    Two lines for a chart: what the basket is worth, and what it cost.
+
+    `market_value` steps up on every purchase date because money arrived,
+    not because anything gained. `invested` is that same money as a
+    staircase, so the two together separate deposits from performance —
+    the gap between the lines is the gain, and the jumps line up.
+
+    Starts at the first fill: before it both lines are flat zero, which
+    tells a reader nothing and squashes the rest of the chart.
+    """
+    added_units = pd.DataFrame(0.0, index=prices.index, columns=prices.columns)
+    added_cash = pd.Series(0.0, index=prices.index)
+    for fill in fills:
+        added_units.at[fill.fill_date, fill.code] += fill.units
+        added_cash.at[fill.fill_date] += fill.amount
+
+    held = added_units.cumsum()
+    series = pd.DataFrame(
+        {
+            VALUE_COLUMN: (held * prices).sum(axis=1),
+            INVESTED_COLUMN: added_cash.cumsum(),
+        }
+    )
+    return series.loc[fills[0].fill_date:]
+
+
 def _validate_prices(prices: pd.DataFrame) -> pd.DataFrame:
     if not isinstance(prices, pd.DataFrame):
         raise ValueError(f"prices must be a DataFrame, got {type(prices).__name__}")
@@ -343,7 +830,7 @@ def _validate_prices(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 def _normalize_weights(weights: Mapping[str, float], columns: list[str]) -> dict[str, float]:
-    """Lira amounts in, fractions of the basket out."""
+    """Lira in — lot sizes or market values — fractions of the basket out."""
     missing = [c for c in columns if c not in weights]
     extra = [c for c in weights if c not in columns]
     if missing or extra:

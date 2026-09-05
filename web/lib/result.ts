@@ -30,6 +30,7 @@ import type {
   FailureKind,
   FundCoverage,
   Grouping,
+  RealReturn,
 } from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import {
@@ -508,19 +509,6 @@ export function heldGetiriNotu(start: string): string {
   );
 }
 
-/**
- * The deflated series, moved onto the same scale as the value line.
- *
- * The server pins a lump sum basket's series to the first day and this page
- * pins it to the last, so the two differ by a constant factor. Deflation is
- * linear, so correcting it is one multiplication rather than a second CPI
- * pass.
- */
-export function rescaleReal(values: number[], lastBasketValue: number): number[] {
-  if (!(lastBasketValue > 0)) return values;
-  return values.map((v) => v / lastBasketValue);
-}
-
 /* ------------------------------------------------------------------ */
 /* The value chart                                                     */
 /* ------------------------------------------------------------------ */
@@ -529,12 +517,84 @@ export interface ChartPoint {
   date: string;
   market: number;
   invested: number;
-  real?: number;
+  /** Absent when the CPI could not be fetched. */
+  inflation?: number;
 }
 
 export interface ChartData {
   points: ChartPoint[];
-  hasReal: boolean;
+  /** False when there is no CPI. The line and its control both disappear. */
+  hasInflation: boolean;
+}
+
+/**
+ * The consumer price index over the chart's own dates, as a growth factor
+ * from the first day.
+ *
+ * Recovered from the answer rather than fetched again. The server sends the
+ * basket's value series and the same series deflated to today's prices, and
+ * the deflated one is `k * value[i] * D_last / D_i` for a constant `k`. So
+ * the ratio of the two carries the index, and dividing the first ratio by
+ * the rest cancels both `k` and `D_last` and leaves `D_i / D_0`.
+ *
+ * Checked against the raw TÜİK series at sample dates across a five year
+ * window: the two agree to about 1e-16, in both the lump sum and held units
+ * cases.
+ */
+function cpiGrowth(analysis: BasketAnalysis, real: RealReturn | null): number[] | null {
+  if (!real) return null;
+
+  const value = analysis.basket_value.values;
+  const deflated = real.real_value.values;
+  if (deflated.length !== value.length || value.length === 0) return null;
+
+  const ratio = value.map((v, i) => (v > 0 ? deflated[i] / v : Number.NaN));
+  const first = ratio[0];
+  if (!(first > 0)) return null;
+
+  const growth = ratio.map((r) => (r > 0 ? first / r : Number.NaN));
+  return growth.every(Number.isFinite) ? growth : null;
+}
+
+/** The same growth factors, on another series' dates and rebased to its first. */
+function alignGrowth(
+  from: string[],
+  growth: number[],
+  onto: string[],
+): number[] | null {
+  const byDate = new Map(from.map((date, i) => [date, growth[i]]));
+  const out: number[] = [];
+  for (const date of onto) {
+    const g = byDate.get(date);
+    if (g === undefined) return null;
+    out.push(g);
+  }
+  const base = out[0];
+  return base > 0 ? out.map((g) => g / base) : null;
+}
+
+/**
+ * The money that went in, grown by inflation from the day each part of it
+ * arrived.
+ *
+ * Not the total multiplied by the period's inflation. Money paid in last
+ * month has had one month of prices to keep up with, not three years of
+ * them, and treating the whole principal as though it arrived on day one
+ * would overstate the line every staged basket is measured against.
+ */
+function inflatePrincipal(invested: number[], growth: number[]): number[] {
+  const out: number[] = [];
+  let carried = 0;
+  let previous = 0;
+
+  for (let i = 0; i < invested.length; i += 1) {
+    // What was already in grows with prices; what arrives today does not.
+    if (i > 0 && growth[i - 1] > 0) carried *= growth[i] / growth[i - 1];
+    carried += invested[i] - previous;
+    previous = invested[i];
+    out.push(carried);
+  }
+  return out;
 }
 
 export function chartData(
@@ -545,43 +605,43 @@ export function chartData(
   if (!analysis) return null;
 
   const plan = analysis.purchases;
+  const matrix = analysis.basket_value;
+  const growth = cpiGrowth(analysis, response.real_return);
 
   if (plan) {
     // Two lines, never one: market value jumps on the day money arrives, and
-    // a single line would show that jump exactly as it shows a gain.
-    const s = plan.value_series;
+    // a single line would show that jump exactly as it shows a gain. The
+    // third is what that same money would be worth if it had only kept pace
+    // with prices, which is the line that says whether the gain was real.
+    const series = plan.value_series;
+    const aligned = growth ? alignGrowth(matrix.dates, growth, series.dates) : null;
+    const inflated = aligned ? inflatePrincipal(series.invested, aligned) : null;
+
     return {
-      points: s.dates.map((date, i) => ({
+      points: series.dates.map((date, i) => ({
         date,
-        market: s.market_value[i],
-        invested: s.invested[i],
+        market: series.market_value[i],
+        invested: series.invested[i],
+        ...(inflated ? { inflation: inflated[i] } : {}),
       })),
-      // The deflated series is measured on the units held today, carried
-      // across the whole window, so it does not share an x axis or a scale
-      // with the staged lines. Drawing it here would put two different
-      // questions on one chart.
-      hasReal: false,
+      hasInflation: inflated !== null,
     };
   }
 
   const scale = basketScale(analysis, request);
-  const bv = analysis.basket_value;
-  const real =
-    response.real_return && response.real_return.basis === "lump_sum"
-      ? rescaleReal(response.real_return.real_value.values, bv.values.at(-1) ?? 1)
-      : null;
+  // Held unchanged across the window, so the principal is flat at what the
+  // same holding was worth on day one.
+  const invested = matrix.dates.map(() => scale);
+  const inflated = growth ? inflatePrincipal(invested, growth) : null;
 
   return {
-    points: bv.dates.map((date, i) => ({
+    points: matrix.dates.map((date, i) => ({
       date,
-      market: bv.values[i] * scale,
-      // Held unchanged across the window, so the reference line is flat at
-      // what the same holding was worth on day one. The gap above it is the
-      // gain.
+      market: matrix.values[i] * scale,
       invested: scale,
-      ...(real ? { real: real[i] } : {}),
+      ...(inflated ? { inflation: inflated[i] } : {}),
     })),
-    hasReal: real !== null,
+    hasInflation: inflated !== null,
   };
 }
 

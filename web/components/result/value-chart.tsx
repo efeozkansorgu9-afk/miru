@@ -15,12 +15,20 @@ import { para, tarih } from "@/lib/format";
 import type { ChartData } from "@/lib/result";
 
 /**
- * The basket over time, against the money that was put into it.
+ * The basket over time, against the money that was put into it and against
+ * what that money would be worth if it had only kept up with prices.
  *
- * Two lines rather than one. A single value line makes every deposit look
- * like a gain: the money arrives, the line steps up, and nothing on the
- * chart says which of the two happened. The principal line is where the
- * deposits are, and the gap between the lines is the return.
+ * Three lines, and each one answers a question the others cannot. A single
+ * value line makes every deposit look like a gain: the money arrives, the
+ * line steps up, and nothing says which of the two happened, so the
+ * principal line is where the deposits are and the gap above it is the
+ * return. But in a country running Turkish inflation a gain is not yet good
+ * news, and the third line is the test: below it the basket has lost buying
+ * power in lira that grew.
+ *
+ * The inflation line can be switched off, and is on by default, because it
+ * is the comparison most people came for. Without a CPI it is not drawn and
+ * the control is not there either, rather than sitting on screen disabled.
  *
  * The scale control is not decoration. When one fund runs away from the rest
  * the linear axis flattens the first two years into a straight line at the
@@ -35,9 +43,14 @@ const LINES = {
   market: { key: "market", label: "Sepetin piyasa değeri", color: "var(--accent)" },
   invested: { key: "invested", label: "Yatırılan anapara", color: "var(--ink-subtle)" },
   opening: { key: "invested", label: "Dönem başındaki değeri", color: "var(--ink-subtle)" },
-  real: {
-    key: "real",
-    label: "Enflasyondan arındırılmış",
+  inflation: {
+    key: "inflation",
+    label: "Enflasyonla artan anapara",
+    color: "var(--series-alt)",
+  },
+  openingInflation: {
+    key: "inflation",
+    label: "Enflasyonla artan değeri",
     color: "var(--series-alt)",
   },
 } as const;
@@ -51,11 +64,16 @@ export function ValueChart({
   staged: boolean;
 }) {
   const [scale, setScale] = useState<Scale>("normal");
+  // On by default: this is the comparison the page exists to make.
+  const [showInflation, setShowInflation] = useState(true);
   const groupName = useId();
+  const inflationId = useId();
 
+  const withInflation = data.hasInflation && showInflation;
   const reference = staged ? LINES.invested : LINES.opening;
-  const series = data.hasReal
-    ? [LINES.market, LINES.real, reference]
+  const inflationLine = staged ? LINES.inflation : LINES.openingInflation;
+  const series = withInflation
+    ? [LINES.market, inflationLine, reference]
     : [LINES.market, reference];
 
   // Both axes are ticked here rather than by Recharts. On a log axis
@@ -68,10 +86,12 @@ export function ValueChart({
   // which is how a log axis ends up with no labels at all.
   const axis = useMemo(() => {
     const values = data.points.flatMap((p) =>
-      [p.market, p.invested, p.real].filter((v): v is number => v !== undefined),
+      [p.market, p.invested, withInflation ? p.inflation : undefined].filter(
+        (v): v is number => v !== undefined,
+      ),
     );
     return scale === "log" ? logAxis(values) : linearAxis(values);
-  }, [scale, data.points]);
+  }, [scale, data.points, withInflation]);
 
   const formatTick = useMemo(() => axisFormatter(axis.ticks), [axis]);
 
@@ -94,7 +114,32 @@ export function ValueChart({
           </h2>
         </div>
 
-        <fieldset className="inline-flex rounded-control border border-border bg-canvas-sunken p-1">
+        <div className="flex flex-wrap items-center gap-3">
+          {data.hasInflation && (
+            <label
+              htmlFor={inflationId}
+              className="inline-flex cursor-pointer items-center gap-2.5 rounded-control border border-border px-3.5 py-2.5 text-caption text-ink-muted transition-colors hover:border-border-strong has-checked:text-ink"
+            >
+              <input
+                id={inflationId}
+                type="checkbox"
+                checked={showInflation}
+                onChange={(event) => setShowInflation(event.target.checked)}
+                className="peer sr-only"
+              />
+              <span
+                aria-hidden="true"
+                className="grid size-4 shrink-0 place-items-center rounded-[0.3rem] border border-border-strong text-transparent transition-colors peer-checked:border-accent peer-checked:bg-accent peer-checked:text-accent-ink peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="size-3">
+                  <path d="m3.5 8.5 3 3 6-7" />
+                </svg>
+              </span>
+              Enflasyon çizgisi
+            </label>
+          )}
+
+          <fieldset className="inline-flex rounded-control border border-border bg-canvas-sunken p-1">
           <legend className="sr-only">Ölçek</legend>
           {(["normal", "log"] as const).map((option) => (
             <label key={option} className="cursor-pointer">
@@ -117,7 +162,8 @@ export function ValueChart({
               </span>
             </label>
           ))}
-        </fieldset>
+          </fieldset>
+        </div>
       </div>
 
       <ul className="mt-5 flex flex-wrap gap-x-6 gap-y-2">
@@ -135,7 +181,13 @@ export function ValueChart({
 
       <div className="mt-4 h-80 w-full sm:h-96">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data.points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <LineChart
+            data={data.points}
+            // Room on the right for the last date label. The final tick sits
+            // on the plot's right edge and the label centres on it, so half
+            // of "09.26" hangs outside the drawing area and is clipped.
+            margin={{ top: 8, right: 28, bottom: 0, left: 0 }}
+          >
             <CartesianGrid stroke="var(--border)" vertical={false} />
             <XAxis
               dataKey="date"
@@ -176,21 +228,38 @@ export function ValueChart({
       </div>
 
       <p className="mt-4 max-w-prose text-caption text-ink-subtle text-pretty">
-        {data.hasReal
-          ? "Arındırılmış çizgi yukarıdan başlar, çünkü sepetin o günkü değerinin " +
-            "bugünün parasıyla ne ettiğini gösterir. İki çizgi arasındaki açıklık " +
-            "dönemin enflasyonudur."
-          : staged
-            ? "Kesikli çizgi, o güne kadar giren toplam parayı gösterir. Aradaki " +
-              "açıklık kazançtır."
-            : "Kesikli çizgi, sepetin dönem başındaki değerinde sabit durur. " +
-              "Aradaki açıklık değer artışıdır."}
+        {caption(staged, withInflation)}
       </p>
     </section>
   );
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * What the lines are, in as few words as they can be said in.
+ *
+ * The third sentence is the one that matters and is written as a test rather
+ * than as a definition: a reader who has just seen a large green number
+ * needs to know which side of that line to look for it on.
+ */
+function caption(staged: boolean, withInflation: boolean): string {
+  const principal = staged
+    ? "kesikli çizgi o güne kadar yatırdığınız para"
+    : "kesikli çizgi sepetin dönem başındaki değeri";
+
+  if (!withInflation) {
+    return `Renkli çizgi sepetin piyasa değeri, ${principal}. Aradaki açıklık ${
+      staged ? "kazancınız" : "değer artışı"
+    }.`;
+  }
+
+  return (
+    `Renkli çizgi sepetin piyasa değeri, ${principal}, üçüncü çizgi aynı paranın ` +
+    `yalnız enflasyon kadar artmış hali. Piyasa değeri enflasyon çizgisinin ` +
+    `üstündeyse sepet alım gücünü korumuş, altındaysa korumamış.`
+  );
+}
 
 function eksenTarihi(iso: string): string {
   const [y, m] = iso.split("-");

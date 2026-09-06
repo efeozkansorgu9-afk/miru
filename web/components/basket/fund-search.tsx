@@ -17,6 +17,14 @@ import type { SearchableFund } from "@/lib/funds";
  * The field stays exactly where it is when something is chosen and empties
  * itself, so a basket can be built by typing without ever reaching for the
  * mouse or hunting for the box again as the list below grows.
+ *
+ * When the registry cannot be fetched the box does not go dead. It turns
+ * into a plain code field and what is typed is added as it stands. The
+ * registry is only how a code is found and named; the analysis endpoint
+ * never needed it, so a reader who already knows they hold GAL can still
+ * get an answer. What is lost is the name next to the code and the check
+ * that the code exists at all, and the note under the field says so rather
+ * than letting a typo look like a fund.
  */
 export function FundSearch({
   chosen,
@@ -35,12 +43,16 @@ export function FundSearch({
   const reduceMotion = useReducedMotion();
 
   const funds = registry.phase === "ready" ? registry.funds : null;
+  // No registry, no autocomplete: the field takes a code and nothing else.
+  const elle = registry.phase === "error";
   const results = useMemo(
     () => (funds ? searchFunds(funds, query) : []),
     [funds, query],
   );
 
-  const showList = open && query.trim().length > 0;
+  const showList = open && !elle && query.trim().length > 0;
+  const kod = elle ? kodaCevir(query) : "";
+  const eklenebilir = kod.length > 0 && !chosen.has(kod);
 
   function choose(fund: SearchableFund) {
     if (chosen.has(fund.code)) return;
@@ -52,9 +64,34 @@ export function FundSearch({
     inputRef.current?.focus();
   }
 
+  /**
+   * Add whatever was typed, as a fund with a code and no name.
+   *
+   * `title` is empty rather than filled with the code or a placeholder:
+   * every row that shows a name reads it from here, and writing something
+   * into it would put an invented name on screen. The empty string is the
+   * truth, and `FundRow` says so where the name would have been.
+   */
+  function elleEkle() {
+    if (!eklenebilir) return;
+    onChoose({ code: kod, title: "", haystack: "" });
+    setQuery("");
+    inputRef.current?.focus();
+  }
+
   function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
       setOpen(false);
+      return;
+    }
+    if (elle) {
+      // Enter is the only way in from the keyboard here, and it must not
+      // reach the form: submitting would run an analysis of the basket as
+      // it stands, without the fund being typed.
+      if (event.key === "Enter") {
+        event.preventDefault();
+        elleEkle();
+      }
       return;
     }
     if (!showList || results.length === 0) return;
@@ -78,41 +115,72 @@ export function FundSearch({
         htmlFor={`${listId}-input`}
         className="block text-label text-ink-muted"
       >
-        Fon ara
+        {elle ? "Fon kodu" : "Fon ara"}
       </label>
 
-      <div className="relative mt-2">
-        <SearchIcon />
-        <input
-          id={`${listId}-input`}
-          ref={inputRef}
-          type="text"
-          role="combobox"
-          autoComplete="off"
-          aria-expanded={showList}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={
-            showList && results[active] ? `${listId}-${results[active].code}` : undefined
-          }
-          value={query}
-          disabled={registry.phase === "error"}
-          placeholder="Fon kodu veya adı yazın"
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActive(0);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          // A blur that fires before the click lands would close the list out
-          // from under the pointer, so the close waits a frame.
-          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
-          onKeyDown={onKeyDown}
-          className="w-full rounded-control border border-border bg-surface py-3.5 pl-11 pr-4 text-body text-ink transition-colors placeholder:text-ink-subtle hover:border-border-strong focus:border-accent disabled:opacity-60"
-        />
+      <div className="mt-2 flex items-start gap-3">
+        <div className="relative min-w-0 flex-1">
+          <SearchIcon />
+          <input
+            id={`${listId}-input`}
+            ref={inputRef}
+            type="text"
+            autoComplete="off"
+            // Combobox semantics only while there is a list behind the box.
+            // Announcing one that cannot open would be a promise the field
+            // does not keep.
+            {...(elle
+              ? { role: "textbox" as const }
+              : {
+                  role: "combobox" as const,
+                  "aria-expanded": showList,
+                  "aria-controls": listId,
+                  "aria-autocomplete": "list" as const,
+                  "aria-activedescendant":
+                    showList && results[active]
+                      ? `${listId}-${results[active].code}`
+                      : undefined,
+                })}
+            value={query}
+            placeholder={elle ? "GAL" : "Fon kodu veya adı yazın"}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActive(0);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            // A blur that fires before the click lands would close the list out
+            // from under the pointer, so the close waits a frame.
+            onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+            onKeyDown={onKeyDown}
+            className={`w-full rounded-control border border-border bg-surface py-3.5 pr-4 text-body text-ink transition-colors placeholder:text-ink-subtle hover:border-border-strong focus:border-accent ${
+              elle ? "pl-4 font-mono uppercase" : "pl-11"
+            }`}
+          />
+        </div>
+
+        {/* Only in the typed path. With a list, choosing from it is the way
+            in and a second control would be one thing too many. */}
+        {elle && (
+          <button
+            type="button"
+            onClick={elleEkle}
+            disabled={!eklenebilir}
+            className="shrink-0 rounded-control border border-border-strong bg-surface px-6 py-3.5 text-body font-medium text-ink transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Ekle
+          </button>
+        )}
       </div>
 
-      <p className="mt-2 min-h-5 text-caption text-ink-subtle">{hint(registry, results.length, query)}</p>
+      <p className="mt-2 min-h-5 text-caption text-ink-subtle">
+        {hint(registry, results.length, query, kod, chosen)}
+      </p>
+      {elle && (
+        <p className="max-w-prose text-caption text-ink-subtle text-pretty">
+          Fon adı doğrulanamıyor, kod doğruysa analiz çalışır.
+        </p>
+      )}
 
       <AnimatePresence>
         {showList && results.length > 0 && (
@@ -159,16 +227,34 @@ export function FundSearch({
   );
 }
 
+/**
+ * A code as the analysis will read it: trimmed and upper case.
+ *
+ * `toUpperCase`, not the Turkish locale one. Fund codes are ASCII, and the
+ * Turkish mapping sends "i" to the dotted "İ", so a typed "tie" would be
+ * added as "TİE" and would match nothing on TEFAS. The rest of the page
+ * lowercases the Turkish way on purpose, for searching titles; this is the
+ * one place that must not.
+ */
+function kodaCevir(query: string): string {
+  return query.trim().toUpperCase();
+}
+
 function hint(
   registry: ReturnType<typeof useFundRegistry>,
   count: number,
   query: string,
+  kod: string,
+  chosen: Set<string>,
 ): string {
   if (registry.phase === "loading") return "Fon listesi yükleniyor.";
   if (registry.phase === "error") {
-    return registry.error.kind === "upstream"
-      ? "TEFAS şu anda yanıt vermiyor, fon listesi alınamadı."
-      : "Fon listesine ulaşılamadı. Sunucu çalışıyor mu?";
+    if (kod && chosen.has(kod)) return `${kod} sepetinizde zaten var.`;
+    const neden =
+      registry.error.kind === "upstream"
+        ? "TEFAS şu anda yanıt vermiyor, fon listesi alınamadı."
+        : "Fon listesine ulaşılamadı. Sunucu çalışıyor mu?";
+    return `${neden} Fon kodunu elle yazıp ekleyebilirsiniz.`;
   }
   if (query.trim() && count === 0) return "Bu aramaya uyan fon yok.";
   if (!query.trim()) return `${registry.funds.length} fon arasında arayın.`;

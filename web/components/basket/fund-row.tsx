@@ -49,8 +49,16 @@ export function FundRow({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <span className="font-mono text-label text-accent">{fund.code}</span>
-            <p className="mt-1 text-caption text-ink-muted" title={fund.title}>
-              {fund.title}
+            {/* A fund typed in by hand when the registry was unreachable has
+                no name. Saying so beats an empty line that reads as a title
+                still loading, and beats inventing one. */}
+            <p
+              className={`mt-1 text-caption ${
+                fund.title ? "text-ink-muted" : "text-ink-subtle"
+              }`}
+              title={fund.title || undefined}
+            >
+              {fund.title || "Fon adı doğrulanamadı."}
             </p>
           </div>
           <button

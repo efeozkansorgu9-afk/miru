@@ -1,4 +1,4 @@
-# FonRadar 📊
+# Miru 📊
 
 Investment fund performance analysis for the Turkish market.
 

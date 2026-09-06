@@ -1,1 +1,1 @@
-"""FonRadar - Yatırım Fonu Analiz Araçları"""
+"""Miru - Yatırım Fonu Analiz Araçları"""

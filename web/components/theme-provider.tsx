@@ -20,7 +20,7 @@ export type ThemePreference = "light" | "dark" | "system";
 /** What is actually on screen once "system" has been resolved. */
 export type ResolvedTheme = "light" | "dark";
 
-export const THEME_STORAGE_KEY = "fonradar-theme";
+export const THEME_STORAGE_KEY = "miru-theme";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 

@@ -108,7 +108,7 @@ def main(argv: list[str]) -> int:
     end = date.today()
     start = end - timedelta(days=LOOKBACK_DAYS)
 
-    print("FonRadar - TEFAS smoke test")
+    print("Miru - TEFAS smoke test")
     print(f"window : {start} -> {end} ({LOOKBACK_DAYS} days)")
     print(f"funds  : {', '.join(funds)}")
 

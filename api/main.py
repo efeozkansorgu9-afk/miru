@@ -17,7 +17,7 @@ Then open http://localhost:8000/docs.
 
 To open the app on a phone, bind to the network and allow its origin:
 
-    FONRADAR_DEV=1 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+    MIRU_DEV=1 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
 See `DEV_ORIGIN_REGEX` for what that permits, and note that the phone also
 needs the frontend pointed at the laptop rather than at itself, with
@@ -80,7 +80,7 @@ DEV_ORIGIN_REGEX = (
 # everything this API can reach, which on a laptop joined to a café's wifi is
 # every other device on it. Deployment sets nothing and gets the two localhost
 # origins, so production cannot inherit this by forgetting to unset it.
-DEV_ENV_VAR = "FONRADAR_DEV"
+DEV_ENV_VAR = "MIRU_DEV"
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
@@ -125,7 +125,7 @@ ROLLING_WINDOW_WEEKS = 52
 MIN_ROLLING_POINTS = 26
 
 app = FastAPI(
-    title="FonRadar API",
+    title="Miru API",
     version=API_VERSION,
     summary="Turkish investment fund basket analysis.",
     description=(

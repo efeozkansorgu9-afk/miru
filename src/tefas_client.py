@@ -294,7 +294,7 @@ def main():
     """Fetch all popular funds and save them to data/fund_data.csv."""
 
     print("=" * 50)
-    print("FonRadar - TEFAS Data Fetcher")
+    print("Miru - TEFAS Data Fetcher")
     print("=" * 50)
     print()
 

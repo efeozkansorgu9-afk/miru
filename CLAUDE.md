@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FonRadar tells someone which of the funds in their basket are really one holding. It fetches historical prices from the TEFAS (Turkey Electronic Fund Trading Platform) API, analyses a basket in Python (`src/`), serves that over HTTP (`api/`), and presents it in a Next.js frontend (`web/`), which is the only user interface. The notebooks in `notebooks/` are for exploration, not part of the product.
+Miru tells someone which of the funds in their basket are really one holding. It fetches historical prices from the TEFAS (Turkey Electronic Fund Trading Platform) API, analyses a basket in Python (`src/`), serves that over HTTP (`api/`), and presents it in a Next.js frontend (`web/`), which is the only user interface. The notebooks in `notebooks/` are for exploration, not part of the product.
 
 ## Setup and Commands
 

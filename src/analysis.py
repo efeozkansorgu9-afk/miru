@@ -717,6 +717,86 @@ def find_fund_groups(
     )
 
 
+def rolling_correlation(
+    prices: pd.DataFrame,
+    pair: tuple[str, str],
+    *,
+    window: int,
+) -> pd.Series:
+    """
+    Correlation of one pair of funds over a moving window of weeks.
+
+    The single number `analyze_basket` reports is an average over the whole
+    matrix, and an average hides its own history: two funds at 0.90 for the
+    period may have sat at 0.40 for two years and 0.98 since, which is a
+    different fact about a basket than a steady 0.90. This is that history.
+
+    Computed on the same weekly returns as everything else in this module,
+    and on the returns of the frame it is given, so a series taken from the
+    matrix `analyze_basket` ran on lines up with the correlation it reported
+    rather than being measured over slightly different weeks.
+
+    No value is produced until a window is full, and nothing is filled. The
+    first value sits at the end of the first complete window, which is where
+    it belongs: it describes the weeks behind it, not the day it is drawn on.
+    A window whose returns are degenerate — a fund that did not move at all
+    across it, so the correlation is 0/0 — stays NaN rather than being
+    dropped, because dropping it would join the two sides of a gap into a
+    line that was never measured.
+
+    Parameters
+    ----------
+    prices : pd.DataFrame
+        Date × fund price matrix, as `analyze_basket` takes.
+    pair : tuple of two str
+        The two fund codes to correlate. Both must be columns of `prices`.
+    window : int
+        Window length in weekly observations, at least 2. Deliberately has
+        no default: the length decides how much of a correlation's movement
+        is the funds and how much is the estimator, and that is a judgement
+        about the product, made where the product is configured.
+
+    Returns
+    -------
+    pd.Series
+        Correlation indexed by the week ending date it was measured to.
+        **Empty** when there are fewer weekly observations than the window
+        asks for: a window that never fills is a normal outcome for a young
+        fund, not a failure, and the caller draws nothing rather than
+        handling an exception.
+    """
+    prices = _validate_prices(prices)
+
+    a, b = pair
+    if a == b:
+        raise ValueError(f"a fund cannot be correlated with itself: {a!r}")
+    missing = [c for c in (a, b) if c not in prices.columns]
+    if missing:
+        raise ValueError(f"prices has no column for {missing}")
+    window = int(window)
+    if window < 2:
+        raise ValueError(f"window must be at least 2 weeks, got {window}")
+
+    weekly = to_weekly_returns(prices)
+    name = f"{a}~{b}"
+
+    if len(weekly) < window:
+        # Right dtype, right index type, no rows. The caller can length-check
+        # it like any other series.
+        return weekly[a].iloc[:0].rename(name)
+
+    rolled = weekly[a].rolling(window).corr(weekly[b])
+    # `rolling` marks the warm-up NaN and the first real value lands at
+    # position window - 1, so this trims exactly the warm-up and cannot
+    # discard a measured one. A plain dropna would also swallow the
+    # degenerate windows the docstring promises to leave visible.
+    rolled = rolled.iloc[window - 1 :]
+    # A correlation cannot exceed 1, but the running sums behind it can land
+    # on 1.0000000000000002. Clipped so a chart axis and a comparison
+    # against the grouping threshold both see the value the maths defines.
+    return rolled.clip(-1.0, 1.0).rename(name)
+
+
 # ----------------------------------------------------------------------
 # Internals
 # ----------------------------------------------------------------------

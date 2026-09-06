@@ -86,7 +86,7 @@ jupyter notebook notebooks/01_data_collection_and_exploration.ipynb
 
 ## Author
 
-[Your Name]
+Efe Özkan Sorgu
 
 ## License
 

@@ -94,6 +94,36 @@ def _dev_mode() -> bool:
 # app's `@st.cache_data(ttl=24*60*60)`.
 REGISTRY_TTL_SECONDS = 24 * 60 * 60
 
+# How many weeks of returns each rolling correlation looks back over.
+#
+# Measured before it was chosen, on the five year matrix and its ten pairs,
+# against 26 and 104. A window trades noise for lag and there is no setting
+# that avoids both: the lag to reach halfway through a real change lands on
+# half the window whatever the length (14, 31 and 64 weeks measured, against
+# 13, 26 and 52 predicted), because that is what a moving average of a step
+# does.
+#
+# So the choice was made on the noise side. With the true correlation held
+# flat at 0.80 and never moving, a 26 week window still swings 0.52 and
+# crosses the grouping line seven times; on the real basket every one of the
+# six spurious crossings belonged to it. Most of what it draws is the
+# estimator, not the funds. 104 weeks is the calm one, swinging 0.199, but it
+# reports a real jump across the line 88 weeks late, needs two years before
+# the chart starts, and asks about two and a half years of shared history
+# before the section can appear at all.
+#
+# 52 halves 26's noise for seventeen weeks of extra lag: a 0.331 false swing,
+# no spurious crossings on the real basket, four of the five available years
+# on screen. It is also a year, which is a length a reader can hold.
+ROLLING_WINDOW_WEEKS = 52
+
+# Points below which a rolling series is not a history worth drawing.
+#
+# One point clears `rolling_correlation`'s own bar and is a dot, not a line.
+# Twenty six is half a year of movement, and asks for about a year and a half
+# of shared history, which is the same order as the window itself.
+MIN_ROLLING_POINTS = 26
+
 app = FastAPI(
     title="FonRadar API",
     version=API_VERSION,
@@ -262,6 +292,9 @@ def analyze(request: sc.AnalyzeRequest) -> sc.AnalyzeResponse:
     full_analysis, full_grouping = _pair(full, request.group_threshold)
 
     real_status, real = _real_return(trimmed, request)
+    rolling_status, rolling = _rolling(
+        ds.trimmed, trimmed, request.group_threshold
+    )
 
     return sc.AnalyzeResponse(
         mode=request.mode,
@@ -276,6 +309,8 @@ def analyze(request: sc.AnalyzeRequest) -> sc.AnalyzeResponse:
         full_grouping=full_grouping,
         real_return_status=real_status,
         real_return=real,
+        rolling_status=rolling_status,
+        rolling_correlation=rolling,
     )
 
 
@@ -413,6 +448,71 @@ def _pair(
         return None, None
     grouping = an.find_fund_groups(analysis.correlation, analysis.weights, threshold)
     return sc.BasketAnalysis.from_dataclass(analysis), sc.Grouping.from_dataclass(grouping)
+
+
+def _rolling(
+    prices: pd.DataFrame,
+    analysis: Optional[an.BasketAnalysis],
+    threshold: float,
+) -> tuple[sc.RollingStatus, Optional[sc.RollingCorrelation]]:
+    """Every pair's correlation over the moving window, on one date axis.
+
+    Computed on the same matrix the analysis ran on, so the level a pair sits
+    at on the chart and the number reported for the period are the same
+    measurement over the same weeks.
+
+    Every pair, not only the interesting one, because the screen lets a
+    reader choose which to look at and a second round trip per pair would
+    make that choice cost a spinner. The dates go once: they come from one
+    weekly index, so they are identical across pairs by construction, and
+    repeating them would be most of the payload.
+    """
+    if analysis is None or analysis.correlation is None:
+        # A single fund basket has no pair. Not a failure and not worth a
+        # status of its own beyond saying which of the two nulls this is.
+        return ("single_fund", None)
+
+    codes = list(analysis.correlation.columns)
+    pairs: list[sc.RollingPair] = []
+    dates: list[str] = []
+
+    for i, a in enumerate(codes):
+        for b in codes[i + 1 :]:
+            series = an.rolling_correlation(
+                prices, (a, b), window=ROLLING_WINDOW_WEEKS
+            )
+            if len(series) < MIN_ROLLING_POINTS:
+                # Every pair shares a matrix and therefore a length, so the
+                # first short one settles it for the basket.
+                return ("not_enough_weeks", None)
+            if not dates:
+                dates = [d.strftime("%Y-%m-%d") for d in series.index]
+            pairs.append(
+                sc.RollingPair(
+                    codes=[a, b],
+                    values=[
+                        None if pd.isna(v) else float(v) for v in series.to_numpy()
+                    ],
+                    full_period=float(analysis.correlation.loc[a, b]),
+                )
+            )
+
+    if not pairs:
+        return ("single_fund", None)
+
+    # Strongest first, so a caller can draw pairs[0] without choosing.
+    pairs.sort(key=lambda p: p.full_period, reverse=True)
+    return (
+        "ok",
+        sc.RollingCorrelation(
+            window_weeks=ROLLING_WINDOW_WEEKS,
+            # The request's threshold, not the default: the line on the chart
+            # has to be the one the finding above it was actually cut at.
+            threshold=float(threshold),
+            dates=dates,
+            pairs=pairs,
+        ),
+    )
 
 
 def _real_return(

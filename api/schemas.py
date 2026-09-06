@@ -51,6 +51,11 @@ FullAnalysisStatus = Literal["ok", "not_needed", "no_funds", "window_too_short",
 # returning None rather than raising.
 RealReturnStatus = Literal["ok", "unavailable", "not_applicable"]
 
+# Why `rolling_correlation` is null. `single_fund` is a basket with no pair
+# to correlate; `not_enough_weeks` is a shared history too short to draw a
+# history of, which is a young basket rather than a failure.
+RollingStatus = Literal["ok", "single_fund", "not_enough_weeks"]
+
 # Which series the real return was measured on. Worth stating, because in
 # staged mode it is *not* the investor's own return: it is what the units
 # they hold today would have done over the window, with no deposits in it.
@@ -225,6 +230,43 @@ class Series(BaseModel):
             dates=[d.strftime("%Y-%m-%d") for d in s.index],
             values=[float(v) for v in s.to_numpy()],
         )
+
+
+class RollingPair(BaseModel):
+    """One pair's correlation over the moving window, plus its flat average.
+
+    `full_period` is the same number the correlation matrix carries, kept
+    here so a caller drawing one pair does not have to cross reference the
+    matrix to say what the period as a whole came to.
+    """
+
+    codes: list[str]  # exactly two
+    # Null where a window was degenerate: a fund that did not move at all
+    # across it has no variance to correlate. `analysis.rolling_correlation`
+    # leaves these in rather than dropping them, so a gap on a chart is the
+    # gap that was measured and not two sides joined across it.
+    values: list[Optional[float]]
+    full_period: float
+
+
+class RollingCorrelation(BaseModel):
+    """Every pair's moving window correlation, on one shared date axis.
+
+    The dates are carried once rather than per pair. Every series comes from
+    the weekly returns of the same matrix, so they are the same dates by
+    construction, and repeating them for each of a basket's pairs would be
+    most of the payload.
+
+    Pairs are sorted by `full_period`, strongest first, so the caller can
+    draw the first one without deciding anything.
+    """
+
+    window_weeks: int
+    # The grouping line, sent with the series so a chart draws the same
+    # threshold the finding above it was cut at, rather than its own guess.
+    threshold: float
+    dates: list[str]
+    pairs: list[RollingPair]
 
 
 class Correlation(BaseModel):
@@ -741,3 +783,6 @@ class AnalyzeResponse(BaseModel):
 
     real_return_status: RealReturnStatus
     real_return: Optional[RealReturn]
+
+    rolling_status: RollingStatus
+    rolling_correlation: Optional[RollingCorrelation]

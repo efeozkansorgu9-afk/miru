@@ -23,10 +23,11 @@
     Closing the gap further buys lens width by dissolving the two rings into
     one blob, which is the whole idea gone.
 
-    The stroke is 1.5, chosen by rendering 1.25 through 2 from 16 to 128
-    pixels at 1x as well as 2x. At 16px one unit is half a device pixel, so
-    this is a hair under one: it softens but still closes each ring, and 2
-    reads as a heavy band at display sizes.
+    The stroke is 2, which at 16px is exactly one device pixel and so is the
+    crispest a ring can be drawn. It was 1.5 while this file was also the
+    header logo, where 2 reads as a heavy band; the header now inlines its
+    own copy at 1.5, which leaves this one free to be what it actually is,
+    a favicon, and to be tuned for 16 and 32 rather than for 128.
 
     The fill is painted first and the outlines over it, so the stroke sits
     centred on the lens edge and each circle reads as one unbroken ring.
@@ -51,12 +52,21 @@
       browser in a scheme the reader did not choose are all backgrounds this
       file cannot see.
 
-      So one mid tone that clears the 3:1 non-text minimum against both ends
-      of the range: 4.90 on white, 3.93 on the app's night. It gives up the
-      19:1 of a matched near black and can never vanish, which for two rings
-      that carry the meaning is the right way round.
+      So neither value is allowed near an end of the range. Light stays at a
+      mid grey that clears the 3:1 non-text minimum both ways, 4.90 on white
+      and 3.93 on night.
 
-      The lens keeps the scheme switch. It is a large filled shape rather
+      Dark is brighter than that, because contrast ratio alone does not
+      describe a hairline: at 16px the ring is one device pixel, antialiasing
+      blends it toward whatever is behind it, and 3.93 that reads fine at 128
+      leaves almost nothing on a dark ground at 16. slate-400 doubles it to
+      6.90 on night. What it costs is the mismatch case, 2.79 on white, which
+      is under the guideline but is a visible grey rather than the 1.07 that
+      started all this. A reader whose system is dark is nearly always
+      looking at dark browser chrome, so that is the rarer half of a case
+      that no longer fails outright either way.
+
+      The lens keeps its scheme switch too. It is a large filled shape rather
       than a hairline, so it reads either way, and the brand colour is worth
       matching to the surroundings where that is possible.
     */
@@ -67,6 +77,7 @@
 
     @media (prefers-color-scheme: dark) {
       svg {
+        --logo-line: #9a9aa4;
         --logo-mark: #9a90ff;
       }
     }
@@ -74,7 +85,7 @@
 
   <path d="M16 7.17A9.5 9.5 0 0 1 16 24.83A9.5 9.5 0 0 1 16 7.17Z" fill="var(--logo-mark)" />
 
-  <g fill="none" stroke="var(--logo-line)" stroke-width="1.5">
+  <g fill="none" stroke="var(--logo-line)" stroke-width="2">
     <circle cx="12.5" cy="16" r="9.5" />
     <circle cx="19.5" cy="16" r="9.5" />
   </g>

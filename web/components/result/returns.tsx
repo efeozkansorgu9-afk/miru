@@ -23,6 +23,8 @@
  */
 
 import { ayYil, tarih, yuzdeIsaretli, para } from "@/lib/format";
+import { InfoTip } from "@/components/info-tip";
+import type { TerimAdi } from "@/lib/terms";
 import { UCRET_NOTU, XIRR_NOTU, heldGetiriNotu, stagedGetiriNotu } from "@/lib/result";
 import type { ReturnFigures } from "@/lib/result";
 import type { RealReturn } from "@/lib/api";
@@ -63,6 +65,7 @@ export function Returns({
         {real && (
           <Metric
             label="Toplam getiri (enflasyondan arındırılmış)"
+            term="reel"
             value={yuzdeIsaretli(real.total)}
             tone={tone(real.total)}
           />
@@ -98,6 +101,7 @@ export function Returns({
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <Metric
             label="Paranızın yıllık getirisi (XIRR)"
+            term="xirr"
             value={figures.xirr === null ? "hesaplanamadı" : yuzdeIsaretli(figures.xirr)}
             tone={figures.xirr === null ? undefined : tone(figures.xirr)}
           />
@@ -132,14 +136,20 @@ function Metric({
   label,
   value,
   tone,
+  term,
 }: {
   label: string;
   value: string;
   tone?: "gain" | "loss";
+  /** Adds the definition of the word in the label next to it. */
+  term?: TerimAdi;
 }) {
   return (
     <div className="rounded-card border border-border bg-surface px-5 py-4">
-      <p className="text-label text-ink-muted">{label}</p>
+      <p className="text-label text-ink-muted">
+        {label}
+        {term && <InfoTip term={term} />}
+      </p>
       <p
         className={`mt-2 text-display-sm tabular-nums ${
           tone === "gain" ? "text-positive" : tone === "loss" ? "text-negative" : "text-ink"

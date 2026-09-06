@@ -12,6 +12,7 @@ import {
 } from "recharts";
 
 import { para, tarih } from "@/lib/format";
+import { InfoTip } from "@/components/info-tip";
 import type { ChartData } from "@/lib/result";
 
 /**
@@ -139,30 +140,36 @@ export function ValueChart({
             </label>
           )}
 
-          <fieldset className="inline-flex rounded-control border border-border bg-canvas-sunken p-1">
-          <legend className="sr-only">Ölçek</legend>
-          {(["normal", "log"] as const).map((option) => (
-            <label key={option} className="cursor-pointer">
-              <input
-                type="radio"
-                name={groupName}
-                value={option}
-                checked={scale === option}
-                onChange={() => setScale(option)}
-                className="peer sr-only"
-              />
-              <span
-                className={`block rounded-[0.4rem] px-4 py-2 text-caption transition-colors peer-focus-visible:underline ${
-                  scale === option
-                    ? "bg-surface-raised text-ink shadow-sm"
-                    : "text-ink-muted"
-                }`}
-              >
-                {option === "normal" ? "Normal" : "Logaritmik"}
-              </span>
-            </label>
-          ))}
-          </fieldset>
+          <div className="inline-flex items-center">
+            <fieldset className="inline-flex rounded-control border border-border bg-canvas-sunken p-1">
+              <legend className="sr-only">Ölçek</legend>
+              {(["normal", "log"] as const).map((option) => (
+                <label key={option} className="cursor-pointer">
+                  <input
+                    type="radio"
+                    name={groupName}
+                    value={option}
+                    checked={scale === option}
+                    onChange={() => setScale(option)}
+                    className="peer sr-only"
+                  />
+                  <span
+                    className={`block rounded-[0.4rem] px-4 py-2 text-caption transition-colors peer-focus-visible:underline ${
+                      scale === option
+                        ? "bg-surface-raised text-ink shadow-sm"
+                        : "text-ink-muted"
+                    }`}
+                  >
+                    {option === "normal" ? "Normal" : "Logaritmik"}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            {/* Outside the fieldset rather than beside the option it explains:
+                inside, the icon becomes a button in the middle of a radio
+                group, and arrowing through the group would land on it. */}
+            <InfoTip term="logaritmik" />
+          </div>
         </div>
       </div>
 

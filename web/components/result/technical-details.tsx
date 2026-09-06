@@ -15,6 +15,8 @@
 
 import type { AnalyzeResponse, BasketAnalysis, Grouping } from "@/lib/api";
 import { kisalt, oran, tarih, yuzde } from "@/lib/format";
+import { InfoTip } from "@/components/info-tip";
+import type { TerimAdi } from "@/lib/terms";
 import { CorrelationHeatmap } from "./correlation-heatmap";
 import { Disclosure } from "./disclosure";
 import { ResultTable } from "./result-table";
@@ -49,14 +51,23 @@ export function TechnicalDetails({
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <Figure
           label="Çeşitlendirme oranı"
+          term="cesitlendirme"
           value={
             analysis.diversification_ratio === null
               ? "hesaplanamadı"
               : oran(analysis.diversification_ratio)
           }
         />
-        <Figure label="Sepet oynaklığı (yıllık)" value={yuzde(analysis.basket_volatility)} />
-        <Figure label="En büyük düşüş" value={yuzde(Math.abs(drawdown.depth))} />
+        <Figure
+          label="Sepet oynaklığı (yıllık)"
+          term="oynaklik"
+          value={yuzde(analysis.basket_volatility)}
+        />
+        <Figure
+          label="En büyük düşüş"
+          term="dusus"
+          value={yuzde(Math.abs(drawdown.depth))}
+        />
       </div>
 
       <div className="mt-4 max-w-prose space-y-2 text-caption text-ink-subtle">
@@ -73,7 +84,10 @@ export function TechnicalDetails({
 
       {analysis.correlation && (
         <div className="mt-10">
-          <h4 className="text-label text-ink">Korelasyon ısı haritası</h4>
+          <h4 className="text-label text-ink">
+            Korelasyon ısı haritası
+            <InfoTip term="korelasyon" />
+          </h4>
           <div className="mt-4">
             <CorrelationHeatmap correlation={analysis.correlation} />
           </div>
@@ -85,7 +99,10 @@ export function TechnicalDetails({
       )}
 
       <div className="mt-10">
-        <h4 className="text-label text-ink">Fon oynaklıkları (yıllık)</h4>
+        <h4 className="text-label text-ink">
+          Fon oynaklıkları (yıllık)
+          <InfoTip term="oynaklik" />
+        </h4>
         <div className="mt-4">
           <VolatilityTable analysis={analysis} names={coverage.fund_names} />
         </div>
@@ -123,10 +140,22 @@ export function TechnicalDetails({
   );
 }
 
-function Figure({ label, value }: { label: string; value: string }) {
+function Figure({
+  label,
+  value,
+  term,
+}: {
+  label: string;
+  value: string;
+  /** Adds the definition of the word in the label next to it. */
+  term?: TerimAdi;
+}) {
   return (
     <div className="rounded-control border border-border bg-canvas-sunken px-5 py-4">
-      <p className="text-label text-ink-muted">{label}</p>
+      <p className="text-label text-ink-muted">
+        {label}
+        {term && <InfoTip term={term} />}
+      </p>
       <p className="mt-2 text-display-sm tabular-nums text-ink">{value}</p>
     </div>
   );

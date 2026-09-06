@@ -95,7 +95,15 @@ export function InfoTip({ term }: { term: TerimAdi }) {
         onClick={() => setOpen((it) => !it)}
         onPointerEnter={(event) => event.pointerType === "mouse" && setOpen(true)}
         onPointerLeave={(event) => event.pointerType === "mouse" && setOpen(false)}
-        onFocus={() => setOpen(true)}
+        // Keyboard focus opens it. A focus that arrived from a press must not,
+        // and the test is the whole reason the press works at all: focus fires
+        // first and opens the bubble, then the click toggles the state focus
+        // just set, and the two cancel each other out. On a mouse that only
+        // costs a click; on a touch screen, where there is no hover to fall
+        // back on, it means the first tap on any tip does nothing at all.
+        onFocus={(event) => {
+          if (event.currentTarget.matches(":focus-visible")) setOpen(true);
+        }}
         onBlur={() => setOpen(false)}
         className="grid size-4.5 place-items-center rounded-full text-ink-subtle transition-colors hover:text-accent"
       >

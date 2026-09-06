@@ -125,7 +125,7 @@ ROLLING_WINDOW_WEEKS = 52
 MIN_ROLLING_POINTS = 26
 
 app = FastAPI(
-    title="Miru API",
+    title="miru API",
     version=API_VERSION,
     summary="Turkish investment fund basket analysis.",
     description=(

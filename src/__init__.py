@@ -1,1 +1,1 @@
-"""Miru - Yatırım Fonu Analiz Araçları"""
+"""miru - Yatırım Fonu Analiz Araçları"""

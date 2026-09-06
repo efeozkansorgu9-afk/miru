@@ -828,7 +828,7 @@ DEMO_BASKET = ["GAL", "AFO", "TI2", "KCR", "IAL", "ZZZZ"]
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Print the Miru coverage report.")
+    parser = argparse.ArgumentParser(description="Print the miru coverage report.")
     parser.add_argument("codes", nargs="*", default=None, help="fund codes (default: demo basket)")
     parser.add_argument("--months", type=int, default=DEFAULT_MONTHS)
     parser.add_argument("--no-cache", action="store_true")

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Miru tells someone which of the funds in their basket are really one holding. It fetches historical prices from the TEFAS (Turkey Electronic Fund Trading Platform) API, analyses a basket in Python (`src/`), serves that over HTTP (`api/`), and presents it in a Next.js frontend (`web/`), which is the only user interface. The notebooks in `notebooks/` are for exploration, not part of the product.
+miru is the brand; **Sepet Analizi** is the tool in this repository. It tells someone which of the funds in their basket are really one holding. It fetches historical prices from the TEFAS (Turkey Electronic Fund Trading Platform) API, analyses a basket in Python (`src/`), serves that over HTTP (`api/`), and presents it in a Next.js frontend (`web/`), which is the only user interface. The notebooks in `notebooks/` are for exploration, not part of the product.
 
 ## Setup and Commands
 
@@ -101,6 +101,9 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 **`data/`** - Output directory for CSV/Excel files (gitignored). Key outputs: `fund_data.csv` (raw prices), `fund_metrics.csv` (calculated metrics).
 
 **`web/`** - Next.js frontend, in Turkish. The only user interface there is. Contains no maths, and does not import `src/` at all: it calls the API in `api/` and puts the answer into plain language. `lib/result.ts` builds the sentences, `components/` draws them.
+- Naming lives in `lib/site.ts` and nowhere else: `SITE.brand` ("miru", lower case in the data rather than through a CSS class, because a document title and a meta tag are not styled by CSS) and `TOOLS`, a record of the tools under the brand keyed by slug, each with its name, its one line description and its href. `TOOL` points at the one this deployment serves. A second tool is an entry in `TOOLS` plus a `TOOL` pointing at it; the header and the title read both from there, so they cannot drift apart.
+- Document titles run page, then tool, then brand: "Sepet Analizi · miru" on the home page, `%s · Sepet Analizi · miru` elsewhere through the layout's template. Widest last, because a truncated tab keeps its beginning.
+- The header sets the brand in the display face at 700 with the tracking pulled in, which is the only use of that face off a heading: a wordmark is set rather than read. The tool name sits beside it at the same optical scale in a lighter weight and a muted colour, separated by a hairline rule rather than a slash.
 - Two tiers. The top one states the result for the *trimmed* matrix in sentences a non-investor can read; everything quantitative sits under a collapsed "Teknik detay" section.
 - Never calls a basket safe or well diversified. It reports what it found and, when it found nothing, says so without reassuring.
 - The excluded-funds section is drawn only when `excluded_codes` is non-empty, below the main result, and carries the `full` matrix result plus the `below_weekly_threshold` warning.

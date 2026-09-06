@@ -4,7 +4,7 @@ import Script from "next/script";
 
 import { NavBar } from "@/components/nav-bar";
 import { ThemeProvider, themeScript } from "@/components/theme-provider";
-import { SITE, pageTitle } from "@/lib/site";
+import { SITE, TOOL, pageTitle } from "@/lib/site";
 import "./globals.css";
 
 /**
@@ -44,10 +44,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  // `template` puts the product name after every page title without any page
-  // having to know it.
-  title: { default: pageTitle(), template: `%s · ${SITE.name}` },
-  description: SITE.description,
+  // `template` puts the tool and the brand after every page title without
+  // any page having to know either.
+  title: { default: pageTitle(), template: `%s · ${TOOL.name} · ${SITE.brand}` },
+  description: TOOL.description,
   // The same file the header draws, rather than a second exported asset that
   // can drift from it. It carries its own palette and its own dark scheme
   // rule, because a favicon is loaded as its own document and cannot read

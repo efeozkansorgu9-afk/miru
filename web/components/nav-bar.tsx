@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import { Column } from "@/components/column";
-import { SITE } from "@/lib/site";
+import { SITE, TOOL } from "@/lib/site";
 import { ThemeToggle } from "./theme-toggle";
 
 /**
@@ -24,14 +24,34 @@ export const NAV_ITEMS: NavItem[] = [];
 export function NavBar() {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-canvas/80 backdrop-blur-md">
-      <Column className="flex h-16 items-center justify-between gap-6">
+      <Column className="flex h-16 items-center justify-between gap-3 sm:gap-6">
+        {/* Brand, then tool. Two weights rather than two sizes: the brand
+            is the heavier of the pair at the same optical scale, which
+            reads as a hierarchy without the tool name shrinking into a
+            caption. The rule between them does the separating, so neither
+            needs a bracket or a slash. */}
         <Link
-          href="/"
-          className="flex items-center gap-2.5 rounded-control text-ink"
+          href={TOOL.href}
+          // `min-w-0` here and `truncate` on the tool name are what keep the
+          // lockup from pushing the theme toggle off a 320px screen: the tool
+          // name gives up characters before the row gives up its layout.
+          className="flex min-w-0 items-center gap-2.5 rounded-control text-ink"
         >
           <Logo />
-          <span className="text-lead font-semibold tracking-tight">
-            {SITE.name}
+          {/* The display face, and the only place off a heading that uses
+              it: a wordmark is set, not read, and Bricolage at 700 with the
+              tracking pulled in is what makes it look drawn rather than
+              typed. `lowercase` is not a class here on purpose, the brand
+              is lower case in `lib/site` where the title tag can see it. */}
+          <span className="shrink-0 font-display text-lead font-bold tracking-[-0.04em]">
+            {SITE.brand}
+          </span>
+          <span
+            aria-hidden
+            className="h-4 w-px shrink-0 bg-border-strong"
+          />
+          <span className="truncate text-body font-medium tracking-tight text-ink-muted">
+            {TOOL.name}
           </span>
         </Link>
 

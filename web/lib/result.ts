@@ -31,6 +31,8 @@ import type {
   FundCoverage,
   Grouping,
   RealReturn,
+  RollingCorrelation,
+  RollingPair,
 } from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import {
@@ -643,6 +645,85 @@ export function chartData(
     })),
     hasInflation: inflated !== null,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* The moving window correlation                                       */
+/* ------------------------------------------------------------------ */
+
+/** One pair's series, ready to draw, with the figures worth stating. */
+export interface RollingView {
+  codes: string[];
+  /** The pair's correlation over the whole matrix. */
+  fullPeriod: number;
+  points: { date: string; value: number | null }[];
+  /** Latest, lowest and highest, each with the week it belongs to. */
+  latest: { date: string; value: number } | null;
+  lowest: { date: string; value: number } | null;
+  highest: { date: string; value: number } | null;
+}
+
+/** "AFO ve HBF" for a pair, in the same voice as the rest of the page. */
+export function ciftAdi(codes: readonly string[]): string {
+  return kodListesi(codes);
+}
+
+export function rollingView(
+  rolling: RollingCorrelation,
+  pair: RollingPair,
+): RollingView {
+  const points = rolling.dates.map((date, i) => ({
+    date,
+    value: pair.values[i] ?? null,
+  }));
+
+  // A degenerate window is null and is not a candidate for any of these: the
+  // lowest correlation of the period should be a correlation that was
+  // measured, not the absence of one.
+  const real = points.filter(
+    (p): p is { date: string; value: number } => p.value !== null,
+  );
+  const pick = (best: (a: number, b: number) => boolean) =>
+    real.length === 0
+      ? null
+      : real.reduce((chosen, p) => (best(p.value, chosen.value) ? p : chosen));
+
+  return {
+    codes: pair.codes,
+    fullPeriod: pair.full_period,
+    points,
+    latest: real.length > 0 ? real[real.length - 1] : null,
+    lowest: pick((a, b) => a < b),
+    highest: pick((a, b) => a > b),
+  };
+}
+
+/**
+ * How the chart is meant to be read.
+ *
+ * Three things a reader cannot get from the line itself. That each point
+ * summarises the year behind it rather than the day it sits on, which is the
+ * one misreading that turns a lagging chart into a wrong one. That small
+ * movement is mostly the measurement: on a pair whose true correlation was
+ * held perfectly still, a 52 week window still wanders about a third of the
+ * scale, so treating every wiggle as news would be reading noise. And where
+ * to look, which is the high ground: correlations tend to rise when markets
+ * are under stress, so the peaks are where a basket's funds were least able
+ * to offset each other.
+ *
+ * The last of those is guidance for reading a chart, not a claim this page
+ * is making about what will happen next.
+ */
+export function rollingNotu(windowWeeks: number): string {
+  return (
+    `Her nokta kendinden önceki ${windowWeeks} haftayı özetler, o yüzden çizgi ` +
+    `bir günün değil, arkasındaki bir yılın hikâyesidir. Çizginin yükseldiği ` +
+    `aralıklarda iki fon o dönem boyunca daha benzer hareket etmiş; küçük iniş ` +
+    `ve çıkışlar ise çoğunlukla ölçümün kendi payıdır. Piyasa stresinin arttığı ` +
+    `dönemlerde korelasyonların yükselme eğilimi görülür, o yüzden çizginin en ` +
+    `yüksek olduğu aralıklara bakmak, fonların birbirinden ayrışmasının en çok ` +
+    `işe yarayacağı anda ne olduğunu gösterir.`
+  );
 }
 
 /* ------------------------------------------------------------------ */

@@ -14,6 +14,7 @@ import {
 import { para, tarih } from "@/lib/format";
 import { InfoTip } from "@/components/info-tip";
 import type { ChartData } from "@/lib/result";
+import { eksenTarihi, monthTicks } from "./axis";
 
 /**
  * The basket over time, against the money that was put into it and against
@@ -96,10 +97,9 @@ export function ValueChart({
 
   const formatTick = useMemo(() => axisFormatter(axis.ticks), [axis]);
 
-  // The date axis is ticked here for the same reason the value axis is: two
-  // Fridays in the same month both format as "02.26", and Recharts has no
-  // way to know that two of the labels it picked are the same string. One
-  // tick per month, thinned to what fits, so every label is a different one.
+  // The date axis is ticked by `./axis` for the same reason the value axis
+  // is ticked here: left to Recharts, two Fridays in one month both format
+  // as "02.26" and the axis repeats itself.
   const dateTicks = useMemo(
     () => monthTicks(data.points.map((p) => p.date)),
     [data.points],
@@ -266,33 +266,6 @@ function caption(staged: boolean, withInflation: boolean): string {
     `yalnız enflasyon kadar artmış hali. Piyasa değeri enflasyon çizgisinin ` +
     `üstündeyse sepet alım gücünü korumuş, altındaysa korumamış.`
   );
-}
-
-function eksenTarihi(iso: string): string {
-  const [y, m] = iso.split("-");
-  return `${m}.${y.slice(2)}`;
-}
-
-/**
- * One date per month, thinned until the labels fit.
- *
- * Taking the first trading day of each month rather than an even split of
- * the range is what guarantees the labels are distinct: the format carries
- * a month and a year, so two ticks inside one month would print the same
- * string whatever the spacing between them.
- */
-function monthTicks(dates: string[], most = 12): string[] {
-  const firsts: string[] = [];
-  let seen = "";
-  for (const date of dates) {
-    const month = date.slice(0, 7);
-    if (month !== seen) {
-      firsts.push(date);
-      seen = month;
-    }
-  }
-  const stride = Math.ceil(firsts.length / most);
-  return firsts.filter((_, i) => i % stride === 0);
 }
 
 /**

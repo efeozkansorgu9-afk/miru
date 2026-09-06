@@ -36,6 +36,19 @@ export function oran(x: number): string {
   return x.toFixed(2).replace(".", ",");
 }
 
+/**
+ * A correlation read off a chart, to three decimals: "0,996".
+ *
+ * Finer than `oran` on purpose, and only where a single value is being
+ * reported rather than described. Two decimals print 0,9956 as "1,00", which
+ * does not say "very nearly identical", it says "identical" — a value the
+ * maths reserves for a fund against itself. The extra digit costs nothing on
+ * a figure that is already the point of the card it sits in.
+ */
+export function korelasyon(x: number): string {
+  return x.toFixed(3).replace(".", ",");
+}
+
 /** Lira, rounded to whole units and grouped the Turkish way: "1.250.000 TL". */
 export function para(x: number): string {
   const sign = x < 0 ? "-" : "";

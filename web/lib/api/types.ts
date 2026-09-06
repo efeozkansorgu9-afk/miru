@@ -31,6 +31,15 @@ export type FullAnalysisStatus =
 export type RealReturnStatus = "ok" | "unavailable" | "not_applicable";
 
 /**
+ * Why there is no moving window correlation.
+ *
+ * Neither value is a failure. `single_fund` is a basket with no pair to
+ * correlate, and `not_enough_weeks` is a shared history too short to draw a
+ * history of, which is what a young basket looks like.
+ */
+export type RollingStatus = "ok" | "single_fund" | "not_enough_weeks";
+
+/**
  * Which series the real return was measured on.
  *
  * `held_units` is staged mode, and it is NOT the investor's own return: it is
@@ -325,6 +334,29 @@ export interface AnalyzeResponse {
   full_grouping: Grouping | null;
   real_return_status: RealReturnStatus;
   real_return: RealReturn | null;
+
+  rolling_status: RollingStatus;
+  rolling_correlation: RollingCorrelation | null;
+}
+
+/** One pair's correlation over the moving window, plus its flat average. */
+export interface RollingPair {
+  /** Exactly two codes. */
+  codes: string[];
+  /** Null where a window was degenerate, so a gap stays a gap. */
+  values: (number | null)[];
+  /** The same number the correlation matrix carries for this pair. */
+  full_period: number;
+}
+
+export interface RollingCorrelation {
+  window_weeks: number;
+  /** The grouping line, so the chart draws the threshold the finding used. */
+  threshold: number;
+  /** Shared by every pair: one matrix, one weekly index. */
+  dates: string[];
+  /** Sorted by `full_period`, strongest first. */
+  pairs: RollingPair[];
 }
 
 /** One entry of FastAPI's 422 envelope. */

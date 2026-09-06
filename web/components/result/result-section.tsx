@@ -30,6 +30,7 @@ import { ExcludedFunds } from "./excluded-funds";
 import { FailedCodes } from "./failed-codes";
 import { MainFinding } from "./main-finding";
 import { Returns } from "./returns";
+import { RollingCorrelation } from "./rolling-correlation";
 import { TechnicalDetails } from "./technical-details";
 import { ValueChart } from "./value-chart";
 
@@ -98,6 +99,17 @@ function Result({
           valuedToday={analysis.purchases !== null}
         />
       </Reveal>
+
+      {/* Directly under the finding, because it answers the question the
+          finding provokes: the headline says a pair moves together, and the
+          obvious next thought is whether it always did. Absent entirely when
+          the basket has one fund or too little shared history to draw a
+          history of, rather than shown empty. */}
+      {response.rolling_correlation && (
+        <ScrollRise>
+          <RollingCorrelation rolling={response.rolling_correlation} />
+        </ScrollRise>
+      )}
 
       {(excluded || Object.keys(coverage.failed_codes).length > 0) && (
         <ScrollRise className="space-y-8">

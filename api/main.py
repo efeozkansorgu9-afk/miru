@@ -14,11 +14,20 @@ Run it:
     uvicorn api.main:app --reload --port 8000
 
 Then open http://localhost:8000/docs.
+
+To open the app on a phone, bind to the network and allow its origin:
+
+    FONRADAR_DEV=1 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+
+See `DEV_ORIGIN_REGEX` for what that permits, and note that the phone also
+needs the frontend pointed at the laptop rather than at itself, with
+NEXT_PUBLIC_API_URL=http://<laptop address>:8000.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Optional
 
@@ -45,6 +54,41 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
 ]
 
+# Testing on a real phone means loading the page from the laptop's address on
+# the local network, and the browser sends that address as the Origin. It
+# cannot be listed above: it is whatever the router handed out this morning,
+# and the port moves as soon as something else has 3000. So development
+# matches a pattern instead — the three private IPv4 ranges and mDNS `.local`
+# names, on any port.
+#
+# The ranges are spelled out rather than covered by a looser pattern. `10\.`
+# and `192\.168\.` are cheap to allow because nothing routable can claim
+# them; a pattern that also caught, say, any bare hostname would hand the
+# same access to a public one.
+DEV_ORIGIN_REGEX = (
+    r"http://("
+    r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+    r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+    r"|192\.168\.\d{1,3}\.\d{1,3}"
+    r"|[A-Za-z0-9-]+\.local"
+    r")(:\d{1,5})?"
+)
+
+# What turns that on. Off unless the environment says otherwise, because this
+# is exactly the kind of switch that is only ever noticed once it has been
+# left on: with it set, any page served from the same network can read
+# everything this API can reach, which on a laptop joined to a café's wifi is
+# every other device on it. Deployment sets nothing and gets the two localhost
+# origins, so production cannot inherit this by forgetting to unset it.
+DEV_ENV_VAR = "FONRADAR_DEV"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _dev_mode() -> bool:
+    """Whether to accept local network origins. Read once, at import."""
+    return os.environ.get(DEV_ENV_VAR, "").strip().lower() in _TRUTHY
+
+
 # The fund registry is ~2600 rows that change at most daily, and building it
 # costs six TEFAS requests. Cached for a day, exactly like the Streamlit
 # app's `@st.cache_data(ttl=24*60*60)`.
@@ -61,13 +105,26 @@ app = FastAPI(
     ),
 )
 
+DEV_MODE = _dev_mode()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    # None in production, so the regex branch is never even reached.
+    allow_origin_regex=DEV_ORIGIN_REGEX if DEV_MODE else None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+if DEV_MODE:
+    # Said out loud on every boot. A permission this wide should not be
+    # something you have to read the source to discover you are running.
+    logger.warning(
+        "%s is set: pages served from the local network may call this API. "
+        "Do not run with it set in production.",
+        DEV_ENV_VAR,
+    )
 
 
 # ----------------------------------------------------------------------

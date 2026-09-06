@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="fonradar-logo-title">
+  <title id="fonradar-logo-title">FonRadar</title>
+
+  <!--
+    Two funds, and the part of them that is the same thing.
+
+    The mark is the product's own finding: two holdings drawn as outlines,
+    and the ground they share filled in. A basket where the lens is most of
+    the circles bought one fund twice.
+
+    Geometry is arithmetic, not eyeballing. Circles of r=9 at (11.5,16) and
+    (20.5,16) are 9 apart, so they cross at x=16, y=16 +/- sqrt(81 - 20.25),
+    which is 8.21 and 23.79. That makes a lens 9 wide and 15.59 tall inside a
+    mark spanning x 2.5..29.5 and y 7..25. Both arcs of the lens sweep the
+    same way and neither passes 180 degrees, hence flags 0 1 on each.
+
+    The stroke is 1.5 because both ends of the range were looked at. At 16px
+    one unit is half a device pixel, so this is a hair under one: rendered at
+    1x it softens but still closes each ring, and the filled lens is 4.5 by
+    7.8 pixels, an almond rather than a smudge. Going to 2 buys a crisper
+    favicon and costs the mark everywhere else, where it stops reading as an
+    outline and starts reading as a heavy ring.
+
+    The fill is painted first and the outlines over it, so the stroke sits
+    centred on the lens edge and each circle reads as one unbroken ring.
+  -->
+
+  <style>
+    /*
+      The palette, as variables, so a colour is named once here rather than
+      four times below.
+
+      Hex rather than the oklch the app's tokens are written in, and local
+      rather than referenced, because this file is its own document: as a
+      favicon or behind an `img` tag it cannot see the page's custom
+      properties, and `var(--accent)` would resolve to nothing. The values
+      are those tokens converted: brand-600 and brand-400 for the mark,
+      slate-950 and slate-50 for the outline.
+
+      Which pair applies follows the reader's system setting. That is as far
+      as a standalone file can follow a theme; a copy inlined into the page
+      would instead take the app's own tokens and follow its toggle.
+    */
+    svg {
+      --logo-mark: #6c3ef9;
+      --logo-line: #09090e;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      svg {
+        --logo-mark: #9a90ff;
+        --logo-line: #f7f7fa;
+      }
+    }
+  </style>
+
+  <path d="M16 8.21A9 9 0 0 1 16 23.79A9 9 0 0 1 16 8.21Z" fill="var(--logo-mark)" />
+
+  <g fill="none" stroke="var(--logo-line)" stroke-width="1.5">
+    <circle cx="11.5" cy="16" r="9" />
+    <circle cx="20.5" cy="16" r="9" />
+  </g>
+</svg>

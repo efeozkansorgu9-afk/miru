@@ -56,23 +56,41 @@ export function NavBar() {
   );
 }
 
-/** A radar sweep over concentric rings. Currentcolor, so the theme owns it. */
+/**
+ * The mark: two funds, and the part of them that is the same thing.
+ *
+ * The same geometry as `public/logo.svg`, which is the favicon, and it has
+ * to stay the same geometry — the two are a pair and there is no way to
+ * share one file between them. Circles of r=9.5 at (12.5,16) and (19.5,16),
+ * 7 apart, crossing at x=16 and y=16 +/- sqrt(90.25 - 12.25). If one moves,
+ * move the other.
+ *
+ * What differs, on purpose, is the outline colour. The file is dropped into
+ * tab strips and bookmark bars it cannot see, so it carries one mid grey
+ * that can never vanish on either ground. This copy is inside the page: it
+ * knows it is sitting on `--canvas`, so it takes the app's own ink and
+ * accent, which flip with the theme toggle rather than with the reader's
+ * system setting. That is the whole reason it is inline rather than an
+ * `img` tag pointed at the file.
+ *
+ * No tile behind it any more. The mark now has its own brand colour in the
+ * lens, and a purple lens on a purple tile is one purple too many.
+ */
 function Logo() {
   return (
-    <span className="grid size-8 shrink-0 place-items-center rounded-control bg-accent text-accent-ink">
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        className="size-5"
-        aria-hidden="true"
-      >
-        <circle cx="12" cy="12" r="8.2" />
-        <circle cx="12" cy="12" r="3.6" />
-        <path d="M12 12 18 6.2" />
-      </svg>
-    </span>
+    <svg
+      viewBox="0 0 32 32"
+      className="size-8 shrink-0"
+      aria-hidden="true"
+    >
+      <path
+        d="M16 7.17A9.5 9.5 0 0 1 16 24.83A9.5 9.5 0 0 1 16 7.17Z"
+        fill="var(--accent)"
+      />
+      <g fill="none" stroke="var(--ink)" strokeWidth={1.5}>
+        <circle cx="12.5" cy="16" r="9.5" />
+        <circle cx="19.5" cy="16" r="9.5" />
+      </g>
+    </svg>
   );
 }

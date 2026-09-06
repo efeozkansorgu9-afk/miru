@@ -48,6 +48,11 @@ export const metadata: Metadata = {
   // having to know it.
   title: { default: pageTitle(), template: `%s · ${SITE.name}` },
   description: SITE.description,
+  // The same file the header draws, rather than a second exported asset that
+  // can drift from it. It carries its own palette and its own dark scheme
+  // rule, because a favicon is loaded as its own document and cannot read
+  // this page's tokens — see the comment in `public/logo.svg`.
+  icons: { icon: [{ url: "/logo.svg", type: "image/svg+xml" }] },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

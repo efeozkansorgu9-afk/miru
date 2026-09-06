@@ -10,6 +10,7 @@ import {
 } from "@/lib/basket";
 import type { BasketFund, PurchaseRow } from "@/lib/basket";
 import type { SearchableFund } from "@/lib/funds";
+import { sampleBasket } from "@/lib/sample";
 import { Reveal } from "@/components/reveal";
 import { FundSearch } from "./fund-search";
 import { FundRow } from "./fund-row";
@@ -106,6 +107,22 @@ export function BasketForm({
     onAnalyze(staged ? "staged" : "simple", funds, purchases);
   }
 
+  /**
+   * Fill the form with the example basket and analyse it in one press.
+   *
+   * The basket is handed to `onAnalyze` directly rather than read back from
+   * state: `setFunds` has not landed yet at this point, and analysing what
+   * the form held a moment ago would run the empty basket. It goes into the
+   * form as well, so the reader lands on a filled in basket they can edit
+   * rather than on a result with nothing behind it.
+   */
+  function loadSample() {
+    const example = sampleBasket();
+    setFunds(example);
+    setStaged(false);
+    onAnalyze("simple", example, []);
+  }
+
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-section-sm">
       <Reveal>
@@ -147,9 +164,7 @@ export function BasketForm({
               }
             />
           ) : funds.length === 0 ? (
-            <p className="rounded-card border border-dashed border-border px-6 py-10 text-center text-caption text-ink-muted">
-              Henüz fon seçmediniz. Yukarıdaki kutudan arayarak başlayın.
-            </p>
+            <EmptyBasket onSample={loadSample} busy={busy} />
           ) : (
             <ul className="flex flex-col gap-3">
               <AnimatePresence initial={false}>
@@ -229,6 +244,44 @@ export function BasketForm({
         </p>
       </div>
     </form>
+  );
+}
+
+/**
+ * The basket before anything is in it.
+ *
+ * Two ways forward rather than one instruction. Someone who came with funds
+ * in mind uses the search box above and never reads this; someone who does
+ * not yet know what the page produces has no way to find out from an empty
+ * form, and telling them to go and look up fund codes first is asking for
+ * work before showing any reason to do it.
+ *
+ * The example says what it contains, because a basket that appears out of a
+ * button and turns out to hold two gold funds should not look like a claim
+ * about which funds are worth holding.
+ */
+function EmptyBasket({ onSample, busy }: { onSample: () => void; busy: boolean }) {
+  return (
+    <div className="rounded-card border border-dashed border-border px-6 py-10 text-center">
+      <p className="text-caption text-ink-muted">
+        Henüz fon seçmediniz. Yukarıdaki kutudan arayarak başlayın.
+      </p>
+
+      <button
+        type="button"
+        onClick={onSample}
+        disabled={busy}
+        className="mt-5 inline-flex items-center rounded-control border border-border-strong bg-surface px-6 py-3 text-body font-medium text-ink transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Örnek sepetle dene
+      </button>
+
+      <p className="mx-auto mt-4 max-w-prose text-caption text-ink-subtle text-pretty">
+        Beş fonluk hazır bir sepet yüklenir ve hemen incelenir. İkisi ayrı
+        şirketlerin altın fonu, kalanı başka kategorilerden. Yükledikten sonra
+        tutarları ve tarihleri değiştirebilirsiniz.
+      </p>
+    </div>
   );
 }
 

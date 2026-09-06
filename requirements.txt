@@ -1,10 +1,8 @@
-streamlit
 pandas
 numpy
-plotly
 tefas-crawler
 pyarrow  # parquet cache in src/data.py and src/inflation.py
 requests  # EVDS calls in src/inflation.py
 python-dotenv  # reads EVDS_API_KEY from .env; optional at runtime
-fastapi  # HTTP API in api/; the Streamlit app does not use it
+fastapi  # HTTP API in api/, which the Next.js frontend calls
 uvicorn[standard]  # ASGI server for api.main:app

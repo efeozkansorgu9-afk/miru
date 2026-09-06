@@ -82,7 +82,7 @@ jupyter notebook notebooks/01_data_collection_and_exploration.ipynb
 - [x] Basic exploratory analysis
 - [ ] Advanced financial metrics
 - [ ] Machine learning models
-- [ ] Streamlit dashboard
+- [x] Web dashboard (Next.js frontend over the FastAPI layer)
 
 ## Author
 

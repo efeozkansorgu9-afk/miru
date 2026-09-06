@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FonRadar is a Python data analysis tool for Turkish investment fund performance. It fetches historical data from the TEFAS (Turkey Electronic Fund Trading Platform) API and provides analysis through Jupyter notebooks.
+FonRadar tells someone which of the funds in their basket are really one holding. It fetches historical prices from the TEFAS (Turkey Electronic Fund Trading Platform) API, analyses a basket in Python (`src/`), serves that over HTTP (`api/`), and presents it in a Next.js frontend (`web/`), which is the only user interface. The notebooks in `notebooks/` are for exploration, not part of the product.
 
 ## Setup and Commands
 
@@ -31,8 +31,11 @@ jupyter notebook notebooks/01_data_collection_and_exploration.ipynb
 python -m src.inflation
 python -m src.inflation --months 12 --no-cache
 
-# Run the dashboard
-streamlit run app.py
+# Run the API the frontend calls
+uvicorn api.main:app --reload --port 8000
+
+# Run the frontend (needs the API above; expects it on :8000)
+cd web && npm install && npm run dev
 ```
 
 There is no linter or build system configured. The only test is `tests/smoke_test.py`.
@@ -80,7 +83,7 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - A purchase's amount is read one of two ways, set by `basis` (`PURCHASE_BASES`), and the two mix freely in one basket. `paid` (the default) means the money that went in on that date, so `units = amount / price on the fill date`. `current_value` means what the holding is worth on the last priced day, so `units = amount / the last price`, and those units are then treated as bought on `date`. Both become units bought on a date before anything else runs, so weights, XIRR and returns are computed exactly one way and a mixed basket is not a special case downstream.
 - For a `current_value` holding the cash flow is **derived, not given**: `Fill.amount` is `units × the price on the fill date`, which is what the money must have been for the holding to be worth what the user says it is now. Assuming the stated figure went in on that date instead would credit a fund that has since doubled with twice the money it was actually given, and every return in the answer would be wrong. `Fill.stated_amount` keeps what was said, and `PurchasePlan.converted_fills` lists the holdings this happened to.
 - A `current_value` holding is worth exactly what was stated, by construction: `units × last price` returns the input. So its weight does not depend on its date, and a basket of nothing but `current_value` holdings weighs the same as the plain `weights` path — which is what lets the API route between them without the answer jumping.
-- With `purchases`, the weights are **today's market value**, not the lira paid in: money that went into a fund that has since doubled occupies twice the room it was given. The `weights` path is unchanged and reads its amounts as given, so `app.py`'s numbers are untouched. A single purchase per fund on the matrix's first day reproduces the `weights` path's value series, drawdown, correlation and volatilities to machine precision (~1e-16); only the weights, and the diversification ratio and group weights that follow from them, differ — by design.
+- With `purchases`, the weights are **today's market value**, not the lira paid in: money that went into a fund that has since doubled occupies twice the room it was given. The `weights` path is unchanged and reads its amounts as given, so a basket sent without dates gives byte for byte what it always did. A single purchase per fund on the matrix's first day reproduces the `weights` path's value series, drawdown, correlation and volatilities to machine precision (~1e-16); only the weights, and the diversification ratio and group weights that follow from them, differ — by design.
 - Volatility and max drawdown always run on a **deposit-free** series. For purchases that is the units actually held, carried across the whole window (`held_value_series`); the staged market value would read every deposit as a recovery. The staged series lives in `PurchasePlan.value_series` for charting only.
 - A purchase dated on a non-trading day (weekend, holiday, a day the inner join dropped) fills on the **next** priced day, and `PurchasePlan.shifted_fills` lists every one it happened to. A purchase dated *before* the matrix starts is an error, not a shift: moving it forward would quietly answer a question about a shorter holding period. Monthly buying hits this often — 18 of 38 month-start dates shifted in a 36-month test.
 - Simple percentage return is wrong for staged buying and is not reported as the headline: lira that arrived last month did not work as long as lira from three years ago. On a real 36-month monthly basket the simple figure read 136% against an XIRR of 46%/yr. `total_invested`, `total_value` and `absolute_gain` sit alongside it in lira.
@@ -97,19 +100,22 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 
 **`data/`** - Output directory for CSV/Excel files (gitignored). Key outputs: `fund_data.csv` (raw prices), `fund_metrics.csv` (calculated metrics).
 
-**`app.py`** - Streamlit dashboard, in Turkish. Contains no maths: it calls `load_price_data`, `analyze_basket` and `find_fund_groups`, then puts the result into plain language.
+**`web/`** - Next.js frontend, in Turkish. The only user interface there is. Contains no maths, and does not import `src/` at all: it calls the API in `api/` and puts the answer into plain language. `lib/result.ts` builds the sentences, `components/` draws them.
 - Two tiers. The top one states the result for the *trimmed* matrix in sentences a non-investor can read; everything quantitative sits under a collapsed "Teknik detay" section.
 - Never calls a basket safe or well diversified. It reports what it found and, when it found nothing, says so without reassuring.
 - The excluded-funds section is drawn only when `excluded_codes` is non-empty, below the main result, and carries the `full` matrix result plus the `below_weekly_threshold` warning.
-- Fund picker autocompletes over `list_funds()` labels ("GAL - GARANTİ PORTFÖY ..."), so searching by code and by fund name both work. Registry and price fetches are `@st.cache_data` with a one-day TTL.
-- The picker is a fixed selectbox plus an "Ekle" button; chosen funds are listed below it with their amount field and a "Kaldır" button, so the search box does not move as the list grows. Amounts start empty (`value=None`), and a fund with no amount is left out of the analysis with a message.
+- The whole fund registry (~2578 rows, ~220 kB) is fetched once and searched in the browser, by code and by title, so results keep up with typing. Searching folds case the Turkish way: the default lowercase turns "İŞ" into a dotted "i", and someone typing "iş bankası" would find nothing.
+- When the registry cannot be fetched the search box does **not** go dead: it becomes a plain code field with an "Ekle" button, and what is typed is sent as it stands. `/analyze` never needed the registry. The code is upper cased with `toUpperCase`, deliberately *not* the Turkish locale one, which would send "tie" as "TİE"; a fund added this way carries an empty title and the row says the name could not be verified rather than inventing one.
+- Chosen funds are listed below the search box with their amount field and a remove button, so the box does not move as the list grows. A fund with no amount is left out of the analysis with a message.
+- The analysis always runs on the full five years (`HISTORY_MONTHS = 60`) and there is no control for it. How far back to look is not a judgement a user is equipped to make, and getting it wrong quietly changes the answer.
 - How loudly a group is reported scales with its weight: over 50% leads the headline, 25-50% gets a factual headline naming the funds, under 25% stays out of the headline entirely and lives in a sentence below plus the table's group label. The information is never dropped, only de-emphasised.
-- The "Sepet değeri" block (inside "Teknik detay") shows nominal and inflation-adjusted returns side by side, and the value chart draws both lines, whenever `load_cpi()` returns a series. When it returns `None` the page falls back to the plain nominal pair with no mention of inflation. A negative real return is printed as it is, with no softening. The fee/tax note sits under the block in both cases.
-- The value chart has a "Normal / Logaritmik" segmented control above it, default normal: when one fund runs away from the others the linear scale flattens the early period into a straight line. On log the y axis uses `dtick="D2"` (labels at 1, 2 and 5 per decade) because Plotly's default labels every digit and they collide at the bottom of the axis. The control lives inside the "Teknik detay" expander, which therefore carries a `key` so it stays open across the rerun a widget triggers.
-- The correlation heatmap is Pearson and stays that way. Directly under it, `RankGaps` (web) and `olcum_farki_yaz` (`app.py`) draw the pairs `find_rank_gaps` returned, with both coefficients and one sentence saying that the linear measure is moved by extreme weeks and the rank measure is not. No judgement either way: a coefficient resting on a few weeks is neither good nor bad here.
+- The returns block shows nominal and inflation-adjusted figures side by side, and the value chart draws both lines, whenever the API returns a real return. When it does not, the page falls back to the plain nominal pair with no mention of inflation. A negative real return is printed as it is, with no softening. The fee/tax note sits under the block in both cases.
+- The value chart has a "Normal / Logaritmik" control, default normal: when one fund runs away from the others the linear scale flattens the early period into a straight line. Both axes are ticked by hand rather than by Recharts, because a log axis left to itself comes out with labels that collide or with none at all.
+- The correlation heatmap is Pearson and stays that way, negative pairs tinted a different hue. Directly under it, `RankGaps` draws the pairs `find_rank_gaps` returned, with both coefficients and one sentence saying that the linear measure is moved by extreme weeks and the rank measure is not. No judgement either way: a coefficient resting on a few weeks is neither good nor bad here.
 - That note's heading names *which pairs it is about* rather than what was measured, because it sits on a page whose headline is also about pairs of funds and also quotes a correlation. At a 0.10 threshold it is always the ungrouped pairs, so the heading says so; `rankGapNote` derives that from the pairs in hand rather than assuming it, since `find_rank_gaps` does not filter grouped pairs out.
-- The volatility column carries a small bar (`Cubuk`, drawn by `tablo_ciz` as a `::after` gradient so no column widens), scaled to the basket's most volatile fund, and the rows are sorted most volatile first. Percentages side by side do not convey size: %143 and %8 are two same-width strings.
-- Tables are rendered as fixed-layout HTML (`tablo_ciz`), not `st.dataframe`: fund titles run to 60 characters, and only HTML gives a per-row `title` tooltip for the truncated name. `st.dataframe` draws to a canvas and cannot.
+- The volatility column carries a small bar scaled to the basket's most volatile fund, and the rows are sorted most volatile first. Percentages side by side do not convey size: %143 and %8 are two same-width strings.
+- Tables are fixed-layout HTML (`ResultTable`) so nothing scrolls sideways: fund titles run to sixty characters, are truncated to fit, and the full title goes in a `title` attribute so it is never only available shortened.
+- The empty basket carries eight ready made example baskets and loads a random one, never the same one twice in a row. Each was run against live TEFAS prices to confirm it produces the finding it is there to show; see `lib/sample.ts`.
 
 ## Key Details
 

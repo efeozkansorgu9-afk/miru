@@ -6,8 +6,8 @@ A thin FastAPI layer over `src.data`, `src.analysis` and `src.inflation`.
 Thin is the design, not a disclaimer. Every number this service returns is
 computed by those three modules; this file fetches, converts and chooses
 status codes. If you find yourself writing arithmetic here, it belongs in
-`src/analysis.py`, where it can be hand-checked without a running server —
-and where the Streamlit app gets it too.
+`src/analysis.py`, where it can be hand-checked without a running server
+rather than only through HTTP.
 
 Run it:
 
@@ -90,8 +90,8 @@ def _dev_mode() -> bool:
 
 
 # The fund registry is ~2600 rows that change at most daily, and building it
-# costs six TEFAS requests. Cached for a day, exactly like the Streamlit
-# app's `@st.cache_data(ttl=24*60*60)`.
+# costs six TEFAS requests. Cached for a day: TEFAS lists only what is
+# currently traded, and that list does not turn over inside one.
 REGISTRY_TTL_SECONDS = 24 * 60 * 60
 
 # How many weeks of returns each rolling correlation looks back over.
@@ -543,7 +543,7 @@ def _real_return(
     plan = analysis.purchases
     if plan is None:
         # A plain weights basket: the amounts are the composition, and the
-        # series opens at what is in it. Same convention as the Streamlit app.
+        # series opens at what is in it.
         basis: sc.ReturnBasis = "lump_sum"
         scale = sum(f.amount for f in request.funds if f.code in analysis.weights)
         series = analysis.basket_value * scale

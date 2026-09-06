@@ -3,9 +3,9 @@
  *
  * Every sentence in this product is written on the frontend, so the pieces
  * those sentences are built from live here rather than being reinvented in
- * each component. Ported from `app.py`, which had the same job and worked out
- * the same edge cases: a percentage takes a suffix that depends on how the
- * number is *read*, and "3 yıl" and "5 hafta" do not take the same one.
+ * each component. The edge cases are the Turkish ones: a percentage takes a
+ * suffix that depends on how the number is *read*, and "3 yıl" and "5 hafta"
+ * do not take the same one.
  */
 
 import { AY_ADLARI } from "@/lib/date";

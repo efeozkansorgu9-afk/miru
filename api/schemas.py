@@ -563,6 +563,31 @@ class PurchasePlan(BaseModel):
         )
 
 
+class RankGap(BaseModel):
+    """One pair whose linear and rank correlations are far apart.
+
+    `correlation` is the Pearson coefficient the grouping and the heatmap
+    both use; `rank_correlation` is Spearman over the same weekly returns.
+    The two parting company means a few weeks are carrying the pair: Pearson
+    weights a week by the size of the move, Spearman only by its place in
+    the order.
+    """
+
+    codes: list[str]
+    correlation: float
+    rank_correlation: float
+    gap: float  # signed, positive when Pearson reads higher
+
+    @classmethod
+    def from_dataclass(cls, g: an.RankGap) -> "RankGap":
+        return cls(
+            codes=list(g.codes),
+            correlation=g.correlation,
+            rank_correlation=g.rank_correlation,
+            gap=g.gap,
+        )
+
+
 class BasketAnalysis(BaseModel):
     """Mirrors `analysis.BasketAnalysis`, minus the weekly return frame.
 
@@ -586,6 +611,14 @@ class BasketAnalysis(BaseModel):
     is_staged: bool
     basket_value: Series  # deposit-free, normalised to 1.0 at `start`
     purchases: Optional[PurchasePlan]  # null in simple mode
+    # Pairs the Pearson matrix above and a Spearman one over the same weekly
+    # returns disagree about. Reporting only: the grouping never sees the
+    # rank matrix. Usually empty, and empty is a normal answer.
+    #
+    # The rank matrix itself is not sent. The only question asked of it is
+    # where it parts company with Pearson, and that is answered here; a
+    # second full matrix on the wire would be a payload nothing reads.
+    rank_gaps: list["RankGap"]
 
     @classmethod
     def from_dataclass(cls, a: an.BasketAnalysis) -> "BasketAnalysis":
@@ -616,6 +649,10 @@ class BasketAnalysis(BaseModel):
                 if a.purchases is not None
                 else None
             ),
+            rank_gaps=[
+                RankGap.from_dataclass(g)
+                for g in an.find_rank_gaps(a.correlation, a.rank_correlation)
+            ],
         )
 
 

@@ -27,6 +27,7 @@ from src.analysis import (
     GroupingResult,
     analyze_basket,
     find_fund_groups,
+    find_rank_gaps,
 )
 from src.data import DEFAULT_MONTHS, MAX_MONTHS, FundDataset, load_price_data
 from src.inflation import CPISeries, RealReturn, load_cpi, real_return
@@ -486,6 +487,7 @@ def teknik_detay(
                 f"Gruplama eşiği {groups.threshold:.2f}. Bir grubun içindeki her "
                 f"ikili bu eşiği geçiyor."
             )
+            olcum_farki_yaz(analysis, groups)
 
         st.markdown("**Fon oynaklıkları (yıllık)**")
         oynakliklar = sorted(
@@ -523,6 +525,70 @@ def teknik_detay(
                     f"({cov.row_count} gün). Eksik günler bütün sepetin ortak "
                     f"dönemini kısaltıyor."
                 )
+
+
+def olcum_farki_yaz(analysis: BasketAnalysis, groups: GroupingResult) -> None:
+    """
+    İki korelasyon ölçümünün ayrıştığı çiftler, ısı haritasının hemen altında.
+
+    Isı haritası Pearson gösteriyor ve öyle kalıyor; gruplama da Pearson'a
+    göre yapılıyor. Buradaki not sadece bildiriyor, hiçbir kararı
+    değiştirmiyor.
+
+    Başlığın işi bölümü adlandırmaktan fazlası: bu notu sayfanın üstündeki
+    bulgudan ayrı tutmak. İkisi de fon çiftlerinden ve korelasyondan söz
+    ediyor, ama ayrı sorulara cevap veriyorlar; notu manşetin ikinci bir
+    görüşü sanan okuru yerleşim yanıltmış olur. Bu yüzden başlık, neyin
+    ölçüldüğünü değil hangi çiftlerin içeride olduğunu söylüyor.
+
+    Pratikte bunlar hep gruplanmamış çiftler oluyor: gruplama 0.85'ten
+    kesiyor, o eşiğin üstündeki çiftler ise iki ölçümde 0.005 kadar
+    ayrışıyor, notun çalıştığı 0.10'un çok altında. Yine de garanti değil,
+    `find_rank_gaps` gruplanmış çiftleri elemiyor, o yüzden başlık eldeki
+    çiftlere bakarak seçiliyor.
+
+    Fark yoksa hiçbir şey çizilmiyor. Ekranda olmayan bir farkın açıklaması
+    fazladan okuma demek.
+    """
+    gaplar = find_rank_gaps(analysis.correlation, analysis.rank_correlation)
+    if not gaplar:
+        return
+
+    grupli = {
+        frozenset((a, b))
+        for grup in groups.groups
+        for a in grup.codes
+        for b in grup.codes
+        if a != b
+    }
+    hepsi_grup_disi = all(frozenset(g.codes) not in grupli for g in gaplar)
+
+    if hepsi_grup_disi:
+        baslik = "Gruplanmayan çiftlerde iki ölçüm ayrışıyor"
+        kim = (
+            "Aşağıdaki çiftlerin hiçbiri gruplama eşiğini geçmiyor, yani "
+            "yukarıdaki bulgunun parçası değiller."
+        )
+    else:
+        baslik = "İki ölçümün ayrıştığı çiftler"
+        kim = "Aşağıdaki çiftlerde iki ölçüm birbirinden uzak düşüyor."
+
+    st.markdown(f"**{baslik}**")
+    st.caption(
+        f"{kim} Doğrusal ölçüm bir haftayı hareketin büyüklüğüyle tartıyor ve "
+        f"uç haftalardan etkileniyor; sıralama bazlı ölçüm yalnızca hareketin "
+        f"sırasına bakıyor, etkilenmiyor."
+    )
+    # Satır sonu iki boşlukla veriliyor: markdown'da satırı kırar, madde
+    # işareti eklemez.
+    st.caption(
+        "  \n".join(
+            f"{a} ve {b}: doğrusal {g.correlation:.3f}, "
+            f"sıralama {g.rank_correlation:.3f}"
+            for g in gaplar
+            for a, b in [g.codes]
+        )
+    )
 
 
 def korelasyon_haritasi(corr: pd.DataFrame) -> go.Figure:

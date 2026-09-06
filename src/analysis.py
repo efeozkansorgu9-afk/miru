@@ -56,6 +56,20 @@ WEEKLY_RULE = "W-FRI"
 # nothing to diversification, which is the claim a group is making.
 GROUP_THRESHOLD = 0.85
 
+# How far Pearson and Spearman have to part on one pair before it is worth
+# saying so. Chosen off the distribution rather than picked: over 406 pairs
+# of 29 funds on five years of weekly returns, |Pearson - Spearman| is not
+# one hump but two. Pairs where the two measures agree pile up under 0.06
+# (114 of 406 sit below 0.01); pairs whose coefficient is being carried by
+# a handful of weeks pile up between 0.15 and 0.18. Between them, at 0.10
+# to 0.11, the distribution thins to 3 pairs in a 0.01-wide bin.
+#
+# 0.10 is that trough. It separates the two humps instead of cutting
+# through either, which is what a threshold in the middle of the upper hump
+# would do: at 0.15, pairs at 0.149 and 0.151 are the same phenomenon and
+# only one of them gets reported.
+RANK_GAP_THRESHOLD = 0.10
+
 # XIRR solver bounds. The lower one is a floor, not a guess: at -99.99% a
 # year a holding has effectively gone to zero, and anything the solver finds
 # below that is it walking off rather than an answer about the basket. The
@@ -273,6 +287,20 @@ class Standalone:
 
     code: str
     weight: float
+
+
+@dataclass(frozen=True)
+class RankGap:
+    """One pair the two correlation measures disagree about."""
+
+    codes: tuple[str, str]
+    correlation: float  # Pearson, the one the grouping used
+    rank_correlation: float  # Spearman, over the same weekly returns
+
+    @property
+    def gap(self) -> float:
+        """Signed: positive when Pearson reads higher than Spearman."""
+        return self.correlation - self.rank_correlation
 
 
 @dataclass(frozen=True)
@@ -738,6 +766,74 @@ def find_fund_groups(
         standalone=_standalone_list([c for c in codes if c not in grouped], w),
         threshold=float(threshold),
     )
+
+
+def find_rank_gaps(
+    correlation: Optional[pd.DataFrame],
+    rank_correlation: Optional[pd.DataFrame],
+    threshold: float = RANK_GAP_THRESHOLD,
+) -> list[RankGap]:
+    """Pairs whose Pearson and Spearman coefficients are far apart.
+
+    Both matrices come off the same weekly returns, so a pair they disagree
+    about is a pair where the *size* of a few weeks is doing work that their
+    *order* does not support. Pearson weights a week by how large the move
+    was; Spearman only by where it came in the ranking. On the widest pairs
+    in this fund universe, removing the single week of 2021-12-24 moves
+    Pearson about two thirds of the way to Spearman and leaves Spearman
+    within 0.01 of where it was, while removing a randomly chosen week moves
+    Pearson by 0.010 or less.
+
+    This reports; it does not decide. `find_fund_groups` is not given the
+    rank matrix and no group, weight or headline depends on what comes back
+    from here. At the default threshold nothing that *is* grouped shows up
+    anyway: pairs at or above `GROUP_THRESHOLD` agree to a median of 0.005
+    and a measured maximum of 0.051, which is half the threshold. That is a
+    fact about the data rather than a rule, so no pair is filtered out for
+    being grouped — if a grouped pair ever does disagree this much, hiding
+    it would be the one case worth seeing.
+
+    Parameters
+    ----------
+    correlation, rank_correlation : pd.DataFrame or None
+        `BasketAnalysis.correlation` and `.rank_correlation`. Either being
+        `None` (a single-fund basket has no pairs) gives an empty list, not
+        an error.
+    threshold : float
+        Minimum absolute difference to report. See `RANK_GAP_THRESHOLD`.
+
+    Returns
+    -------
+    list[RankGap]
+        Widest disagreement first. Empty is the common result and a normal
+        one.
+    """
+    if correlation is None or rank_correlation is None:
+        return []
+
+    codes = list(correlation.columns)
+    if list(rank_correlation.columns) != codes or list(rank_correlation.index) != codes:
+        raise ValueError("correlation and rank_correlation must cover the same funds")
+
+    gaps: list[RankGap] = []
+    for i, a in enumerate(codes):
+        for b in codes[i + 1 :]:
+            p, s = correlation.at[a, b], rank_correlation.at[a, b]
+            # A pair that cannot be correlated at all — a fund flat across
+            # the window has no variance — is not a disagreement.
+            if pd.isna(p) or pd.isna(s):
+                continue
+            if abs(float(p) - float(s)) > threshold:
+                gaps.append(
+                    RankGap(
+                        codes=(a, b),
+                        correlation=float(p),
+                        rank_correlation=float(s),
+                    )
+                )
+
+    gaps.sort(key=lambda g: abs(g.gap), reverse=True)
+    return gaps
 
 
 def rolling_correlation(

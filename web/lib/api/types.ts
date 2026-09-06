@@ -257,6 +257,29 @@ export interface BasketAnalysis {
   basket_value: Series;
   /** Null in simple mode. */
   purchases: PurchasePlan | null;
+  /**
+   * Pairs whose linear and rank correlations are far apart. Reporting only:
+   * grouping never sees the rank matrix, so nothing in the headline depends
+   * on this. Usually empty, and empty is a normal answer.
+   */
+  rank_gaps: RankGap[];
+}
+
+/**
+ * One pair the two ways of measuring correlation disagree about.
+ *
+ * `correlation` is Pearson, the number the heatmap and the grouping both
+ * use. `rank_correlation` is Spearman over the same weekly returns: it
+ * scores a week by where the move came in the order rather than by how big
+ * it was, so the two parting company means a few weeks are carrying the
+ * pair.
+ */
+export interface RankGap {
+  codes: string[];
+  correlation: number;
+  rank_correlation: number;
+  /** Signed, positive when Pearson reads higher than Spearman. */
+  gap: number;
 }
 
 export interface FundGroup {

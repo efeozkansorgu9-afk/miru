@@ -32,6 +32,7 @@ import type {
   Grouping,
   RealReturn,
   RollingCorrelation,
+  RankGap,
   RollingPair,
 } from "@/lib/api";
 import { ApiError } from "@/lib/api";
@@ -39,6 +40,7 @@ import {
   araligiSure,
   gunFarki,
   kodListesi,
+  korelasyon,
   sayiKelime,
   sureIle,
   tarih,
@@ -791,4 +793,71 @@ export function errorMessage(error: unknown): { title: string; body: string } {
 export function pencereEtiketi(start: string | null, end: string | null): string {
   const s = araligiSure(start, end);
   return s ? `${s}lık dönem` : "ortak dönem yok";
+}
+
+/* ------------------------------------------------------------------ */
+/* Where the two correlation measures disagree                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The note about pairs whose Pearson and Spearman coefficients are far
+ * apart, and who it is about.
+ *
+ * The heading has one job beyond naming the section: keeping this apart
+ * from the finding at the top of the page. Both talk about pairs of funds
+ * and both quote a correlation, but they are answering different questions,
+ * and a reader who reads this as a second opinion on the headline has been
+ * misled by the layout. So the heading says which pairs are in it rather
+ * than what was measured.
+ *
+ * In practice that is always "the ones that did not group": grouping cuts
+ * at 0,85 and pairs above that agree to about 0,005, well inside the 0,10
+ * this fires at. It is not guaranteed though, and `find_rank_gaps` on the
+ * server deliberately does not filter grouped pairs out, so the heading is
+ * derived from the pairs in hand rather than assumed.
+ */
+export interface RankGapNote {
+  heading: string;
+  /** Who the pairs are, and what the two numbers are. */
+  body: string;
+  rows: { pair: string; pearson: string; spearman: string }[];
+}
+
+export function rankGapNote(
+  gaps: readonly RankGap[],
+  grouping: Grouping,
+): RankGapNote | null {
+  if (gaps.length === 0) return null;
+
+  const grouped = new Set<string>();
+  for (const group of grouping.groups) {
+    for (const a of group.codes) {
+      for (const b of group.codes) {
+        if (a !== b) grouped.add(`${a}|${b}`);
+      }
+    }
+  }
+  const hepsiGrupDisi = gaps.every((g) => !grouped.has(g.codes.join("|")));
+
+  const heading = hepsiGrupDisi
+    ? "Gruplanmayan çiftlerde iki ölçüm ayrışıyor"
+    : "İki ölçümün ayrıştığı çiftler";
+
+  const kim = hepsiGrupDisi
+    ? "Aşağıdaki çiftlerin hiçbiri gruplama eşiğini geçmiyor, yani yukarıdaki " +
+      "bulgunun parçası değiller."
+    : "Aşağıdaki çiftlerde iki ölçüm birbirinden uzak düşüyor.";
+
+  return {
+    heading,
+    body:
+      `${kim} Doğrusal ölçüm bir haftayı hareketin büyüklüğüyle tartıyor ve ` +
+      `uç haftalardan etkileniyor; sıralama bazlı ölçüm yalnızca hareketin ` +
+      `sırasına bakıyor, etkilenmiyor.`,
+    rows: gaps.map((g) => ({
+      pair: kodListesi(g.codes),
+      pearson: korelasyon(g.correlation),
+      spearman: korelasyon(g.rank_correlation),
+    })),
+  };
 }

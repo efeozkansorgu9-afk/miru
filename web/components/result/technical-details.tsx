@@ -15,6 +15,7 @@
 
 import type { AnalyzeResponse, BasketAnalysis, Grouping } from "@/lib/api";
 import { kisalt, oran, tarih, yuzde } from "@/lib/format";
+import { rankGapNote } from "@/lib/result";
 import { InfoTip } from "@/components/info-tip";
 import type { TerimAdi } from "@/lib/terms";
 import { CorrelationHeatmap } from "./correlation-heatmap";
@@ -95,6 +96,8 @@ export function TechnicalDetails({
             Gruplama eşiği {oran(grouping.threshold)}. Bir grubun içindeki her ikili
             bu eşiği geçiyor, yalnız zincirin uçları değil.
           </p>
+
+          <RankGaps analysis={analysis} grouping={grouping} />
         </div>
       )}
 
@@ -157,6 +160,57 @@ function Figure({
         {term && <InfoTip term={term} />}
       </p>
       <p className="mt-2 text-display-sm tabular-nums text-ink">{value}</p>
+    </div>
+  );
+}
+
+/**
+ * Pairs the linear and the rank correlation disagree about.
+ *
+ * It sits under the heatmap because that is the number it is qualifying:
+ * the reader has just looked at a cell, and this says that for these pairs
+ * a second way of measuring the same weeks gives a different figure. Under
+ * the grouping threshold line rather than above it, so the section still
+ * reads as heatmap first and footnotes after.
+ *
+ * It states the two numbers and why they differ, and stops there. Whether a
+ * pair whose correlation rests on a few weeks is better or worse than one
+ * that does not is not a question this page answers, and the sentence is
+ * written so that it does not imply one.
+ *
+ * Nothing renders when the pairs agree, which is the common case. An
+ * explanation of a difference that is not on screen is just more to read.
+ */
+function RankGaps({
+  analysis,
+  grouping,
+}: {
+  analysis: BasketAnalysis;
+  grouping: Grouping;
+}) {
+  const note = rankGapNote(analysis.rank_gaps, grouping);
+  if (!note) return null;
+
+  const columns: Column[] = [
+    { label: "Çift", width: "44%", clip: true },
+    { label: "Doğrusal", width: "28%", align: "right" },
+    { label: "Sıralama", width: "28%", align: "right" },
+  ];
+  const rows: Cell[][] = note.rows.map((row) => [
+    { text: row.pair },
+    { text: row.pearson },
+    { text: row.spearman },
+  ]);
+
+  return (
+    <div className="mt-8 border-t border-border pt-6">
+      <h5 className="text-label text-ink text-balance">{note.heading}</h5>
+      <p className="mt-2 max-w-prose text-caption text-ink-subtle text-pretty">
+        {note.body}
+      </p>
+      <div className="mt-4">
+        <ResultTable columns={columns} rows={rows} />
+      </div>
     </div>
   );
 }

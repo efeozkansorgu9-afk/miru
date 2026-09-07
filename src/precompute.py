@@ -55,6 +55,7 @@ import numpy as np
 import pandas as pd
 
 from src import analysis as an
+from src import inflation as inf
 
 logger = logging.getLogger(__name__)
 
@@ -494,3 +495,133 @@ def top_neighbours(
 def _maybe(value: float) -> Optional[float]:
     """NaN is absent, and absent belongs in the database as NULL."""
     return float(value) if np.isfinite(value) else None
+
+
+# ----------------------------------------------------------------------
+# Per-fund returns
+# ----------------------------------------------------------------------
+
+#: The windows a fund page reports, in months.
+RETURN_PERIODS = (12, 36)
+
+#: How far after a window's start edge the fund's first price may sit and the
+#: window still count as covered. Absorbs weekends and public holidays, the
+#: same slack `src.data` allows at the recent end.
+RETURN_EDGE_TOLERANCE_DAYS = 7
+
+# Why a figure is missing. Codes, not sentences: the page writes the words.
+RETURN_NO_HISTORY = "insufficient_history"
+RETURN_CPI_UNPUBLISHED = "cpi_unpublished"
+RETURN_CPI_UNAVAILABLE = "cpi_unavailable"
+RETURN_CPI_TOO_SHORT = "cpi_window_before_series"
+
+
+@dataclass(frozen=True)
+class FundReturn:
+    """One fund over one window, nominal and real.
+
+    Both figures are **total** return over the window, not annualised: a
+    36 month number here is what the holding did across those three years.
+
+    A `None` figure always carries a reason beside it. The two are reported
+    separately because they fail separately — a fund can have a perfectly
+    good nominal return and no real one, which is exactly what happens every
+    month between the month ending and TÜİK publishing its index.
+    """
+
+    months: int
+    nominal: Optional[float] = None
+    real: Optional[float] = None
+    nominal_unavailable: Optional[str] = None
+    real_unavailable: Optional[str] = None
+
+
+def fund_returns(
+    prices: pd.Series,
+    cpi=None,
+    periods: Sequence[int] = RETURN_PERIODS,
+    tolerance_days: int = RETURN_EDGE_TOLERANCE_DAYS,
+) -> dict[int, FundReturn]:
+    """Nominal and real total return for one fund over each window.
+
+    `prices` is that fund's own price series, date indexed. `cpi` is a
+    `src.inflation.CPISeries` or `None` when the index could not be loaded;
+    `None` costs the real figures and leaves the nominal ones untouched.
+
+    The CPI rule is the fussy part and it is deliberate. TÜİK publishes a
+    month's index around the 3rd of the next month, so a window ending today
+    usually runs past the last published month. `src.inflation` handles that
+    by carrying the last index forward and counting the months it did in
+    `stale_months` — which is right for a chart, and wrong here. A number on
+    a fund page is read as a fact, so a real return whose final month is not
+    published yet is not reported at all: it comes back `None` with
+    `cpi_unpublished` beside it. The previous month is never substituted and
+    nothing is extrapolated.
+    """
+    out: dict[int, FundReturn] = {}
+    if not isinstance(prices, pd.Series) or prices.empty:
+        return {
+            m: FundReturn(months=m, nominal_unavailable=RETURN_NO_HISTORY)
+            for m in periods
+        }
+
+    series = prices.dropna().sort_index()
+    series = series[series > 0]
+    if series.empty:
+        return {
+            m: FundReturn(months=m, nominal_unavailable=RETURN_NO_HISTORY)
+            for m in periods
+        }
+
+    end = series.index[-1]
+    for months in periods:
+        start = end - pd.DateOffset(months=months)
+        window = series[series.index >= start]
+
+        # The fund must actually reach back to the window's edge. Starting
+        # later than the tolerance means the window is not covered, and a
+        # return over whatever shorter span the fund does have would be a
+        # different number wearing this one's label.
+        if len(window) < 2 or window.index[0] > start + pd.Timedelta(
+            days=tolerance_days
+        ):
+            out[months] = FundReturn(
+                months=months,
+                nominal_unavailable=RETURN_NO_HISTORY,
+                real_unavailable=RETURN_NO_HISTORY,
+            )
+            continue
+
+        nominal = float(window.iloc[-1] / window.iloc[0] - 1.0)
+
+        if cpi is None:
+            out[months] = FundReturn(
+                months=months,
+                nominal=nominal,
+                real_unavailable=RETURN_CPI_UNAVAILABLE,
+            )
+            continue
+
+        try:
+            rr = inf.real_return(window, cpi)
+        except ValueError:
+            # The window opens before the CPI series does. A caller error in
+            # `src.inflation`'s terms, an ordinary missing figure in ours.
+            out[months] = FundReturn(
+                months=months,
+                nominal=nominal,
+                real_unavailable=RETURN_CPI_TOO_SHORT,
+            )
+            continue
+
+        if rr.stale_months > 0:
+            out[months] = FundReturn(
+                months=months,
+                nominal=nominal,
+                real_unavailable=RETURN_CPI_UNPUBLISHED,
+            )
+            continue
+
+        out[months] = FundReturn(months=months, nominal=nominal, real=float(rr.total))
+
+    return out

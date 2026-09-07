@@ -149,6 +149,9 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - `Thresholds` - All six lines in one frozen dataclass; `from_env()` overrides any of them from `MIRU_CORR_*` and raises on a value that will not parse rather than silently keeping the default.
 - `top_neighbours(...)` - The 10 strongest and 10 weakest neighbours per fund, ranked **on the interval** — high list by `ci_low` descending, low list by `ci_high` ascending — so a pair's worst case decides its rank. `insufficient_data` pairs never enter the sort at all; a fund with nothing measurable has fewer than ten neighbours rather than ten bad ones. Ranking on the point estimate instead let 0.99-on-nine-weeks outrank 0.95-on-three-years: pairs sharing under 26 weeks put 8.7% of themselves above |r| = 0.9 against 2.6% at full history.
 
+- `fund_returns(prices, cpi, periods)` - 12 and 36 month **total** return per fund, nominal and real, as `FundReturn`. Computed in the weekly job off the prices already fetched, never behind a request. A missing figure always carries a code beside it: `insufficient_history` (the fund does not reach the window's edge, 7 day tolerance), `cpi_unavailable` (no EVDS key or no network), `cpi_window_before_series`, and `cpi_unpublished`.
+- `cpi_unpublished` is the fussy one and it is deliberate. TÜİK publishes a month's index around the 3rd of the next, so a window ending today normally runs past it. `src.inflation` carries the last index forward and counts it in `stale_months`, which is right for a chart and wrong for a number on a fund page — so a real return whose final month is unpublished is **not reported at all**. Nothing is extrapolated and the previous month is never substituted. Between a month ending and its index landing, every real return on the site is null with this code.
+
 **`src/db.py`** - Postgres connection and schema. Knows nothing about funds.
 - `database_url()` - Reads `DATABASE_URL`; no default and no fallback to a local socket, so a job nobody configured fails instead of filling in whatever is running on the same machine.
 - `ensure_schema(conn)` - `CREATE TABLE IF NOT EXISTS` throughout, run at the start of every job. This is what makes a second run a no-op rather than an error.
@@ -156,12 +159,20 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - `record_run(url, **fields)` - Appends to `job_runs` on **its own connection**, because the point of the row is to survive the rollback that erased the run's work.
 - Tables: `funds` (code PK, name, founder, type, category, size, investor count, risk, `stale_ratio`, `history_weeks`, `included`, `exclusion`), `fund_correlations` (fund, neighbour, correlation, `ci_low`, `ci_high`, `n_weeks`, bucket, direction; FK both sides ON DELETE CASCADE), `job_runs` (timings, counts, status, detail).
 
+- `fetch_fund`, `fetch_neighbours`, `fetch_last_run`, `fetch_fund_list` - The read side, for the API. `fetch_neighbours` joins `funds` so every neighbour carries its own size, investor count and returns in one query rather than twenty. One connection per request, no pool: these endpoints back a static build, not traffic.
+
 **`jobs/weekly.py`** - The runnable entry point: `python -m jobs.weekly`.
 - Nothing in `api/` imports it and it registers no startup hook. A web process running this on boot would spend twenty minutes against TEFAS before serving a request, and do it again per worker and per restart.
 - `database_url()` is called on the first line, before TEFAS is touched, so a misconfigured job dies in a second rather than after the fetch.
 - Reuses `data._fetch_all` for the price loop — it already paces requests, logs per fund and records a failure per code instead of raising. What the job does differently is downstream: it never inner-joins.
 - A fund whose prices fail is written to `funds` with `included = false` and a closed-set `exclusion`, and never enters the matrix. Excluded funds are absent from the neighbour table, not filtered out of it afterwards.
 - `--limit`, `--reuse-prices` and `--dry-run` are development aids. `--reuse-prices` caches the fetched frame *and its failures* so a re-run's exclusion reasons match the run that actually fetched.
+
+**`api/main.py` fund pages** - Two endpoints that read Postgres and compute nothing.
+- `GET /funds/list` - Code, name and founder for every `included` fund, for generating the static pages. A fund the run could not price has nothing to put on a page.
+- `GET /fund/{code}` - Identity, both return windows with their null reasons, the ten high and ten low neighbours each carrying their own identity and returns, and a freshness block from the last `ok` `job_runs` row.
+- A fund with no neighbours is a **200** with empty lists and `neighbours_unavailable`, not a 404: the fund is real and "nothing could be measured against it" is a finding. `no_measurable_pairs` and `fund_not_priced` are told apart by the `included` column, not by whether the returns are null — a six month old fund is priced and simply has no 12 month figure. 404 is only for a code the last run never saw.
+- Postgres stays optional to the rest of the service. `/analyze`, `/funds` and `/health` never touch it, so a deployment with no `DATABASE_URL` keeps working and only these two return 503, naming the missing variable.
 
 ## Key Details
 

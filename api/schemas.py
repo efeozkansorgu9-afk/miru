@@ -25,6 +25,7 @@ screen it is drawing.
 from __future__ import annotations
 
 from datetime import date as _date
+from datetime import datetime as _date_time
 from typing import Literal, Optional
 
 import pandas as pd
@@ -823,3 +824,142 @@ class AnalyzeResponse(BaseModel):
 
     rolling_status: RollingStatus
     rolling_correlation: Optional[RollingCorrelation]
+
+
+# ----------------------------------------------------------------------
+# Fund pages
+# ----------------------------------------------------------------------
+
+#: What a correlation pair was judged to be. English constants on the wire,
+#: the same strings `src.precompute` writes into Postgres; the page turns
+#: them into Turkish. Adding one here without adding it there, or the other
+#: way round, is the bug this Literal exists to catch.
+Bucket = Literal[
+    "overlapping",
+    "inverse",
+    "similar",
+    "moderate",
+    "unrelated",
+    "uncertain",
+    "insufficient_data",
+]
+
+#: Why a return is missing. Codes, never sentences.
+ReturnUnavailable = Literal[
+    "insufficient_history",
+    "cpi_unpublished",
+    "cpi_unavailable",
+    "cpi_window_before_series",
+]
+
+
+class FundReturnOut(BaseModel):
+    """One fund over one window. Total return, not annualised."""
+
+    months: int
+    nominal: Optional[float] = None
+    real: Optional[float] = None
+    nominal_unavailable: Optional[ReturnUnavailable] = None
+    real_unavailable: Optional[ReturnUnavailable] = None
+
+
+class FundIdentity(BaseModel):
+    """What a fund is. Every field but the code and name may be absent.
+
+    `risk_value` is null for about a fifth of the registry and null means
+    TEFAS did not say, not zero.
+    """
+
+    code: str
+    name: str
+    founder: Optional[str] = None
+    fund_type: Optional[str] = None
+    umbrella_type: Optional[str] = None
+    category: Optional[str] = None
+    total_assets: Optional[float] = None
+    investor_count: Optional[int] = None
+    risk_value: Optional[int] = None
+    returns: list[FundReturnOut] = Field(default_factory=list)
+
+    @classmethod
+    def from_row(cls, row: dict) -> "FundIdentity":
+        returns = [
+            FundReturnOut(
+                months=m,
+                nominal=row.get(f"return_{m}m_nominal"),
+                real=row.get(f"return_{m}m_real"),
+                nominal_unavailable=row.get(f"return_{m}m_nominal_unavailable"),
+                real_unavailable=row.get(f"return_{m}m_real_unavailable"),
+            )
+            for m in (12, 36)
+        ]
+        return cls(
+            code=row["code"],
+            name=row["name"],
+            founder=row.get("founder"),
+            fund_type=row.get("fund_type"),
+            umbrella_type=row.get("umbrella_type"),
+            category=row.get("category"),
+            total_assets=row.get("total_assets"),
+            investor_count=row.get("investor_count"),
+            risk_value=row.get("risk_value"),
+            returns=returns,
+        )
+
+
+class NeighbourOut(BaseModel):
+    """One stored pair, from the subject fund's side.
+
+    The neighbour's own identity travels with it — size, investor count and
+    returns included — because the page shows those in a popover the moment
+    a row is clicked, and a second request per neighbour would be twenty
+    round trips for one screen.
+    """
+
+    correlation: float
+    ci_low: Optional[float] = None
+    ci_high: Optional[float] = None
+    n_weeks: int
+    bucket: Bucket
+    fund: FundIdentity
+
+
+class DataFreshness(BaseModel):
+    """When the numbers on this page were computed."""
+
+    last_run_at: Optional[_date_time] = None
+    universe_size: Optional[int] = None
+    included_funds: Optional[int] = None
+    #: Last month TÜİK has published. Real returns never run past it.
+    cpi_latest_month: Optional[_date] = None
+
+
+class FundPageResponse(BaseModel):
+    """Everything one fund page draws, in one payload.
+
+    A fund with no measurable neighbours gets empty lists and a
+    `neighbours_unavailable` code — not a 404. The fund exists, it is in the
+    universe, and "we could not measure this one against anything" is a
+    finding the page should state rather than a missing page.
+    """
+
+    fund: FundIdentity
+    high: list[NeighbourOut] = Field(default_factory=list)
+    low: list[NeighbourOut] = Field(default_factory=list)
+    neighbours_unavailable: Optional[
+        Literal["no_measurable_pairs", "fund_not_priced"]
+    ] = None
+    freshness: DataFreshness
+
+
+class FundListItem(BaseModel):
+    code: str
+    name: str
+    founder: Optional[str] = None
+
+
+class FundListResponse(BaseModel):
+    """Every fund with a page. For static generation, not for search."""
+
+    count: int
+    funds: list[FundListItem]

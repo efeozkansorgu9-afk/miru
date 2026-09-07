@@ -44,6 +44,7 @@ import numpy as np
 import pandas as pd
 
 from src import db
+from src import inflation as inf
 from src import precompute as pc
 from src import universe as uni
 from src.data import _fetch_all
@@ -102,11 +103,30 @@ def _fetch_prices(
     return long_df, failures
 
 
+def _fund_return_table(
+    long_df: pd.DataFrame, cpi
+) -> dict[str, dict[int, pc.FundReturn]]:
+    """Every fund's returns, from the prices already in hand.
+
+    Runs off the same fetch the correlations use, so the windows cost no
+    extra TEFAS requests — which is the whole reason this lives in the job
+    and not behind the endpoint.
+    """
+    if long_df.empty:
+        return {}
+    out: dict[str, dict[int, pc.FundReturn]] = {}
+    for code, group in long_df.groupby("fund_code", sort=False):
+        series = group.set_index("date")["price"].sort_index()
+        out[code] = pc.fund_returns(series, cpi)
+    return out
+
+
 def _fund_rows(
     profiles: list[uni.FundProfile],
     stats: dict[str, pc.FundSeriesStats],
     included: set[str],
     failures: dict[str, dict],
+    returns: Optional[dict[str, dict[int, pc.FundReturn]]] = None,
 ) -> list[dict]:
     """One row per fund in the universe, included or not.
 
@@ -115,28 +135,42 @@ def _fund_rows(
     snapshot of, and there would be no way to tell a fund that vanished
     from a fund nobody asked about.
     """
+    returns = returns or {}
     rows = []
     for profile in profiles:
         stat = stats.get(profile.code)
-        rows.append(
-            {
-                "code": profile.code,
-                "name": profile.name,
-                "founder": profile.founder,
-                "fund_type": profile.fund_type,
-                "umbrella_type": profile.umbrella_type,
-                "category": profile.category,
-                "total_assets": profile.total_assets,
-                "investor_count": profile.investor_count,
-                "risk_value": profile.risk_value,
-                "stale_ratio": stat.stale_ratio if stat else None,
-                "history_weeks": stat.history_weeks if stat else None,
-                "included": profile.code in included,
-                "exclusion": None
-                if profile.code in included
-                else _why_excluded(profile.code, stats, failures),
-            }
-        )
+        fund_returns = returns.get(profile.code, {})
+        row = {
+            "code": profile.code,
+            "name": profile.name,
+            "founder": profile.founder,
+            "fund_type": profile.fund_type,
+            "umbrella_type": profile.umbrella_type,
+            "category": profile.category,
+            "total_assets": profile.total_assets,
+            "investor_count": profile.investor_count,
+            "risk_value": profile.risk_value,
+            "stale_ratio": stat.stale_ratio if stat else None,
+            "history_weeks": stat.history_weeks if stat else None,
+            "included": profile.code in included,
+            "exclusion": None
+            if profile.code in included
+            else _why_excluded(profile.code, stats, failures),
+        }
+        # One pair of columns per window, flattened: the table is read by
+        # SQL far more often than it is written, and a fund page asking for
+        # `return_12m_real` beats it unpacking a JSON blob.
+        for months in pc.RETURN_PERIODS:
+            r = fund_returns.get(months)
+            row[f"return_{months}m_nominal"] = r.nominal if r else None
+            row[f"return_{months}m_real"] = r.real if r else None
+            row[f"return_{months}m_nominal_unavailable"] = (
+                r.nominal_unavailable if r else pc.RETURN_NO_HISTORY
+            )
+            row[f"return_{months}m_real_unavailable"] = (
+                r.real_unavailable if r else pc.RETURN_NO_HISTORY
+            )
+        rows.append(row)
     return rows
 
 
@@ -172,6 +206,7 @@ def run(
     status, detail = "failed", None
     universe_size = included_count = pair_count = 0
     fetch_seconds = compute_seconds = 0.0
+    cpi_latest = None
 
     try:
         client = TEFASClient()
@@ -202,6 +237,19 @@ def run(
 
         stats = pc.series_stats(matrix)
         included = set(matrix.columns)
+
+        # The CPI is loaded once for all 1374 funds, not per fund. It never
+        # raises: no key, no network or a rejected key all come back None,
+        # and every real return then reports `cpi_unavailable` while the
+        # nominal ones carry on.
+        cpi = inf.load_cpi(months=months + 3)
+        if cpi is None:
+            logger.warning("No CPI series; real returns will be unavailable")
+        else:
+            logger.info("CPI: %s", cpi)
+            cpi_latest = cpi.latest_month.date()
+
+        returns = _fund_return_table(long_df, cpi)
         included_count = len(included)
         logger.info(
             "Weekly matrix: %d weeks × %d funds (%d of %d funds unusable)",
@@ -227,7 +275,7 @@ def run(
             compute_seconds,
         )
 
-        fund_rows = _fund_rows(profiles, stats, included, failures)
+        fund_rows = _fund_rows(profiles, stats, included, failures, returns)
         correlation_rows = [vars(row) for row in neighbours]
 
         if dry_run:
@@ -257,6 +305,7 @@ def run(
             duration_seconds=round(duration, 3),
             status=status,
             detail=detail,
+            cpi_latest_month=cpi_latest,
         )
     except Exception as exc:  # noqa: BLE001 - the run's own status matters more
         logger.error("Could not record the run: %s", exc)

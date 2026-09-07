@@ -34,14 +34,17 @@ from __future__ import annotations
 import logging
 import os
 import time
+from contextlib import contextmanager
 from typing import Optional
 
 import pandas as pd
+import psycopg
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api import schemas as sc
+from src import db
 from src import analysis as an
 from src import data as dl
 from src import inflation as inf
@@ -648,3 +651,146 @@ def _real_return(
         return "unavailable", None
 
     return "ok", sc.RealReturn.from_dataclass(real, basis)
+
+
+# ----------------------------------------------------------------------
+# Fund pages
+# ----------------------------------------------------------------------
+#
+# These two read Postgres and compute nothing. Every number they return was
+# written by `jobs.weekly`; if one looks wrong, the job is where it was
+# decided, not here.
+#
+# The database is optional to the rest of this service. `/analyze` never
+# touched Postgres and still does not, so a deployment with no DATABASE_URL
+# keeps working and only these endpoints go dark — with a 503 that says
+# which, rather than a 500 from a driver.
+
+
+class DatabaseUnavailable(Exception):
+    """Postgres is not configured or not reachable. Becomes a 503."""
+
+
+@app.exception_handler(DatabaseUnavailable)
+def _database_unavailable(request: Request, exc: DatabaseUnavailable) -> JSONResponse:
+    logger.warning("database unavailable on %s: %s", request.url.path, exc)
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": str(exc) or "the fund database is unavailable"},
+        headers={"Retry-After": "60"},
+    )
+
+
+@contextmanager
+def _db():
+    """A connection for one request, or a 503 naming why there is none."""
+    try:
+        url = db.database_url()
+    except db.DatabaseNotConfigured as exc:
+        raise DatabaseUnavailable(str(exc)) from exc
+    try:
+        with db.connect(url) as conn:
+            yield conn
+    except psycopg.Error as exc:
+        raise DatabaseUnavailable(f"Postgres did not answer: {exc}") from exc
+
+
+@app.get(
+    "/funds/list",
+    response_model=sc.FundListResponse,
+    tags=["funds"],
+    summary="Every fund that has a page.",
+)
+def funds_list() -> sc.FundListResponse:
+    """Codes, names and founders, for generating the static pages.
+
+    Declared before `/fund/{code}` has no bearing on routing — the paths
+    differ in their first segment — but it is the cheaper call and reads
+    first.
+    """
+    with _db() as conn:
+        rows = db.fetch_fund_list(conn)
+    return sc.FundListResponse(
+        count=len(rows), funds=[sc.FundListItem(**r) for r in rows]
+    )
+
+
+@app.get(
+    "/fund/{code}",
+    response_model=sc.FundPageResponse,
+    tags=["funds"],
+    summary="One fund: identity, returns, and its correlation neighbours.",
+    responses={404: {"description": "No fund with that code in the last run."}},
+)
+def fund_page(code: str) -> sc.FundPageResponse:
+    """Read one fund's page out of Postgres.
+
+    404 means the code was not in the last run's universe — a typo, or a
+    fund TEFAS no longer lists. It does not mean the fund has no
+    neighbours: that case is a 200 with empty lists and a reason, because
+    the fund is real and the page has something true to say about it.
+    """
+    # Codes are upper case on TEFAS. Not the Turkish locale upper: that
+    # turns "tie" into "TİE" and there is no such fund.
+    code = code.strip().upper()
+
+    with _db() as conn:
+        row = db.fetch_fund(conn, code)
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No fund {code!r} in the last run",
+            )
+        neighbours = db.fetch_neighbours(conn, code)
+        last_run = db.fetch_last_run(conn)
+
+    high = [
+        sc.NeighbourOut(
+            correlation=n["correlation"],
+            ci_low=n["ci_low"],
+            ci_high=n["ci_high"],
+            n_weeks=n["n_weeks"],
+            bucket=n["bucket"],
+            fund=sc.FundIdentity.from_row(n["fund"]),
+        )
+        for n in neighbours
+        if n["direction"] == "high"
+    ]
+    low = [
+        sc.NeighbourOut(
+            correlation=n["correlation"],
+            ci_low=n["ci_low"],
+            ci_high=n["ci_high"],
+            n_weeks=n["n_weeks"],
+            bucket=n["bucket"],
+            fund=sc.FundIdentity.from_row(n["fund"]),
+        )
+        for n in neighbours
+        if n["direction"] == "low"
+    ]
+
+    unavailable = None
+    if not high and not low:
+        # Two different silences, and `included` is what separates them: a
+        # fund the run could not price at all never entered the matrix,
+        # while a priced one was measured against every other fund and
+        # cleared the bar against none. Reading it off the returns instead
+        # would call a six-month-old fund unpriced, which it is not.
+        unavailable = (
+            "no_measurable_pairs" if row.get("included") else "fund_not_priced"
+        )
+
+    freshness = sc.DataFreshness(
+        last_run_at=last_run["finished_at"] if last_run else None,
+        universe_size=last_run["universe_size"] if last_run else None,
+        included_funds=last_run["included_funds"] if last_run else None,
+        cpi_latest_month=last_run["cpi_latest_month"] if last_run else None,
+    )
+
+    return sc.FundPageResponse(
+        fund=sc.FundIdentity.from_row(row),
+        high=high,
+        low=low,
+        neighbours_unavailable=unavailable,
+        freshness=freshness,
+    )

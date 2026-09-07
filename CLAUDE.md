@@ -36,7 +36,17 @@ uvicorn api.main:app --reload --port 8000
 
 # Run the frontend (needs the API above; expects it on :8000)
 cd web && npm install && npm run dev
+
+# Precompute correlation neighbours into Postgres (~25 min against live TEFAS).
+# A command, never a startup hook: nothing in api/ imports it.
+export DATABASE_URL=postgresql://user@localhost:5432/miru
+python -m jobs.nightly
+python -m jobs.nightly --limit 25          # development slice
+python -m jobs.nightly --dry-run           # compute everything, write nothing
 ```
+
+There is no migration step: `jobs.nightly` creates its own schema on every
+run and is safe to run twice.
 
 There is no linter or build system configured. The only test is `tests/smoke_test.py`.
 
@@ -119,6 +129,37 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - The volatility column carries a small bar scaled to the basket's most volatile fund, and the rows are sorted most volatile first. Percentages side by side do not convey size: %143 and %8 are two same-width strings.
 - Tables are fixed-layout HTML (`ResultTable`) so nothing scrolls sideways: fund titles run to sixty characters, are truncated to fit, and the full title goes in a `title` attribute so it is never only available shortened.
 - The empty basket carries eight ready made example baskets and loads a random one, never the same one twice in a row. Each was run against live TEFAS prices to confirm it produces the finding it is there to show; see `lib/sample.ts`.
+
+**`src/universe.py`** - Which funds the nightly job may look at. Imports neither `data` nor `analysis`.
+- `load_universe(client, fund_types, with_profiles, profile_delay, limit)` - Every fund tradeable on TEFAS, as `FundProfile`s sorted by code. Raises rather than returning a partial universe.
+- `FundProfile` - code, name, `fund_type`, `umbrella_type` (`fonTurAciklama`), `category` (`fonKategori`), `total_assets`, `investor_count`, `risk_value`. Everything but `code` may be missing. `founder` is a property, split off the front of the title at the word "PORTFÖY" — TEFAS has no founder field.
+- The universe is the `islem=1` half of the YAT and EMK registries, ~1374 funds. `tefasDurum` is **not** a per-fund attribute: `islem=0` returns every row `False` and `islem=1` returns every row `True`, and the two answers share no codes, so the flag echoes the question. The module records which call answered rather than reading the field.
+- BYF is out because it has no tradeable half — both `islem` values return the same 37 rows with `tefasDurum=None`. GYF and GSYF (real estate, venture capital: 336 and 595 funds) are separate registries of qualified-investor products and are never requested.
+- `PROFILE_ENDPOINT` = `/api/funds/fonBilgiGetir`, which `tefas-crawler` does not expose. It is the only endpoint carrying fund size (`portBuyukluk`), investor count (`yatirimciSayi`) and category. Fetched for display only — the universe is already decided before it is called, and a profile failure costs a fund page some rows and nothing else.
+
+**`src/precompute.py`** - The nightly maths. Imports `analysis`, not `data`; prints nothing, persists nothing.
+- `weekly_return_matrix(long_df)` - A week × fund matrix with a hole wherever a fund is absent. Each fund is resampled through `analysis.to_weekly_returns` on its own and the columns are then aligned on the union of weeks. **Deliberately not inner-joined**: `data.py`'s join is right for a basket of five and would cut the window to the youngest of fourteen hundred.
+- `pairwise_pearson(matrix)` - Correlation and per-pair shared-week counts for every pair at once, from four matrix products over a zero-filled matrix and its presence mask. Matches `DataFrame.corr()` to ~3e-16 while avoiding its Python loop over ~950,000 pairs. Pairs with a vanishing denominator come back `NaN` and are dropped, never zero.
+- `fisher_interval(corr, n)` - A 95% interval per pair on that pair's own `n`, via `arctanh` / `tanh`. The asymmetry near ±1 falls out of the transform. `n <= 3` has no interval and returns `NaN` on both ends.
+- `bucket_matrix(...)` - One verdict per pair, **always read off the end of the interval that argues against the claim**: `overlapping` and `similar` test the lower bound, `unrelated` tests the upper. A wide interval fails all three and lands in `uncertain`, which is an answer rather than a gap.
+- `insufficient_data` is tested first and wins outright — under `min_weeks` shared weeks, or either fund above `max_stale_ratio` zero-return weeks. When the measurement is not trustworthy the answer is that, never a bucket with a caveat.
+- Bucket values are stored as **codes**, not the Turkish shown on screen (`overlapping`, `similar`, `unrelated`, `uncertain`, `insufficient_data`), matching the API's rule that display text is the caller's job.
+- `Thresholds` - All five lines in one frozen dataclass; `from_env()` overrides any of them from `MIRU_CORR_*` and raises on a value that will not parse rather than silently keeping the default.
+- `top_neighbours(...)` - The 10 highest and 10 lowest neighbours per fund, ranked on the point estimate with the interval and bucket carried alongside. A pair that could not be computed is absent from the table rather than present with nulls.
+
+**`src/db.py`** - Postgres connection and schema. Knows nothing about funds.
+- `database_url()` - Reads `DATABASE_URL`; no default and no fallback to a local socket, so a job nobody configured fails instead of filling in whatever is running on the same machine.
+- `ensure_schema(conn)` - `CREATE TABLE IF NOT EXISTS` throughout, run at the start of every job. This is what makes a second run a no-op rather than an error.
+- `replace_snapshot(conn, funds, correlations)` - `TRUNCATE` then insert, inside the caller's transaction. `funds` and `fund_correlations` are a snapshot, not a log: a reader sees all of last night or all of tonight.
+- `record_run(url, **fields)` - Appends to `job_runs` on **its own connection**, because the point of the row is to survive the rollback that erased the run's work.
+- Tables: `funds` (code PK, name, founder, type, category, size, investor count, risk, `stale_ratio`, `history_weeks`, `included`, `exclusion`), `fund_correlations` (fund, neighbour, correlation, `ci_low`, `ci_high`, `n_weeks`, bucket, direction; FK both sides ON DELETE CASCADE), `job_runs` (timings, counts, status, detail).
+
+**`jobs/nightly.py`** - The runnable entry point: `python -m jobs.nightly`.
+- Nothing in `api/` imports it and it registers no startup hook. A web process running this on boot would spend twenty minutes against TEFAS before serving a request, and do it again per worker and per restart.
+- `database_url()` is called on the first line, before TEFAS is touched, so a misconfigured job dies in a second rather than after the fetch.
+- Reuses `data._fetch_all` for the price loop — it already paces requests, logs per fund and records a failure per code instead of raising. What the job does differently is downstream: it never inner-joins.
+- A fund whose prices fail is written to `funds` with `included = false` and a closed-set `exclusion`, and never enters the matrix. Excluded funds are absent from the neighbour table, not filtered out of it afterwards.
+- `--limit`, `--reuse-prices` and `--dry-run` are development aids. `--reuse-prices` caches the fetched frame *and its failures* so a re-run's exclusion reasons match the run that actually fetched.
 
 ## Key Details
 

@@ -170,6 +170,12 @@ def _fund_rows(
             row[f"return_{months}m_real_unavailable"] = (
                 r.real_unavailable if r else pc.RETURN_NO_HISTORY
             )
+            row[f"return_{months}m_window_start"] = (
+                r.window_start.date() if r and r.window_start is not None else None
+            )
+            row[f"return_{months}m_window_end"] = (
+                r.window_end.date() if r and r.window_end is not None else None
+            )
         rows.append(row)
     return rows
 

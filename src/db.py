@@ -110,6 +110,10 @@ ALTER TABLE funds ADD COLUMN IF NOT EXISTS return_36m_nominal double precision;
 ALTER TABLE funds ADD COLUMN IF NOT EXISTS return_36m_real double precision;
 ALTER TABLE funds ADD COLUMN IF NOT EXISTS return_36m_nominal_unavailable text;
 ALTER TABLE funds ADD COLUMN IF NOT EXISTS return_36m_real_unavailable text;
+ALTER TABLE funds ADD COLUMN IF NOT EXISTS return_12m_window_start date;
+ALTER TABLE funds ADD COLUMN IF NOT EXISTS return_12m_window_end date;
+ALTER TABLE funds ADD COLUMN IF NOT EXISTS return_36m_window_start date;
+ALTER TABLE funds ADD COLUMN IF NOT EXISTS return_36m_window_end date;
 
 CREATE TABLE IF NOT EXISTS fund_correlations (
     fund_code       text NOT NULL REFERENCES funds(code) ON DELETE CASCADE,
@@ -188,7 +192,9 @@ def replace_snapshot(
                 return_12m_nominal, return_12m_real,
                 return_12m_nominal_unavailable, return_12m_real_unavailable,
                 return_36m_nominal, return_36m_real,
-                return_36m_nominal_unavailable, return_36m_real_unavailable
+                return_36m_nominal_unavailable, return_36m_real_unavailable,
+                return_12m_window_start, return_12m_window_end,
+                return_36m_window_start, return_36m_window_end
             ) VALUES (
                 %(code)s, %(name)s, %(founder)s, %(fund_type)s,
                 %(umbrella_type)s, %(category)s, %(total_assets)s,
@@ -197,7 +203,9 @@ def replace_snapshot(
                 %(return_12m_nominal)s, %(return_12m_real)s,
                 %(return_12m_nominal_unavailable)s, %(return_12m_real_unavailable)s,
                 %(return_36m_nominal)s, %(return_36m_real)s,
-                %(return_36m_nominal_unavailable)s, %(return_36m_real_unavailable)s
+                %(return_36m_nominal_unavailable)s, %(return_36m_real_unavailable)s,
+                %(return_12m_window_start)s, %(return_12m_window_end)s,
+                %(return_36m_window_start)s, %(return_36m_window_end)s
             )
             """,
             funds,
@@ -255,7 +263,9 @@ _FUND_COLUMNS = """
     f.return_12m_nominal, f.return_12m_real,
     f.return_12m_nominal_unavailable, f.return_12m_real_unavailable,
     f.return_36m_nominal, f.return_36m_real,
-    f.return_36m_nominal_unavailable, f.return_36m_real_unavailable
+    f.return_36m_nominal_unavailable, f.return_36m_real_unavailable,
+    f.return_12m_window_start, f.return_12m_window_end,
+    f.return_36m_window_start, f.return_36m_window_end
 """
 
 
@@ -267,6 +277,8 @@ def _fund_row(row) -> dict:
         "return_12m_nominal_unavailable", "return_12m_real_unavailable",
         "return_36m_nominal", "return_36m_real",
         "return_36m_nominal_unavailable", "return_36m_real_unavailable",
+        "return_12m_window_start", "return_12m_window_end",
+        "return_36m_window_start", "return_36m_window_end",
     ]
     out = dict(zip(keys, row))
     # numeric comes back as Decimal; the wire format wants a number.

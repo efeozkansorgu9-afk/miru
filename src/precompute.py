@@ -511,22 +511,28 @@ RETURN_EDGE_TOLERANCE_DAYS = 7
 
 # Why a figure is missing. Codes, not sentences: the page writes the words.
 RETURN_NO_HISTORY = "insufficient_history"
-RETURN_CPI_UNPUBLISHED = "cpi_unpublished"
 RETURN_CPI_UNAVAILABLE = "cpi_unavailable"
 RETURN_CPI_TOO_SHORT = "cpi_window_before_series"
 
 
 @dataclass(frozen=True)
 class FundReturn:
-    """One fund over one window, nominal and real.
+    """One fund over one window, nominal and real, on the same window.
 
     Both figures are **total** return over the window, not annualised: a
     36 month number here is what the holding did across those three years.
 
-    A `None` figure always carries a reason beside it. The two are reported
-    separately because they fail separately — a fund can have a perfectly
-    good nominal return and no real one, which is exactly what happens every
-    month between the month ending and TÜİK publishing its index.
+    The two are measured over the *same* dates on purpose. A nominal figure
+    running to today beside a real one running to last month is two answers
+    to two different questions printed as a pair, and the gap between them
+    would read as inflation when part of it is only the extra weeks. So the
+    window ends where both can be computed, and `window_start` /
+    `window_end` say where that was — the page prints them rather than
+    implying "the last 12 months".
+
+    A `None` figure carries a reason. Nominal and real are still reported
+    separately because they can still fail separately: with no CPI at all
+    the nominal figure is fine and the real one is not.
     """
 
     months: int
@@ -534,6 +540,24 @@ class FundReturn:
     real: Optional[float] = None
     nominal_unavailable: Optional[str] = None
     real_unavailable: Optional[str] = None
+    #: The months the window actually covers, as month starts. Both None
+    #: when there was no window to measure.
+    window_start: Optional[pd.Timestamp] = None
+    window_end: Optional[pd.Timestamp] = None
+
+
+def _cpi_cap(cpi) -> Optional[pd.Timestamp]:
+    """The last day the CPI can price, or None when there is no CPI.
+
+    The window is not allowed past this. TÜİK publishes a month's index
+    around the 3rd of the next, so the last few days of prices routinely
+    have no index behind them. Ending the window here is what lets the real
+    figure exist at all, and what keeps the nominal one measuring the same
+    stretch of time rather than a slightly longer one.
+    """
+    if cpi is None:
+        return None
+    return pd.Period(cpi.latest_month, freq="M").end_time
 
 
 def fund_returns(
@@ -545,35 +569,40 @@ def fund_returns(
     """Nominal and real total return for one fund over each window.
 
     `prices` is that fund's own price series, date indexed. `cpi` is a
-    `src.inflation.CPISeries` or `None` when the index could not be loaded;
-    `None` costs the real figures and leaves the nominal ones untouched.
+    `src.inflation.CPISeries` or `None` when the index could not be loaded.
 
-    The CPI rule is the fussy part and it is deliberate. TÜİK publishes a
-    month's index around the 3rd of the next month, so a window ending today
-    usually runs past the last published month. `src.inflation` handles that
-    by carrying the last index forward and counting the months it did in
-    `stale_months` — which is right for a chart, and wrong here. A number on
-    a fund page is read as a fact, so a real return whose final month is not
-    published yet is not reported at all: it comes back `None` with
-    `cpi_unpublished` beside it. The previous month is never substituted and
-    nothing is extrapolated.
+    With a CPI the window ends on the fund's last priced day inside the last
+    published CPI month, so `real_return` never has to carry an index
+    forward and its `stale_months` is zero by construction — which is why
+    there is no longer a code for that case. Without a CPI the window ends
+    on the fund's last priced day, since there is nothing to align to; the
+    nominal figure stands and the real one reports `cpi_unavailable`.
     """
-    out: dict[int, FundReturn] = {}
+    missing = {
+        m: FundReturn(
+            months=m,
+            nominal_unavailable=RETURN_NO_HISTORY,
+            real_unavailable=RETURN_NO_HISTORY,
+        )
+        for m in periods
+    }
     if not isinstance(prices, pd.Series) or prices.empty:
-        return {
-            m: FundReturn(months=m, nominal_unavailable=RETURN_NO_HISTORY)
-            for m in periods
-        }
+        return missing
 
     series = prices.dropna().sort_index()
     series = series[series > 0]
+    cap = _cpi_cap(cpi)
+    if cap is not None:
+        series = series[series.index <= cap]
     if series.empty:
-        return {
-            m: FundReturn(months=m, nominal_unavailable=RETURN_NO_HISTORY)
-            for m in periods
-        }
+        # Either the fund has no usable prices at all, or every one of them
+        # is newer than the last published index. Neither leaves a window.
+        return missing
 
     end = series.index[-1]
+    end_month = pd.Timestamp(end).to_period("M").to_timestamp()
+
+    out: dict[int, FundReturn] = {}
     for months in periods:
         start = end - pd.DateOffset(months=months)
         window = series[series.index >= start]
@@ -592,14 +621,15 @@ def fund_returns(
             )
             continue
 
-        nominal = float(window.iloc[-1] / window.iloc[0] - 1.0)
+        common = dict(
+            months=months,
+            nominal=float(window.iloc[-1] / window.iloc[0] - 1.0),
+            window_start=pd.Timestamp(window.index[0]).to_period("M").to_timestamp(),
+            window_end=end_month,
+        )
 
         if cpi is None:
-            out[months] = FundReturn(
-                months=months,
-                nominal=nominal,
-                real_unavailable=RETURN_CPI_UNAVAILABLE,
-            )
+            out[months] = FundReturn(**common, real_unavailable=RETURN_CPI_UNAVAILABLE)
             continue
 
         try:
@@ -607,21 +637,9 @@ def fund_returns(
         except ValueError:
             # The window opens before the CPI series does. A caller error in
             # `src.inflation`'s terms, an ordinary missing figure in ours.
-            out[months] = FundReturn(
-                months=months,
-                nominal=nominal,
-                real_unavailable=RETURN_CPI_TOO_SHORT,
-            )
+            out[months] = FundReturn(**common, real_unavailable=RETURN_CPI_TOO_SHORT)
             continue
 
-        if rr.stale_months > 0:
-            out[months] = FundReturn(
-                months=months,
-                nominal=nominal,
-                real_unavailable=RETURN_CPI_UNPUBLISHED,
-            )
-            continue
-
-        out[months] = FundReturn(months=months, nominal=nominal, real=float(rr.total))
+        out[months] = FundReturn(**common, real=float(rr.total))
 
     return out

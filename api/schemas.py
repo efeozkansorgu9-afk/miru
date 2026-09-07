@@ -847,20 +847,32 @@ Bucket = Literal[
 #: Why a return is missing. Codes, never sentences.
 ReturnUnavailable = Literal[
     "insufficient_history",
-    "cpi_unpublished",
     "cpi_unavailable",
     "cpi_window_before_series",
 ]
 
 
 class FundReturnOut(BaseModel):
-    """One fund over one window. Total return, not annualised."""
+    """One fund over one window. Total return, not annualised.
+
+    `months` is what was asked for; `window_start` and `window_end` are what
+    was measured, and they are not decoration. The window ends at the last
+    month TÜİK has published an index for, not at today, so a "12 month"
+    figure published on the 20th runs to the end of last month. The page is
+    expected to print these two rather than say "the last 12 months".
+
+    Both figures are measured over exactly this window, so the difference
+    between them is inflation and nothing else.
+    """
 
     months: int
     nominal: Optional[float] = None
     real: Optional[float] = None
     nominal_unavailable: Optional[ReturnUnavailable] = None
     real_unavailable: Optional[ReturnUnavailable] = None
+    #: Month starts. Null together, when there was no window to measure.
+    window_start: Optional[_date] = None
+    window_end: Optional[_date] = None
 
 
 class FundIdentity(BaseModel):
@@ -890,6 +902,8 @@ class FundIdentity(BaseModel):
                 real=row.get(f"return_{m}m_real"),
                 nominal_unavailable=row.get(f"return_{m}m_nominal_unavailable"),
                 real_unavailable=row.get(f"return_{m}m_real_unavailable"),
+                window_start=row.get(f"return_{m}m_window_start"),
+                window_end=row.get(f"return_{m}m_window_end"),
             )
             for m in (12, 36)
         ]

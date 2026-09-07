@@ -22,6 +22,11 @@ To open the app on a phone, bind to the network and allow its origin:
 See `DEV_ORIGIN_REGEX` for what that permits, and note that the phone also
 needs the frontend pointed at the laptop rather than at itself, with
 NEXT_PUBLIC_API_URL=http://<laptop address>:8000.
+
+A deployment instead names its frontend's origins in MIRU_ALLOWED_ORIGINS,
+comma separated; see `ORIGINS_ENV_VAR`. The list actually in force is logged
+on every boot, so a refused request can be told from a variable that was
+never set without redeploying to find out.
 """
 
 from __future__ import annotations
@@ -44,15 +49,74 @@ from src.tefas_client import TEFASClient
 
 logger = logging.getLogger(__name__)
 
+# uvicorn configures its own loggers and leaves the root one alone, so
+# without this every `logger.info` in this service and in `src/` is dropped
+# before it reaches the platform's log. Level from the environment, INFO by
+# default, because in a deployment the log is the only window into the
+# process. `basicConfig` is a no-op when something has already configured
+# handlers, so a host that sets logging up itself keeps its own.
+LOG_LEVEL_ENV_VAR = "LOG_LEVEL"
+
+LOG_LEVELS = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+}
+
+logging.basicConfig(
+    # A typo here must not be the thing that stops the service booting.
+    level=LOG_LEVELS.get(
+        os.environ.get(LOG_LEVEL_ENV_VAR, "").strip().upper(), logging.INFO
+    ),
+    format="%(levelname)s %(name)s %(message)s",
+)
+
 API_VERSION = "0.1.0"
 
 # The frontend runs on its own port in development. Only these origins may
 # call the API from a browser; widening this to "*" would let any page a
 # user has open read whatever this service can reach.
-ALLOWED_ORIGINS = [
+LOCAL_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
+
+# A deployment serves the frontend from somewhere this file cannot know: a
+# preview URL that changes per branch, a custom domain that arrives after the
+# code does. So the deployed origins are configuration, not source, and come
+# in here comma separated. The two localhost origins are kept whatever this
+# says, because a deployment that sets it is still developed against locally.
+ORIGINS_ENV_VAR = "MIRU_ALLOWED_ORIGINS"
+
+
+def _configured_origins(raw: Optional[str] = None) -> list[str]:
+    """The origins named by the environment, cleaned and deduplicated.
+
+    A browser's `Origin` is scheme, host and port with no path, and CORS
+    compares the two strings exactly, so a trailing slash is not a near miss
+    -- it never matches anything. Both it and stray whitespace come from
+    pasting a URL out of a browser bar into a dashboard field, which is how
+    this variable is set, so both are trimmed rather than left to fail
+    silently at request time.
+    """
+    if raw is None:
+        raw = os.environ.get(ORIGINS_ENV_VAR, "")
+    seen: list[str] = []
+    for part in raw.split(","):
+        origin = part.strip().rstrip("/")
+        if origin and origin not in seen:
+            seen.append(origin)
+    return seen
+
+
+def _allowed_origins() -> list[str]:
+    """Localhost plus whatever the environment added, in that order."""
+    origins = list(LOCAL_ORIGINS)
+    origins.extend(o for o in _configured_origins() if o not in origins)
+    return origins
+
 
 # Testing on a real phone means loading the page from the laptop's address on
 # the local network, and the browser sends that address as the Origin. It
@@ -136,6 +200,21 @@ app = FastAPI(
 )
 
 DEV_MODE = _dev_mode()
+ALLOWED_ORIGINS = _allowed_origins()
+
+# Said out loud on every boot, before the first request. A CORS failure looks
+# like a broken frontend rather than like a misconfiguration, and the origin
+# the browser sent is not in this process's log, so the list it was compared
+# against has to be -- otherwise the only way to tell a variable that was
+# never read from one that was read and holds a typo is to redeploy and see.
+logger.info("CORS allowed origins: %s", ", ".join(ALLOWED_ORIGINS))
+if not _configured_origins():
+    logger.warning(
+        "%s is not set: only %s may call this API from a browser. "
+        "A deployed frontend on any other address will be refused.",
+        ORIGINS_ENV_VAR,
+        ", ".join(LOCAL_ORIGINS),
+    )
 
 app.add_middleware(
     CORSMiddleware,

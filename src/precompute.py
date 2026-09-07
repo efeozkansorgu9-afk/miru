@@ -38,6 +38,7 @@ stand for:
     overlapping        Örtüşen
     inverse            Ters yönlü
     similar            Benzer
+    moderate           Orta düzeyde
     unrelated          İlişkisiz
     uncertain          Belirsiz
     insufficient_data  Yetersiz veri
@@ -297,6 +298,7 @@ def fisher_interval(
 BUCKET_OVERLAPPING = "overlapping"
 BUCKET_INVERSE = "inverse"
 BUCKET_SIMILAR = "similar"
+BUCKET_MODERATE = "moderate"
 BUCKET_UNRELATED = "unrelated"
 BUCKET_UNCERTAIN = "uncertain"
 BUCKET_INSUFFICIENT = "insufficient_data"
@@ -308,6 +310,7 @@ BUCKETS = (
     BUCKET_OVERLAPPING,
     BUCKET_INVERSE,
     BUCKET_SIMILAR,
+    BUCKET_MODERATE,
     BUCKET_UNRELATED,
     BUCKET_UNCERTAIN,
 )
@@ -327,11 +330,12 @@ def bucket_matrix(
     never the point estimate:
 
         insufficient_data  the measurement itself is not trustworthy
-        overlapping        ci_low  > 0.85   these are one holding
-        inverse            ci_high < -0.60  these move against each other
-        similar            ci_low  > 0.60   these move together
-        unrelated          the whole interval sits inside ±0.30
-        uncertain          none of the above could be established
+        overlapping        ci_low  > 0.85       these are one holding
+        inverse            ci_high < -0.60      these move against each other
+        similar            ci_low  > 0.60       these move together
+        moderate           whole interval in 0.30 .. 0.60
+        unrelated          whole interval inside ±0.30
+        uncertain          the interval crosses a line, so no verdict
 
     Precedence is the order above and is expressed as `np.select`, whose
     first-match rule *is* the precedence — nothing depends on the order
@@ -346,6 +350,21 @@ def bucket_matrix(
     and is the opposite of unrelated; requiring the lower bound to clear
     -0.30 as well is what keeps "these have nothing to do with each other"
     meaning that, and `inverse` is where those pairs go instead.
+
+    `moderate` exists because without it `uncertain` was two different
+    answers wearing one label: pairs the data could not place, and pairs the
+    data placed perfectly well in the gap between "unrelated" and "similar".
+    A pair sitting at 0.45 with an interval of 0.38 to 0.51 is not an
+    unresolved measurement — it is a resolved measurement of a moderate
+    relationship, and it belongs somewhere other than the pairs whose
+    interval runs from 0.2 to 0.7.
+
+    Its band is not a new threshold. It is bounded by `unrelated` below and
+    `similar` above, the same two numbers those buckets use, so moving
+    either line moves this one with it and a gap can never open between
+    them. What is left in `uncertain` afterwards is exactly the pairs whose
+    interval straddles one of the lines — the ones where no verdict is
+    available rather than a middling one.
 
     `stale` is the per-fund zero-return share as a 1-D array in column
     order; a pair is disqualified when *either* fund is above the line,
@@ -366,6 +385,9 @@ def bucket_matrix(
         finite & (ci_high < thresholds.inverse),
         finite & (ci_low > thresholds.similar),
         finite
+        & (ci_low > thresholds.unrelated)
+        & (ci_high < thresholds.similar),
+        finite
         & (ci_high < thresholds.unrelated)
         & (ci_low > -thresholds.unrelated),
     ]
@@ -374,6 +396,7 @@ def bucket_matrix(
         BUCKET_OVERLAPPING,
         BUCKET_INVERSE,
         BUCKET_SIMILAR,
+        BUCKET_MODERATE,
         BUCKET_UNRELATED,
     ]
     return np.select(conditions, choices, default=BUCKET_UNCERTAIN).astype(object)

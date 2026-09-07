@@ -1,6 +1,22 @@
+import type { Metadata } from "next";
+
 import { BasketWorkspace } from "@/components/basket/basket-workspace";
 import { Column } from "@/components/column";
 import { Reveal } from "@/components/reveal";
+import { TOOL, pageTitle } from "@/lib/site";
+
+/**
+ * The tool's own title and description, on the tool's own page.
+ *
+ * `absolute` because `pageTitle()` already ends in the tool and the brand,
+ * and the layout's template would put them there a second time. The layout
+ * keeps that template for the pages that come after this one, which name a
+ * section and let it supply the rest.
+ */
+export const metadata: Metadata = {
+  title: { absolute: pageTitle() },
+  description: TOOL.description,
+};
 
 /**
  * The whole product on one page: what is in your basket, then what that means.
@@ -10,7 +26,7 @@ import { Reveal } from "@/components/reveal";
  * the result share state, so they live together in one client component
  * below.
  */
-export default function Home() {
+export default function SepetAnalizi() {
   return (
     <div>
       {/* The only centred text on the page. It is three lines that are read

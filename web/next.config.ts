@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+import { TOOL } from "./lib/site";
+
 /**
  * Hostnames the dev server will serve its own internals to.
  *
@@ -39,6 +41,24 @@ const PRIVATE_HOSTS = [
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: PRIVATE_HOSTS,
+  /**
+   * The root, until there is a page to put there.
+   *
+   * The tool moved off `/` so the brand can have a home page above it, and
+   * that page is not written yet, so `/` sends the reader to the one tool
+   * there is. The destination is `TOOL.href` rather than a path typed here:
+   * the header links to the same constant, so the redirect cannot point
+   * somewhere the navigation does not.
+   *
+   * `permanent: false` — a 307, and it matters which. A 308 is cached by the
+   * browser indefinitely and is not re-checked, so every reader who visited
+   * once during this window would keep being bounced off the home page after
+   * it exists, on a machine no deploy can reach. The temporary code says
+   * exactly what is true: this is where `/` goes today.
+   */
+  async redirects() {
+    return [{ source: "/", destination: TOOL.href, permanent: false }];
+  },
 };
 
 export default nextConfig;

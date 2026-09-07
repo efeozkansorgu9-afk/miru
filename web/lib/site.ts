@@ -26,7 +26,12 @@ export interface Tool {
   name: string;
   /** One line, used as the meta description. */
   description: string;
-  /** Where the tool lives. The brand mark links here too, while there is one. */
+  /**
+   * Where the tool lives. The brand mark links here too, while there is one,
+   * and `next.config.ts` reads it to point the root at whichever tool is
+   * being served. A tool owns one path and it is written here, not in a
+   * component, a config or a route folder name typed a second time.
+   */
   href: string;
 }
 
@@ -43,7 +48,7 @@ export const TOOLS = {
     name: "Sepet Analizi",
     description:
       "Türk yatırım fonlarından kurulmuş bir sepetin gerçekte ne kadar dağıldığını gösterir.",
-    href: "/",
+    href: "/sepet-analizi",
   },
 } satisfies Record<string, Tool>;
 

@@ -85,20 +85,37 @@ class FundProfile:
     #: is not zero — it is TEFAS declining to say.
     risk_value: Optional[int] = None
 
+    #: Words that end a founder's legal name. A title runs "<founder> <what
+    #: it invests in>" with no separator, so the founder is the head up to
+    #: and including whichever of these comes first.
+    #:
+    #: Two are needed, not one. Securities houses are "<X> PORTFÖY ...", but
+    #: the pension registry is mostly insurers — "AGESA HAYAT VE EMEKLİLİK
+    #: A.Ş. HİSSE SENEDİ ..." — with no "PORTFÖY" anywhere. Splitting on
+    #: that word alone left 300 of 311 pension funds with no founder at all,
+    #: which quietly made every pair of them look like the same house.
+    NAME_MARKERS = ("PORTFÖY", "A.Ş.")
+
     @property
     def founder(self) -> Optional[str]:
-        """The portfolio company, taken off the front of the fund's name.
+        """The company, taken off the front of the fund's name.
 
-        TEFAS has no founder field. Every title starts with the founder's
-        legal name and ends with what the fund invests in, separated by
-        nothing more reliable than the word "PORTFÖY", so this is a split on
-        that word and not a lookup. It is display text — nothing keys off it.
+        TEFAS has no founder field, so this is a split and not a lookup. It
+        is display text and a rough grouping key — nothing numeric keys off
+        it, and a title carrying neither marker returns `None` rather than a
+        guess, because "unknown" and "the same house" must not be confused.
         """
         if not self.name:
             return None
-        marker = "PORTFÖY"
-        head, sep, _ = self.name.partition(marker)
-        return (head + sep).strip() if sep else None
+        hits = [
+            (self.name.find(marker), marker)
+            for marker in self.NAME_MARKERS
+            if self.name.find(marker) >= 0
+        ]
+        if not hits:
+            return None
+        index, marker = min(hits)
+        return self.name[: index + len(marker)].strip()
 
 
 def _list_payload(fund_type: str, islem: int) -> dict:

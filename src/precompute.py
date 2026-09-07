@@ -36,6 +36,7 @@ already phrases every finding it draws. The five codes, and the words they
 stand for:
 
     overlapping        Örtüşen
+    inverse            Ters yönlü
     similar            Benzer
     unrelated          İlişkisiz
     uncertain          Belirsiz
@@ -82,7 +83,10 @@ class Thresholds:
     overlapping: float = 0.85
     #: ... and "similar" when it clears this.
     similar: float = 0.60
-    #: A pair is "unrelated" when the interval's upper bound is under this.
+    #: A pair is "inverse" when the interval's UPPER bound is under this.
+    #: Negative, and the sign is part of the value rather than applied later.
+    inverse: float = -0.60
+    #: A pair is "unrelated" when the whole interval sits inside ±this.
     unrelated: float = 0.30
     #: Fewer shared weeks than this and no verdict is given at all.
     min_weeks: int = 52
@@ -104,6 +108,7 @@ class Thresholds:
         fields = {
             "overlapping": ("OVERLAPPING_MIN", float),
             "similar": ("SIMILAR_MIN", float),
+            "inverse": ("INVERSE_MAX", float),
             "unrelated": ("UNRELATED_MAX", float),
             "min_weeks": ("MIN_WEEKS", int),
             "max_stale_ratio": ("MAX_STALE_RATIO", float),
@@ -290,17 +295,21 @@ def fisher_interval(
 # ----------------------------------------------------------------------
 
 BUCKET_OVERLAPPING = "overlapping"
+BUCKET_INVERSE = "inverse"
 BUCKET_SIMILAR = "similar"
 BUCKET_UNRELATED = "unrelated"
 BUCKET_UNCERTAIN = "uncertain"
 BUCKET_INSUFFICIENT = "insufficient_data"
 
+#: In precedence order. The first bucket whose test a pair passes is the one
+#: it gets, so this tuple is the rule and not just a list of names.
 BUCKETS = (
+    BUCKET_INSUFFICIENT,
     BUCKET_OVERLAPPING,
+    BUCKET_INVERSE,
     BUCKET_SIMILAR,
     BUCKET_UNRELATED,
     BUCKET_UNCERTAIN,
-    BUCKET_INSUFFICIENT,
 )
 
 
@@ -314,13 +323,29 @@ def bucket_matrix(
 ) -> np.ndarray:
     """One verdict per pair, decided on the interval rather than the estimate.
 
-    The order is the whole design. `insufficient_data` is tested first and
-    wins outright: when the measurement is not trustworthy the answer is
-    that it is not trustworthy, never a bucket with a caveat attached. Only
-    then do the three claims get their turn, each against the end of the
-    interval that could refute it — lower bound for the two "these move
-    together" claims, upper bound for "these do not". Anything that survives
-    all four tests is genuinely undecided, and says so.
+    Every test reads the end of the interval that could refute its claim,
+    never the point estimate:
+
+        insufficient_data  the measurement itself is not trustworthy
+        overlapping        ci_low  > 0.85   these are one holding
+        inverse            ci_high < -0.60  these move against each other
+        similar            ci_low  > 0.60   these move together
+        unrelated          the whole interval sits inside ±0.30
+        uncertain          none of the above could be established
+
+    Precedence is the order above and is expressed as `np.select`, whose
+    first-match rule *is* the precedence — nothing depends on the order
+    assignments happen to be written in.
+
+    `insufficient_data` comes first and wins outright. When the measurement
+    is not trustworthy the answer is that it is not trustworthy, never a
+    bucket with a caveat attached.
+
+    `unrelated` is a claim about the whole interval, not about its top end.
+    An interval running from -0.95 to -0.90 has an upper bound under 0.30
+    and is the opposite of unrelated; requiring the lower bound to clear
+    -0.30 as well is what keeps "these have nothing to do with each other"
+    meaning that, and `inverse` is where those pairs go instead.
 
     `stale` is the per-fund zero-return share as a 1-D array in column
     order; a pair is disqualified when *either* fund is above the line,
@@ -332,12 +357,26 @@ def bucket_matrix(
     )
     unusable = too_few | stale_pair | ~np.isfinite(corr) | ~np.isfinite(ci_low)
 
-    out = np.full(corr.shape, BUCKET_UNCERTAIN, dtype=object)
-    out[np.isfinite(ci_high) & (ci_high < thresholds.unrelated)] = BUCKET_UNRELATED
-    out[np.isfinite(ci_low) & (ci_low > thresholds.similar)] = BUCKET_SIMILAR
-    out[np.isfinite(ci_low) & (ci_low > thresholds.overlapping)] = BUCKET_OVERLAPPING
-    out[unusable] = BUCKET_INSUFFICIENT
-    return out
+    # Every non-insufficient pair has a finite interval on both ends, so
+    # these comparisons are only reached where they mean something.
+    finite = np.isfinite(ci_low) & np.isfinite(ci_high)
+    conditions = [
+        unusable,
+        finite & (ci_low > thresholds.overlapping),
+        finite & (ci_high < thresholds.inverse),
+        finite & (ci_low > thresholds.similar),
+        finite
+        & (ci_high < thresholds.unrelated)
+        & (ci_low > -thresholds.unrelated),
+    ]
+    choices = [
+        BUCKET_INSUFFICIENT,
+        BUCKET_OVERLAPPING,
+        BUCKET_INVERSE,
+        BUCKET_SIMILAR,
+        BUCKET_UNRELATED,
+    ]
+    return np.select(conditions, choices, default=BUCKET_UNCERTAIN).astype(object)
 
 
 # ----------------------------------------------------------------------
@@ -366,36 +405,52 @@ def top_neighbours(
     codes: Sequence[str],
     top_n: int = TOP_N,
 ) -> list[Neighbour]:
-    """The `top_n` highest and `top_n` lowest neighbours of every fund.
+    """The `top_n` strongest and `top_n` weakest neighbours of every fund.
 
-    Ranked on the point estimate, because that is what "most correlated"
-    means; the interval and the bucket travel with the row so a reader can
-    see how much the ranking is worth. A pair whose correlation could not be
-    computed at all is not a neighbour and is left out entirely — it is
-    absent from the table rather than present with a null.
+    Ranked on the interval, not on the point estimate, and by the same end
+    of it the bucket is judged on: the high list sorts by `ci_low`
+    descending, so the fund that comes first is the one whose *worst case*
+    is strongest, and the low list sorts by `ci_high` ascending. Ranking on
+    the point estimate instead lets an under-powered pair outrank a
+    well-measured one — a correlation of 0.99 on nine shared weeks sits
+    above 0.95 on three years, and it is the nine week pair that is more
+    likely to be an accident. Measured on this universe: pairs sharing under
+    26 weeks put 8.7% of themselves above |r| = 0.9, against 2.6% for pairs
+    with the full history.
+
+    Pairs bucketed `insufficient_data` are not ranked at all. They are not
+    ranked low, or ranked and then hidden — they never enter the sort, so a
+    fund's ten neighbours are ten measurements that meant something, and a
+    fund with nothing measurable simply has fewer than ten.
 
     Both ends can name the same pair only when a fund has fewer than
-    `2 * top_n` neighbours, so the two lists are merged on the pair and the
-    high end wins, keeping the primary key unique.
+    `2 * top_n` usable neighbours, so the two lists are merged on the pair
+    and the high end wins, keeping the primary key unique.
     """
     rows: list[Neighbour] = []
     index = np.arange(len(codes))
 
     for i, code in enumerate(codes):
-        r = corr[i].copy()
-        r[i] = np.nan  # a fund is not its own neighbour
-        usable = np.isfinite(r)
-        if not usable.any():
+        eligible = (
+            (buckets[i] != BUCKET_INSUFFICIENT)
+            & np.isfinite(ci_low[i])
+            & np.isfinite(ci_high[i])
+        )
+        eligible[i] = False  # a fund is not its own neighbour
+        if not eligible.any():
             continue
 
-        candidates = index[usable]
-        ordered = candidates[np.argsort(-r[candidates], kind="stable")]
+        candidates = index[eligible]
+        by_low = candidates[np.argsort(-ci_low[i][candidates], kind="stable")]
+        by_high = candidates[np.argsort(ci_high[i][candidates], kind="stable")]
 
         picked: dict[int, str] = {}
-        for j in ordered[:top_n]:
+        for j in by_low[:top_n]:
             picked[int(j)] = "high"
-        for j in ordered[-top_n:]:
+        for j in by_high[:top_n]:
             picked.setdefault(int(j), "low")
+
+        r = corr[i]
 
         for j, direction in picked.items():
             rows.append(

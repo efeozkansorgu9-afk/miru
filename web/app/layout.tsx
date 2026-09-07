@@ -48,11 +48,36 @@ export const metadata: Metadata = {
   // any page having to know either.
   title: { default: pageTitle(), template: `%s · ${TOOL.name} · ${SITE.brand}` },
   description: TOOL.description,
-  // The same file the header draws, rather than a second exported asset that
-  // can drift from it. It carries its own palette and its own dark scheme
-  // rule, because a favicon is loaded as its own document and cannot read
-  // this page's tokens — see the comment in `public/logo.svg`.
-  icons: { icon: [{ url: "/logo.svg", type: "image/svg+xml" }] },
+  /*
+   * The mark, four ways, because no single file is read by everything.
+   *
+   * `logo.svg` is the primary and the only one that is drawn rather than
+   * generated: it is the same file the header draws, it scales, and it
+   * carries its own dark scheme rule. Safari does not use an SVG favicon,
+   * so it needs a raster to fall back to, and a bare `/favicon.ico` is
+   * requested by clients that never read this list at all.
+   *
+   * Order is the fallback order, weakest first. A browser takes the last
+   * `rel="icon"` it can decode, so the SVG is listed last and everything
+   * that can render it does; the PNG catches what cannot, and the ICO
+   * catches what predates both.
+   *
+   * The three raster files are generated from `logo.svg` and committed, not
+   * built. If the mark changes, regenerate them — the geometry lives in
+   * three places now, and `public/logo.svg` says which. They bake in the
+   * light palette, since a raster cannot answer `prefers-color-scheme`, and
+   * that is the half of the pair chosen to clear 3:1 on either ground.
+   */
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/icon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/logo.svg", type: "image/svg+xml" },
+    ],
+    // iOS composites a transparent home screen icon onto black, so this one
+    // is the only one with a ground of its own.
+    apple: [{ url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" }],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -37,15 +37,15 @@ uvicorn api.main:app --reload --port 8000
 # Run the frontend (needs the API above; expects it on :8000)
 cd web && npm install && npm run dev
 
-# Precompute correlation neighbours into Postgres (~25 min against live TEFAS).
+# Precompute correlation neighbours into Postgres (~20-30 min against live TEFAS).
 # A command, never a startup hook: nothing in api/ imports it.
 export DATABASE_URL=postgresql://user@localhost:5432/miru
-python -m jobs.nightly
-python -m jobs.nightly --limit 25          # development slice
-python -m jobs.nightly --dry-run           # compute everything, write nothing
+python -m jobs.weekly
+python -m jobs.weekly --limit 25          # development slice
+python -m jobs.weekly --dry-run           # compute everything, write nothing
 ```
 
-There is no migration step: `jobs.nightly` creates its own schema on every
+There is no migration step: `jobs.weekly` creates its own schema on every
 run and is safe to run twice.
 
 There is no linter or build system configured. The only test is `tests/smoke_test.py`.
@@ -130,14 +130,14 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - Tables are fixed-layout HTML (`ResultTable`) so nothing scrolls sideways: fund titles run to sixty characters, are truncated to fit, and the full title goes in a `title` attribute so it is never only available shortened.
 - The empty basket carries eight ready made example baskets and loads a random one, never the same one twice in a row. Each was run against live TEFAS prices to confirm it produces the finding it is there to show; see `lib/sample.ts`.
 
-**`src/universe.py`** - Which funds the nightly job may look at. Imports neither `data` nor `analysis`.
+**`src/universe.py`** - Which funds the weekly job may look at. Imports neither `data` nor `analysis`.
 - `load_universe(client, fund_types, with_profiles, profile_delay, limit)` - Every fund tradeable on TEFAS, as `FundProfile`s sorted by code. Raises rather than returning a partial universe.
 - `FundProfile` - code, name, `fund_type`, `umbrella_type` (`fonTurAciklama`), `category` (`fonKategori`), `total_assets`, `investor_count`, `risk_value`. Everything but `code` may be missing. `founder` is a property, not a field — TEFAS has no founder — split off the head of the title at whichever of `NAME_MARKERS` ("PORTFÖY", "A.Ş.") comes first. Both are needed: securities houses are "<X> PORTFÖY ..." but the pension registry is mostly insurers with no "PORTFÖY" anywhere, and splitting on that word alone left 300 of 311 pension funds with no founder, which made every pair of them look like the same house. A title with neither marker returns `None`, and unknown must not be read as same-house.
 - The universe is the `islem=1` half of the YAT and EMK registries, ~1374 funds. `tefasDurum` is **not** a per-fund attribute: `islem=0` returns every row `False` and `islem=1` returns every row `True`, and the two answers share no codes, so the flag echoes the question. The module records which call answered rather than reading the field.
 - BYF is out because it has no tradeable half — both `islem` values return the same 37 rows with `tefasDurum=None`. GYF and GSYF (real estate, venture capital: 336 and 595 funds) are separate registries of qualified-investor products and are never requested.
 - `PROFILE_ENDPOINT` = `/api/funds/fonBilgiGetir`, which `tefas-crawler` does not expose. It is the only endpoint carrying fund size (`portBuyukluk`), investor count (`yatirimciSayi`) and category. Fetched for display only — the universe is already decided before it is called, and a profile failure costs a fund page some rows and nothing else.
 
-**`src/precompute.py`** - The nightly maths. Imports `analysis`, not `data`; prints nothing, persists nothing.
+**`src/precompute.py`** - The weekly maths. Imports `analysis`, not `data`; prints nothing, persists nothing.
 - `weekly_return_matrix(long_df)` - A week × fund matrix with a hole wherever a fund is absent. Each fund is resampled through `analysis.to_weekly_returns` on its own and the columns are then aligned on the union of weeks. **Deliberately not inner-joined**: `data.py`'s join is right for a basket of five and would cut the window to the youngest of fourteen hundred.
 - `pairwise_pearson(matrix)` - Correlation and per-pair shared-week counts for every pair at once, from four matrix products over a zero-filled matrix and its presence mask. Matches `DataFrame.corr()` to ~3e-16 while avoiding its Python loop over ~950,000 pairs. Pairs with a vanishing denominator come back `NaN` and are dropped, never zero.
 - `fisher_interval(corr, n)` - A 95% interval per pair on that pair's own `n`, via `arctanh` / `tanh`. The asymmetry near ±1 falls out of the transform. `n <= 3` has no interval and returns `NaN` on both ends.
@@ -156,7 +156,7 @@ Output schema: `date, fund_code, fund_name, price, category_rank, category_total
 - `record_run(url, **fields)` - Appends to `job_runs` on **its own connection**, because the point of the row is to survive the rollback that erased the run's work.
 - Tables: `funds` (code PK, name, founder, type, category, size, investor count, risk, `stale_ratio`, `history_weeks`, `included`, `exclusion`), `fund_correlations` (fund, neighbour, correlation, `ci_low`, `ci_high`, `n_weeks`, bucket, direction; FK both sides ON DELETE CASCADE), `job_runs` (timings, counts, status, detail).
 
-**`jobs/nightly.py`** - The runnable entry point: `python -m jobs.nightly`.
+**`jobs/weekly.py`** - The runnable entry point: `python -m jobs.weekly`.
 - Nothing in `api/` imports it and it registers no startup hook. A web process running this on boot would spend twenty minutes against TEFAS before serving a request, and do it again per worker and per restart.
 - `database_url()` is called on the first line, before TEFAS is touched, so a misconfigured job dies in a second rather than after the fetch.
 - Reuses `data._fetch_all` for the price loop — it already paces requests, logs per fund and records a failure per code instead of raising. What the job does differently is downstream: it never inner-joins.

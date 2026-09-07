@@ -6,4 +6,4 @@ requests  # EVDS calls in src/inflation.py
 python-dotenv  # reads EVDS_API_KEY from .env; optional at runtime
 fastapi  # HTTP API in api/, which the Next.js frontend calls
 uvicorn[standard]  # ASGI server for api.main:app
-psycopg[binary]  # Postgres driver for src/db.py and the nightly job
+psycopg[binary]  # Postgres driver for src/db.py and the weekly job

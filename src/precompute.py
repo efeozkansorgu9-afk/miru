@@ -1,7 +1,7 @@
 """
 Precompute
 ==========
-The nightly maths: every fund against every other fund, once, so that a
+The weekly maths: every fund against every other fund, once, so that a
 request only ever reads a row.
 
 Nothing here is new arithmetic. Weekly returns come from `src.analysis`, and

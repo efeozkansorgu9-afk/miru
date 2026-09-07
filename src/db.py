@@ -1,14 +1,15 @@
 """
 Database
 ========
-The Postgres connection and the schema the nightly job writes into.
+The Postgres connection and the schema the weekly job writes into.
 
 Three tables, and one rule about how they are replaced. `funds` and
-`fund_correlations` are a snapshot, not a log: tonight's run supersedes last
-night's entirely. Replacing a snapshot has exactly one safe shape, which is
+`fund_correlations` are a snapshot, not a log: each run supersedes the last
+one entirely. Replacing a snapshot has exactly one safe shape, which is
 delete-and-insert inside a single transaction, so a reader either sees all of
-last night or all of tonight and never a half-written mixture. `job_runs` is
-the opposite — it is the log, one row per attempt, and it keeps failures.
+the previous run or all of this one and never a half-written mixture.
+`job_runs` is the opposite — it is the log, one row per attempt, and it keeps
+failures.
 
 The schema is created by `ensure_schema()` at the start of every run rather
 than by a migration to apply by hand. It is `CREATE TABLE IF NOT EXISTS`
@@ -59,7 +60,7 @@ def connect(url: Optional[str] = None) -> Iterator[psycopg.Connection]:
     """One connection, one transaction.
 
     psycopg3 opens a transaction on the first statement and commits when the
-    `with` block leaves without an exception, so the whole nightly write is
+    `with` block leaves without an exception, so the whole weekly write is
     one unit without any explicit BEGIN. Anything raised inside rolls the
     lot back, which is the entire atomicity story for this job.
     """
@@ -138,7 +139,7 @@ def ensure_schema(conn: psycopg.Connection) -> None:
 
 
 # ----------------------------------------------------------------------
-# The nightly write
+# The weekly write
 # ----------------------------------------------------------------------
 
 
@@ -147,7 +148,7 @@ def replace_snapshot(
     funds: Sequence[dict],
     correlations: Sequence[dict],
 ) -> None:
-    """Swap in tonight's snapshot, wholesale.
+    """Swap in this run's snapshot, wholesale.
 
     Called inside the caller's transaction, never opening its own: the
     delete and both inserts have to land together or not at all. Deleting

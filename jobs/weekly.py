@@ -1,10 +1,10 @@
 """
-Nightly correlation job
-=======================
+Weekly correlation job
+======================
 Fetch the tradeable universe, correlate every fund against every other, and
 replace the stored snapshot.
 
-    DATABASE_URL=postgresql://user@localhost:5432/miru python -m jobs.nightly
+    DATABASE_URL=postgresql://user@localhost:5432/miru python -m jobs.weekly
 
 This is a command and only a command. Nothing in `api/` imports it and it
 registers no startup hook: a web process that ran this on boot would spend
@@ -49,15 +49,15 @@ from src import universe as uni
 from src.data import _fetch_all
 from src.tefas_client import TEFASClient
 
-logger = logging.getLogger("jobs.nightly")
+logger = logging.getLogger("jobs.weekly")
 
 #: Seconds between price requests. `src.data` uses the same pacing.
 FETCH_DELAY = 0.5
 
 #: Where `--reuse-prices` parks the fetched frame. A development aid for
 #: re-running the write path without spending twenty minutes on TEFAS again;
-#: a real nightly run fetches fresh and never touches this.
-PRICE_CACHE = Path("data/cache/nightly_prices.parquet")
+#: a real scheduled run fetches fresh and never touches this.
+PRICE_CACHE = Path("data/cache/weekly_prices.parquet")
 
 
 def _fetch_prices(
@@ -273,7 +273,7 @@ def run(
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m jobs.nightly",
+        prog="python -m jobs.weekly",
         description="Precompute fund correlation neighbours into Postgres.",
     )
     parser.add_argument(

@@ -1,7 +1,7 @@
 """
 Universe
 ========
-Which funds the nightly job is allowed to look at, and what it knows about
+Which funds the weekly job is allowed to look at, and what it knows about
 each one before a single price is fetched.
 
 The universe is not "every fund TEFAS lists". It is the funds a reader can

@@ -211,3 +211,39 @@ export function checkStagedBasket(rows: PurchaseRow[]): BasketCheck {
     incomplete: rows.length - complete,
   };
 }
+
+/**
+ * A fingerprint of the basket as it currently stands.
+ *
+ * Only here to answer one question: is the result on screen still about the
+ * basket in the form? A result that survives an edit looks like a live
+ * answer, and someone who removes a fund and reads the old grouping is
+ * reading a claim about a basket they no longer have.
+ *
+ * It covers everything `buildSimpleRequest` and `buildStagedRequest` put on
+ * the wire, and nothing else. `id` is left out because it is a rendering
+ * key: removing a fund and adding the same one back is the same basket and
+ * would produce the same answer, so it should not be flagged as changed.
+ * `title` is left out for the same reason — it never reaches the API.
+ *
+ * The mode is part of it because the same funds analysed as dated purchases
+ * are a different question with a different answer.
+ *
+ * A string rather than a deep comparison: it is compared for equality only,
+ * it goes into a `useState`, and the fields are all short strings already.
+ * The separators are printable so a signature can be read in a debugger,
+ * and they are two characters no fund code, amount or ISO date contains.
+ */
+export function basketSignature(
+  mode: "simple" | "staged",
+  funds: readonly BasketFund[],
+  purchases: readonly PurchaseRow[],
+): string {
+  const rows =
+    mode === "staged"
+      ? purchases.map((row) => [row.code, row.amount, row.date].join("~"))
+      : funds.map((fund) =>
+          [fund.code, fund.amount, fund.basis, fund.since].join("~"),
+        );
+  return [mode, ...rows].join("|");
+}

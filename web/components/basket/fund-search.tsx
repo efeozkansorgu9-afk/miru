@@ -1,7 +1,16 @@
 "use client";
 
+import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  size,
+  useFloating,
+} from "@floating-ui/react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { searchFunds, useFundRegistry } from "@/lib/funds";
 import type { SearchableFund } from "@/lib/funds";
@@ -25,6 +34,26 @@ import type { SearchableFund } from "@/lib/funds";
  * get an answer. What is lost is the name next to the code and the check
  * that the code exists at all, and the note under the field says so rather
  * than letting a typo look like a fund.
+ *
+ * ## Why the list is in a portal
+ *
+ * The list used to be `position: absolute; z-index: 30` inside this
+ * component, and the amount fields of the fund cards below painted straight
+ * through it. A higher z-index would not have fixed it. `Reveal`, the entry
+ * animation this box is wrapped in, animates `transform` with
+ * `animation-fill-mode: both`; the animation never stops filling, and a
+ * filled `transform: none` resolves to the identity matrix, which is still a
+ * transform. So `Reveal` creates a stacking context that never goes away,
+ * and every z-index inside it is only comparable with its siblings. The
+ * card's `AmountInput` wraps its field in a `position: relative` box, which
+ * paints in the same step as that whole stacking context and comes later in
+ * the document, so it won a comparison the z-index was never part of.
+ *
+ * The list is therefore rendered into `document.body`, outside every
+ * stacking context on the page, and positioned against the input by
+ * floating-ui rather than by the box model. That also buys the two things
+ * absolute positioning could not: the list flips above the field when there
+ * is no room below it, and it stays anchored while the page scrolls.
  */
 export function FundSearch({
   chosen,
@@ -39,6 +68,7 @@ export function FundSearch({
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const listId = useId();
   const reduceMotion = useReducedMotion();
 
@@ -50,9 +80,88 @@ export function FundSearch({
     [funds, query],
   );
 
-  const showList = open && !elle && query.trim().length > 0;
+  const showList = open && !elle && query.trim().length > 0 && results.length > 0;
   const kod = elle ? kodaCevir(query) : "";
   const eklenebilir = kod.length > 0 && !chosen.has(kod);
+
+  /**
+   * Anchor the portalled list to the input.
+   *
+   * `size` copies the field's width onto the list and caps its height to
+   * what is actually free on screen, so the list never runs off the bottom
+   * and never has to guess how tall the viewport is. `autoUpdate` keeps the
+   * two together while the page scrolls or resizes, which absolute
+   * positioning gave for free and a portal does not.
+   */
+  const { refs, floatingStyles } = useFloating<HTMLInputElement>({
+    open: showList,
+    placement: "bottom-start",
+    whileElementsMounted: autoUpdate,
+    // Position through `top`/`left` rather than a transform. floating-ui
+    // prefers a transform because it is cheaper to animate, but the list is
+    // a `motion.ul` that animates `y` on entry, and Framer Motion writes the
+    // same `transform` property. The two cannot share it: Framer Motion won,
+    // the positioning transform was overwritten, and the list rendered at
+    // the top left corner of the page instead of under the field.
+    transform: false,
+    middleware: [
+      offset(4),
+      flip({ padding: 8 }),
+      shift({ padding: 8 }),
+      size({
+        padding: 8,
+        apply({ rects, availableHeight, elements }) {
+          elements.floating.style.width = `${rects.reference.width}px`;
+          // Never taller than a third of a phone screen's worth of rows, and
+          // never taller than the room there is.
+          elements.floating.style.maxHeight = `${Math.min(availableHeight, 320)}px`;
+        },
+      }),
+    ],
+  });
+
+  // A result set that shrank under the cursor leaves `active` pointing past
+  // the end, and Enter would then select nothing. Clamped while rendering
+  // rather than corrected in an effect: an effect would render the bad index
+  // once first, and there is nothing to synchronise with — the valid range
+  // is derivable from what we already have.
+  const activeIndex = active < results.length ? active : 0;
+
+  /**
+   * Close when the press lands anywhere but the field or the list.
+   *
+   * This replaces a `blur` handler that closed the list on a timer. With the
+   * list in a portal, a press inside it still blurs the input, and racing a
+   * 120ms timeout against the click was never the reason it worked. Testing
+   * the press target is what actually describes the intent: a press outside
+   * both elements is the reader leaving.
+   */
+  useEffect(() => {
+    if (!showList) return;
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (refs.reference.current?.contains(target)) return;
+      if (refs.floating.current?.contains(target)) return;
+      setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [showList, refs.reference, refs.floating]);
+
+  /**
+   * Keep the highlighted row on screen.
+   *
+   * The list scrolls inside itself, so arrowing past the bottom row has to
+   * bring the next one into view or the keyboard path stops at whatever
+   * happened to fit. `block: "nearest"` scrolls only when it must, so the
+   * list does not jump while the cursor is somewhere in the middle.
+   */
+  useEffect(() => {
+    if (!showList) return;
+    const row = listRef.current?.querySelector<HTMLElement>('[data-active="true"]');
+    row?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, showList]);
 
   function choose(fund: SearchableFund) {
     if (chosen.has(fund.code)) return;
@@ -81,6 +190,9 @@ export function FundSearch({
 
   function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
+      // Stops here rather than reaching the page: Escape with a list open
+      // means close the list, and nothing else on the page should also act.
+      if (showList) event.stopPropagation();
       setOpen(false);
       return;
     }
@@ -94,23 +206,29 @@ export function FundSearch({
       }
       return;
     }
-    if (!showList || results.length === 0) return;
+    if (!showList) return;
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActive((i) => (i + 1) % results.length);
+      setActive((activeIndex + 1) % results.length);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActive((i) => (i - 1 + results.length) % results.length);
+      setActive((activeIndex - 1 + results.length) % results.length);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setActive(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setActive(results.length - 1);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      const fund = results[active];
+      const fund = results[activeIndex];
       if (fund) choose(fund);
     }
   }
 
   return (
-    <div className="relative">
+    <div>
       <label
         htmlFor={`${listId}-input`}
         className="block text-label text-ink-muted"
@@ -123,7 +241,10 @@ export function FundSearch({
           <SearchIcon />
           <input
             id={`${listId}-input`}
-            ref={inputRef}
+            ref={(node) => {
+              inputRef.current = node;
+              refs.setReference(node);
+            }}
             type="text"
             autoComplete="off"
             // Combobox semantics only while there is a list behind the box.
@@ -137,8 +258,8 @@ export function FundSearch({
                   "aria-controls": listId,
                   "aria-autocomplete": "list" as const,
                   "aria-activedescendant":
-                    showList && results[active]
-                      ? `${listId}-${results[active].code}`
+                    showList && results[activeIndex]
+                      ? `${listId}-${results[activeIndex].code}`
                       : undefined,
                 })}
             value={query}
@@ -149,9 +270,6 @@ export function FundSearch({
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
-            // A blur that fires before the click lands would close the list out
-            // from under the pointer, so the close waits a frame.
-            onBlur={() => window.setTimeout(() => setOpen(false), 120)}
             onKeyDown={onKeyDown}
             className={`w-full rounded-control border border-border bg-surface py-3.5 pr-4 text-body text-ink transition-colors placeholder:text-ink-subtle hover:border-border-strong focus:border-accent ${
               elle ? "pl-4 font-mono uppercase" : "pl-11"
@@ -182,48 +300,130 @@ export function FundSearch({
         </p>
       )}
 
-      <AnimatePresence>
-        {showList && results.length > 0 && (
-          <motion.ul
-            id={listId}
-            role="listbox"
-            aria-label="Arama sonuçları"
-            initial={reduceMotion ? false : { opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-card border border-border bg-surface-raised shadow-lg shadow-black/5"
-          >
-            {results.map((fund, index) => {
-              const already = chosen.has(fund.code);
-              return (
-                <li key={fund.code} id={`${listId}-${fund.code}`} role="option" aria-selected={index === active}>
-                  <button
-                    type="button"
-                    disabled={already}
-                    onMouseEnter={() => setActive(index)}
-                    onClick={() => choose(fund)}
-                    className={`flex w-full items-baseline gap-3 px-4 py-3 text-left transition-colors ${
-                      index === active && !already ? "bg-accent-surface" : ""
-                    } ${already ? "cursor-default opacity-45" : ""}`}
-                  >
-                    <span className="shrink-0 font-mono text-label text-accent">
-                      {fund.code}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-caption text-ink" title={fund.title}>
-                      {fund.title}
-                    </span>
-                    {already && (
-                      <span className="shrink-0 text-caption text-ink-subtle">eklendi</span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </motion.ul>
-        )}
-      </AnimatePresence>
+      <FloatingList
+        open={showList}
+        listId={listId}
+        setFloating={refs.setFloating}
+        floatingStyles={floatingStyles}
+        listRef={listRef}
+        results={results}
+        active={activeIndex}
+        chosen={chosen}
+        reduceMotion={reduceMotion}
+        onHover={setActive}
+        onChoose={choose}
+      />
     </div>
+  );
+}
+
+/**
+ * The result list, rendered into `document.body`.
+ *
+ * Portalled on mount rather than on the server: `document` does not exist
+ * during the server render, and the list is never part of the first paint
+ * anyway — nothing can be in it until someone has typed.
+ *
+ * `onMouseDown` is prevented on the whole list so a press never takes focus
+ * off the input. Without it the field loses focus on the way to the click,
+ * and the caret is gone by the time the fund is added, which breaks typing
+ * the next code straight after choosing one.
+ */
+function FloatingList({
+  open,
+  listId,
+  setFloating,
+  floatingStyles,
+  listRef,
+  results,
+  active,
+  chosen,
+  reduceMotion,
+  onHover,
+  onChoose,
+}: {
+  open: boolean;
+  listId: string;
+  setFloating: (node: HTMLUListElement | null) => void;
+  floatingStyles: React.CSSProperties;
+  listRef: React.RefObject<HTMLUListElement | null>;
+  results: SearchableFund[];
+  active: number;
+  chosen: Set<string>;
+  reduceMotion: boolean | null;
+  onHover: (index: number) => void;
+  onChoose: (fund: SearchableFund) => void;
+}) {
+  // `createPortal` needs a real `document`, which the server render has not
+  // got. Testing for it directly rather than flipping a "mounted" flag in an
+  // effect: the closed list renders nothing on either side, so there is no
+  // hydration mismatch to avoid and no second render to pay for.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.ul
+          id={listId}
+          role="listbox"
+          aria-label="Arama sonuçları"
+          ref={(node) => {
+            setFloating(node);
+            listRef.current = node;
+          }}
+          style={floatingStyles}
+          initial={reduceMotion ? false : { opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+          transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+          onMouseDown={(event) => event.preventDefault()}
+          // z-index is belt and braces here. In the body there is nothing
+          // above it to lose to, but a future sticky header with one would
+          // otherwise win on document order alone.
+          className="z-50 overflow-y-auto overscroll-contain rounded-card border border-border bg-surface-raised shadow-lg shadow-black/5"
+        >
+          {results.map((fund, index) => {
+            const already = chosen.has(fund.code);
+            return (
+              <li
+                key={fund.code}
+                id={`${listId}-${fund.code}`}
+                role="option"
+                aria-selected={index === active}
+                data-active={index === active ? "true" : undefined}
+              >
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  disabled={already}
+                  onMouseEnter={() => onHover(index)}
+                  onClick={() => onChoose(fund)}
+                  className={`flex w-full items-baseline gap-3 px-4 py-3 text-left transition-colors ${
+                    index === active && !already ? "bg-accent-surface" : ""
+                  } ${already ? "cursor-default opacity-45" : ""}`}
+                >
+                  <span className="shrink-0 font-mono text-label text-accent">
+                    {fund.code}
+                  </span>
+                  <span
+                    className="min-w-0 flex-1 truncate text-caption text-ink"
+                    title={fund.title}
+                  >
+                    {fund.title}
+                  </span>
+                  {already && (
+                    <span className="shrink-0 text-caption text-ink-subtle">
+                      eklendi
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </motion.ul>
+      )}
+    </AnimatePresence>,
+    document.body,
   );
 }
 

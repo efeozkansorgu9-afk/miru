@@ -15,9 +15,11 @@
  * What they are moved to is the waiting state, which says so.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { analyze } from "@/lib/api";
+import { basketSignature } from "@/lib/basket";
+import type { BasketFund, PurchaseRow } from "@/lib/basket";
 import { buildSimpleRequest, buildStagedRequest } from "@/lib/request";
 import type { BuildResult } from "@/lib/request";
 import { errorMessage } from "@/lib/result";
@@ -37,6 +39,26 @@ export function BasketWorkspace() {
   // user has already changed is worse than no answer.
   const latest = useRef(0);
 
+  /**
+   * The basket as it is now, and the basket the result on screen came from.
+   *
+   * The form stays on the page under the answer, so the basket can be edited
+   * with a result still visible. That result does not recompute on its own —
+   * nothing here runs an analysis nobody asked for, because each one is a
+   * TEFAS fetch per fund — and a stale result that looks live is worse than
+   * one that admits it. Comparing the two fingerprints is the whole of
+   * knowing which it is.
+   */
+  const [analysed, setAnalysed] = useState<string | null>(null);
+  const [current, setCurrent] = useState<string | null>(null);
+  const stale =
+    state.phase === "ready" && analysed !== null && current !== analysed;
+
+  // Stable, so the form's effect does not fire on every render of this one.
+  const onBasketChange = useCallback((signature: string) => {
+    setCurrent(signature);
+  }, []);
+
   useEffect(() => {
     if (submissions === 0) return;
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -46,8 +68,13 @@ export function BasketWorkspace() {
     });
   }, [submissions]);
 
-  async function run(build: BuildResult) {
+  async function run(
+    build: BuildResult,
+    /** The basket this request is about, so the answer can be tied to it. */
+    signature: string,
+  ) {
     setSubmissions((n) => n + 1);
+    setAnalysed(signature);
 
     if (!build.ok) {
       setState({ phase: "error", title: "Sepet incelenemedi.", body: build.error });
@@ -70,6 +97,26 @@ export function BasketWorkspace() {
     }
   }
 
+  /**
+   * Analyse a basket, and remember which basket it was.
+   *
+   * The signature is computed from the same three values the request is
+   * built from rather than read back from the form, so the answer is tied to
+   * exactly what was sent. The form reports the *current* basket separately;
+   * when the two stop matching, the result on screen is stale.
+   */
+  function runBasket(
+    mode: "simple" | "staged",
+    funds: BasketFund[],
+    purchases: PurchaseRow[],
+  ) {
+    const build =
+      mode === "staged"
+        ? buildStagedRequest(purchases)
+        : buildSimpleRequest(funds);
+    void run(build, basketSignature(mode, funds, purchases));
+  }
+
   return (
     <>
       {/* The form fills the column rather than sitting in a narrower box
@@ -79,15 +126,16 @@ export function BasketWorkspace() {
       <Column className="pt-section pb-section">
         <BasketForm
           busy={state.phase === "loading"}
+          onBasketChange={onBasketChange}
           onAnalyze={(mode, funds, purchases) =>
-            run(mode === "staged" ? buildStagedRequest(purchases) : buildSimpleRequest(funds))
+            runBasket(mode, funds, purchases)
           }
         />
       </Column>
 
       {/* `scroll-mt` clears the sticky header, which is 4rem tall. */}
       <div ref={anchor} className="scroll-mt-16">
-        <ResultSection state={state} />
+        <ResultSection state={state} stale={stale} />
       </div>
     </>
   );

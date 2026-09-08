@@ -40,7 +40,14 @@ export type ResultState =
   | { phase: "error"; title: string; body: string }
   | { phase: "ready"; request: AnalyzeRequest; response: AnalyzeResponse };
 
-export function ResultSection({ state }: { state: ResultState }) {
+export function ResultSection({
+  state,
+  stale = false,
+}: {
+  state: ResultState;
+  /** The basket has been edited since this result was computed. */
+  stale?: boolean;
+}) {
   if (state.phase === "idle") return null;
 
   return (
@@ -49,9 +56,53 @@ export function ResultSection({ state }: { state: ResultState }) {
         {state.phase === "loading" && <Loading />}
         {state.phase === "error" && <Failure title={state.title} body={state.body} />}
         {state.phase === "ready" && (
-          <Result request={state.request} response={state.response} />
+          <>
+            {stale && <StaleNotice />}
+            {/* Faded rather than hidden. What is underneath is still a real
+                answer about a real basket, and someone who has just removed
+                one fund of five is usually still reading the rest of it.
+                Removing it would also collapse the page under the reader
+                mid-scroll. Dimming says "not about what you are looking at
+                any more" without taking it away, and the notice above says
+                which. Pointer events stay on: the disclosure sections and
+                the chart tooltips still work. */}
+            <div
+              className={
+                stale ? "opacity-45 transition-opacity duration-200" : undefined
+              }
+            >
+              <Result request={state.request} response={state.response} />
+            </div>
+          </>
         )}
       </Column>
+    </div>
+  );
+}
+
+/**
+ * The result no longer describes the basket in the form.
+ *
+ * Written here rather than fetched: the API knows nothing about what is
+ * typed in a form it has not been sent, and this is a statement about the
+ * page, not about any analysis.
+ *
+ * It does not offer a button. The analysis is a TEFAS fetch per fund and the
+ * one control that starts it is the one the reader already knows, a screen
+ * up, where the basket they have just edited is. A second "analyse" here
+ * would be a second place to press for the same thing.
+ */
+function StaleNotice() {
+  return (
+    <div
+      role="status"
+      className="mb-10 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-card border border-caution/35 bg-caution/8 px-5 py-4"
+    >
+      <p className="text-body font-medium text-ink">Sepet değişti.</p>
+      <p className="text-caption text-ink-muted">
+        Aşağıdaki sonuç sepetin önceki hâline ait. Güncel sonuç için tekrar
+        analiz edin.
+      </p>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import {
+  basketSignature,
   checkSimpleBasket,
   checkStagedBasket,
   koprudenGelenKodlar,
@@ -13,7 +14,8 @@ import {
 import type { BasketFund, PurchaseRow } from "@/lib/basket";
 import { useFundRegistry } from "@/lib/funds";
 import type { SearchableFund } from "@/lib/funds";
-import { sampleBasket } from "@/lib/sample";
+import { SAMPLE_COUNT, nextSample } from "@/lib/sample";
+import type { SampleScenario } from "@/lib/sample";
 import { Reveal } from "@/components/reveal";
 import { FundSearch } from "./fund-search";
 import { FundRow } from "./fund-row";
@@ -34,6 +36,7 @@ import { StagedTable } from "./staged-table";
  */
 export function BasketForm({
   onAnalyze,
+  onBasketChange,
   busy = false,
 }: {
   /** Hands the basket to whoever owns the result. Called only when valid. */
@@ -42,22 +45,45 @@ export function BasketForm({
     funds: BasketFund[],
     purchases: PurchaseRow[],
   ) => void;
+  /**
+   * Fires whenever the basket changes, with a fingerprint of it.
+   *
+   * The form owns the basket and the section below owns the result, and the
+   * one thing the result needs to know about the basket is whether it is
+   * still the basket it was computed from. A signature is the whole of that:
+   * it says "changed" without handing the result section a basket it would
+   * then be tempted to read.
+   */
+  onBasketChange?: (signature: string) => void;
   /** True while the analysis is in flight; the button says so and locks. */
   busy?: boolean;
 }) {
   const [funds, setFunds] = useState<BasketFund[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [staged, setStaged] = useState(false);
+  // What the last "another example" press loaded, so the line under the
+  // basket describes the basket that is actually in it.
+  const [scenario, setScenario] = useState<SampleScenario | null>(null);
   const reduceMotion = useReducedMotion();
 
   useKoprudenGelenler(setFunds);
 
   const chosen = useMemo(() => new Set(funds.map((f) => f.code)), [funds]);
+  const mode = staged ? ("staged" as const) : ("simple" as const);
+  const signature = basketSignature(mode, funds, purchases);
+  const isEmpty = staged ? purchases.length === 0 : funds.length === 0;
+
+  useEffect(() => {
+    onBasketChange?.(signature);
+  }, [signature, onBasketChange]);
 
   const check = staged ? checkStagedBasket(purchases) : checkSimpleBasket(funds);
   const canAnalyze = check.canAnalyze && !busy;
 
   function addFund(fund: SearchableFund) {
+    // The basket is no longer the example once it has been edited, so the
+    // line describing that example stops applying.
+    setScenario(null);
     setFunds((current) => [
       ...current,
       {
@@ -72,6 +98,7 @@ export function BasketForm({
   }
 
   function removeFund(id: string) {
+    setScenario(null);
     const gone = funds.find((f) => f.id === id);
     setFunds((current) => current.filter((f) => f.id !== id));
     // A purchase of a fund that is no longer in the basket has nothing to
@@ -113,19 +140,40 @@ export function BasketForm({
   }
 
   /**
-   * Fill the form with the example basket and analyse it in one press.
+   * Fill the form with the next example basket and analyse it in one press.
    *
    * The basket is handed to `onAnalyze` directly rather than read back from
    * state: `setFunds` has not landed yet at this point, and analysing what
-   * the form held a moment ago would run the empty basket. It goes into the
-   * form as well, so the reader lands on a filled in basket they can edit
-   * rather than on a result with nothing behind it.
+   * the form held a moment ago would run the previous basket. It goes into
+   * the form as well, so the reader lands on a filled in basket they can
+   * edit rather than on a result with nothing behind it.
+   *
+   * Staged mode is turned off and the purchase rows are dropped. The
+   * examples are all simple baskets, and leaving a half filled purchase
+   * ledger behind an example that does not use it would make the next switch
+   * to staged mode produce a basket nobody typed.
    */
   function loadSample() {
-    const example = sampleBasket();
+    const { funds: example, scenario: loaded } = nextSample();
     setFunds(example);
+    setPurchases([]);
     setStaged(false);
+    setScenario(loaded);
     onAnalyze("simple", example, []);
+  }
+
+  /**
+   * Empty the basket.
+   *
+   * Both modes at once, and back to simple. Clearing only the mode on screen
+   * would leave the other one holding funds the reader believes they have
+   * just removed, and they would reappear on the next switch.
+   */
+  function clearBasket() {
+    setFunds([]);
+    setPurchases([]);
+    setStaged(false);
+    setScenario(null);
   }
 
   return (
@@ -135,17 +183,31 @@ export function BasketForm({
       </Reveal>
 
       <div>
-        <div className="flex flex-wrap items-baseline justify-between gap-4">
+        {/* The heading and everything that acts on the basket as a whole.
+            These used to be one link, and the two that joined it are the
+            two ways back out of a basket that is already full: emptying it,
+            and replacing it with a different example. Both were previously
+            reachable only from the empty state, so trying a second example
+            meant deleting five funds one at a time first. */}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-3">
           <h2 className="text-display-sm">
             {staged ? "Alımlarınız" : "Sepetiniz"}
           </h2>
-          <button
-            type="button"
-            onClick={() => (staged ? setStaged(false) : toStaged())}
-            className="text-label text-accent underline-offset-4 transition-colors hover:underline"
-          >
-            {staged ? "Basit girişe dön" : "Kademeli alım yaptım"}
-          </button>
+          <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
+            {!isEmpty && (
+              <>
+                <BasketAction onClick={clearBasket} disabled={busy}>
+                  Sepeti temizle
+                </BasketAction>
+                <BasketAction onClick={loadSample} disabled={busy}>
+                  Başka bir örnek dene
+                </BasketAction>
+              </>
+            )}
+            <BasketAction onClick={() => (staged ? setStaged(false) : toStaged())}>
+              {staged ? "Basit girişe dön" : "Kademeli alım yaptım"}
+            </BasketAction>
+          </div>
         </div>
 
         <div className="mt-6">
@@ -189,6 +251,16 @@ export function BasketForm({
             </ul>
           )}
         </div>
+
+        {/* Which example is on screen, while it is still that example. It
+            goes away the moment a fund is added or removed, because it
+            would otherwise describe a basket the reader has changed. */}
+        {scenario && !staged && funds.length > 0 && (
+          <p className="mt-5 max-w-prose text-caption text-ink-subtle text-pretty">
+            Örnek sepet: {scenario.note} Tutarları ve tarihleri
+            değiştirebilirsiniz.
+          </p>
+        )}
 
         <p className="mt-5 max-w-prose text-caption text-ink-subtle">
           {staged
@@ -253,6 +325,34 @@ export function BasketForm({
 }
 
 /**
+ * One of the actions beside the basket heading.
+ *
+ * A text button rather than a bordered one. These act on the whole basket
+ * and sit next to a heading, and three bordered buttons up there would
+ * outweigh the one control on this form that actually runs something.
+ */
+function BasketAction({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="text-label text-accent underline-offset-4 transition-colors hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:no-underline"
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
  * The basket before anything is in it.
  *
  * Two ways forward rather than one instruction. Someone who came with funds
@@ -261,9 +361,10 @@ export function BasketForm({
  * form, and telling them to go and look up fund codes first is asking for
  * work before showing any reason to do it.
  *
- * The example says what it contains, because a basket that appears out of a
- * button and turns out to hold two gold funds should not look like a claim
- * about which funds are worth holding.
+ * What the button promises is deliberately generic now that there are four
+ * examples behind it. Describing this one basket here would be wrong for the
+ * other three, and the line under the filled in basket says which one
+ * arrived anyway — at the point where it is true.
  */
 function EmptyBasket({ onSample, busy }: { onSample: () => void; busy: boolean }) {
   return (
@@ -282,9 +383,9 @@ function EmptyBasket({ onSample, busy }: { onSample: () => void; busy: boolean }
       </button>
 
       <p className="mx-auto mt-4 max-w-prose text-caption text-ink-subtle text-pretty">
-        Beş fonluk hazır bir sepet yüklenir ve hemen incelenir. İkisi ayrı
-        şirketlerin altın fonu, kalanı başka kategorilerden. Yükledikten sonra
-        tutarları ve tarihleri değiştirebilirsiniz.
+        Hazır bir sepet yüklenir ve hemen incelenir. {SAMPLE_COUNT} farklı örnek
+        var; her biri başka bir sonuç gösteriyor. Yükledikten sonra sepeti
+        değiştirebilir, sıradaki örneğe geçebilirsiniz.
       </p>
     </div>
   );

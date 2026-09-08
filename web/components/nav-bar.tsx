@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { Column } from "@/components/column";
-import { SITE, TOOL } from "@/lib/site";
+import { SITE, TOOL, sectionLabel } from "@/lib/site";
 import { ThemeToggle } from "./theme-toggle";
 
 /**
@@ -22,6 +23,12 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [];
 
 export function NavBar() {
+  // Prerendered into the HTML of every page and re-read on navigation
+  // without a refetch, so the word beside the brand is right on arrival
+  // rather than after hydration. `usePathname` does not opt a page out of
+  // static rendering the way `useSearchParams` does.
+  const pathname = usePathname();
+
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-canvas/80 backdrop-blur-md">
       <Column className="flex h-16 items-center justify-between gap-3 sm:gap-6">
@@ -50,8 +57,11 @@ export function NavBar() {
             aria-hidden
             className="h-4 w-px shrink-0 bg-border-strong"
           />
+          {/* The section, not the tool. A fund page is under the brand but
+              not inside the basket tool, and `lib/site` owns which word goes
+              here so it cannot drift from the paths it describes. */}
           <span className="truncate text-body font-medium tracking-tight text-ink-muted">
-            {TOOL.name}
+            {sectionLabel(pathname)}
           </span>
         </Link>
 

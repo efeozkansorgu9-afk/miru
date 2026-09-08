@@ -20,6 +20,7 @@ import Link from "next/link";
 import type { Bulgu } from "@/lib/fund";
 import { KOVA_ETIKETLERI, bulguCumlesi } from "@/lib/fund";
 import { korelasyon } from "@/lib/format";
+import { fundHref } from "@/lib/site";
 
 export function Finding({ bulgu }: { bulgu: Bulgu }) {
   return (
@@ -45,7 +46,7 @@ export function Finding({ bulgu }: { bulgu: Bulgu }) {
           {/* The named fund is a link to its own page, because the next
               question after "which fund" is always "and what is that one". */}
           <Link
-            href={`/fon/${bulgu.komsu.fund.code}`}
+            href={fundHref(bulgu.komsu.fund.code)}
             className="mt-3 block text-lead text-ink underline-offset-4 transition-colors hover:text-accent hover:underline text-pretty"
           >
             {bulgu.komsu.fund.name}

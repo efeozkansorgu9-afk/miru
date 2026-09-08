@@ -75,3 +75,71 @@ export function pageTitle(section?: string): string {
   const base = `${TOOL.name} · ${SITE.brand}`;
   return section ? `${section} · ${base}` : base;
 }
+
+/* ------------------------------------------------------------------ */
+/* Fund pages                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Where a fund's own page lives.
+ *
+ * Here rather than typed into the three components that link to one, for
+ * the same reason the tool's own path is: a route folder renamed without
+ * this constant following it should not compile into links that 404.
+ */
+export const FUND_BASE = "/fon";
+
+export function fundHref(code: string): string {
+  return `${FUND_BASE}/${code}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* What the header calls where you are                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One named area of the site, as the header names it.
+ *
+ * The brand is constant and the word beside it is not. A fund page is not
+ * part of the basket tool — it does not analyse anything and it is reached
+ * from a search engine rather than from the tool — so a header reading
+ * "miru | Sepet Analizi" over a fund page names the wrong thing.
+ *
+ * A section is a label and the paths it owns, and nothing else. It has no
+ * `href` of its own on purpose: the header's lockup goes on pointing at
+ * `TOOL.href`, which is the way back into the app from anywhere, and `/fon`
+ * is a folder of pages rather than a page.
+ */
+export interface Section {
+  /** Shown beside the brand. */
+  label: string;
+  owns(pathname: string): boolean;
+}
+
+/** Matched in order, first hit wins. */
+export const SECTIONS: readonly Section[] = [
+  {
+    label: TOOL.name,
+    owns: (path) => path === TOOL.href || path.startsWith(`${TOOL.href}/`),
+  },
+  {
+    /**
+     * "Fon", not the code.
+     *
+     * The code is already the first thing on the page, set in the accent
+     * colour directly under the header, and printing it twice within a
+     * hundred pixels makes the header a breadcrumb rather than a place. The
+     * word says which kind of page this is, which is what the tool's name
+     * does on the other one.
+     */
+    label: "Fon",
+    owns: (path) => path === FUND_BASE || path.startsWith(`${FUND_BASE}/`),
+  },
+];
+
+/**
+ * The label for a path. Falls back to the tool, which is where `/` goes.
+ */
+export function sectionLabel(pathname: string): string {
+  return SECTIONS.find((section) => section.owns(pathname))?.label ?? TOOL.name;
+}

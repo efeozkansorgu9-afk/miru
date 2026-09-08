@@ -1,0 +1,60 @@
+{
+  "_comment": [
+    "The example baskets, and the only place their fund codes are written.",
+    "Read by lib/sample.ts to fill the form, and by src/scenarios.py so the",
+    "weekly job can re-measure every `expect` against live prices. Two",
+    "copies of these codes would drift, and the drift would be invisible:",
+    "the job would keep confirming buckets for a basket the page no longer",
+    "loads.",
+    "The Turkish wording is NOT here. It lives in lib/sample.ts, because it",
+    "is display text and the backend never handles display text.",
+    "`expect` is the mainFinding tier this basket last produced, and the",
+    "weekly job's scenario check is what keeps it honest. When it stops",
+    "holding, change the funds and re-measure. Never reword to fit."
+  ],
+  "measured_on": "2026-09-09",
+  "scenarios": [
+    {
+      "id": "iki-altin",
+      "expect": "notable",
+      "evidence": "AFO/HBF r=0,986 over 261 weeks; grouped weight 0,46",
+      "holdings": [
+        { "code": "AFO", "title": "AK PORTFÖY ALTIN FONU", "amount": "45000", "years": 4 },
+        { "code": "HBF", "title": "HSBC PORTFÖY ALTIN FONU", "amount": "35000", "years": 3 },
+        { "code": "TI2", "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)", "amount": "40000", "years": 3 },
+        { "code": "YAY", "title": "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU", "amount": "30000", "years": 2 },
+        { "code": "GAL", "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU", "amount": "25000", "years": 2 }
+      ]
+    },
+    {
+      "id": "ayni-endeks",
+      "expect": "dominant",
+      "evidence": "AKU/TIE r=0,998 over 261 weeks; grouped weight 0,58",
+      "holdings": [
+        { "code": "AKU", "title": "AK PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)", "amount": "40000", "years": 3 },
+        { "code": "TIE", "title": "İŞ PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)", "amount": "35000", "years": 3 },
+        { "code": "GAL", "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU", "amount": "30000", "years": 2 },
+        { "code": "AFO", "title": "AK PORTFÖY ALTIN FONU", "amount": "25000", "years": 2 }
+      ]
+    },
+    {
+      "id": "dagilmis",
+      "expect": "none",
+      "evidence": "strongest pair AFO/YAY r=0,485 over 261 weeks; no group",
+      "holdings": [
+        { "code": "GAL", "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU", "amount": "30000", "years": 3 },
+        { "code": "AFO", "title": "AK PORTFÖY ALTIN FONU", "amount": "25000", "years": 3 },
+        { "code": "YAY", "title": "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU", "amount": "30000", "years": 2 },
+        { "code": "APT", "title": "AK PORTFÖY ORTA VADELI BORÇLANMA ARAÇLARI FONU", "amount": "25000", "years": 2 }
+      ]
+    },
+    {
+      "id": "tek-fon",
+      "expect": "single",
+      "evidence": "is_single_fund, so grouping never runs",
+      "holdings": [
+        { "code": "TI2", "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)", "amount": "50000", "years": 3 }
+      ]
+    }
+  ]
+}

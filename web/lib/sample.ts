@@ -50,6 +50,8 @@
 import { nextId } from "@/lib/basket";
 import type { BasketFund } from "@/lib/basket";
 
+import raw from "./sample-scenarios.json";
+
 interface Holding {
   code: string;
   title: string;
@@ -59,129 +61,74 @@ interface Holding {
   years: number;
 }
 
+/** The tiers `mainFinding` can return for an example basket. */
+type ExpectedTier = "notable" | "dominant" | "none" | "single";
+
+interface RawScenario {
+  id: string;
+  expect: string;
+  evidence: string;
+  holdings: Holding[];
+}
+
 export interface SampleScenario {
+  id: string;
   /**
-   * What this basket is here to show, in one line, under the button.
+   * What this basket is here to show, in one line, under the basket.
    *
    * It describes the *basket*, not the finding. Saying "two funds here move
    * together" before the analysis has run would put the answer above the
    * work, and would be a claim this file cannot keep if the correlation
    * moves. Naming what is in the basket is true either way.
+   *
+   * This is the half of a scenario that stays in TypeScript. The codes live
+   * in the JSON because the weekly job re-measures them; the wording lives
+   * here because the backend never handles display text.
    */
   note: string;
   /**
    * The `mainFinding` tier this basket produced when it was last measured.
-   * Documentation, not a promise the UI reads: nothing renders from it.
+   * Documentation here, and an assertion in the weekly job: `src/scenarios`
+   * recomputes it against live prices and says so when it stops holding.
    */
-  expect: "notable" | "dominant" | "none" | "single";
+  expect: ExpectedTier;
   holdings: readonly Holding[];
 }
 
-const SCENARIOS: readonly SampleScenario[] = [
-  {
-    // Measured: AFO/HBF r = 0,986 over 261 weeks; grouped weight 0,46.
-    note:
-      "Beş fon: ikisi ayrı şirketlerin altın fonu, kalanı başka " +
-      "kategorilerden.",
-    expect: "notable",
-    holdings: [
-      { code: "AFO", title: "AK PORTFÖY ALTIN FONU", amount: "45000", years: 4 },
-      { code: "HBF", title: "HSBC PORTFÖY ALTIN FONU", amount: "35000", years: 3 },
-      {
-        code: "TI2",
-        title: "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
-        amount: "40000",
-        years: 3,
-      },
-      {
-        code: "YAY",
-        title:
-          "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU",
-        amount: "30000",
-        years: 2,
-      },
-      {
-        code: "GAL",
-        title: "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
-        amount: "25000",
-        years: 2,
-      },
-    ],
-  },
-  {
-    // Measured: AKU/TIE r = 0,998 over 261 weeks; grouped weight 0,58. Two
-    // houses' funds tracking the same index, which is as close as two
-    // separate products get.
-    note: "Dört fon: ikisi aynı endeksi izleyen, ayrı şirketlerin fonu.",
-    expect: "dominant",
-    holdings: [
-      {
-        code: "AKU",
-        title:
-          "AK PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
-        amount: "40000",
-        years: 3,
-      },
-      {
-        code: "TIE",
-        title:
-          "İŞ PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
-        amount: "35000",
-        years: 3,
-      },
-      {
-        code: "GAL",
-        title: "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
-        amount: "30000",
-        years: 2,
-      },
-      { code: "AFO", title: "AK PORTFÖY ALTIN FONU", amount: "25000", years: 2 },
-    ],
-  },
-  {
-    // Measured: strongest pair AFO/YAY r = 0,485 over 261 weeks; no group.
-    // The counterexample — the page has to be able to say it found nothing.
-    note: "Dört fon: para piyasası, altın, yabancı hisse ve borçlanma araçları.",
-    expect: "none",
-    holdings: [
-      {
-        code: "GAL",
-        title: "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
-        amount: "30000",
-        years: 3,
-      },
-      { code: "AFO", title: "AK PORTFÖY ALTIN FONU", amount: "25000", years: 3 },
-      {
-        code: "YAY",
-        title:
-          "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU",
-        amount: "30000",
-        years: 2,
-      },
-      {
-        code: "APT",
-        title: "AK PORTFÖY ORTA VADELI BORÇLANMA ARAÇLARI FONU",
-        amount: "25000",
-        years: 2,
-      },
-    ],
-  },
-  {
-    // Measured: `is_single_fund`, so grouping never runs. Nothing to compare
-    // a lone holding with, and the page says that rather than filling the
-    // space with a coefficient it does not have.
-    note: "Tek fon: karşılaştıracak ikinci fon olmadığında ne olduğunu gösterir.",
-    expect: "single",
-    holdings: [
-      {
-        code: "TI2",
-        title: "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
-        amount: "50000",
-        years: 3,
-      },
-    ],
-  },
-];
+/**
+ * The sentence under each example. Keyed by scenario id, so a scenario added
+ * to the JSON without a Turkish line here does not compile.
+ */
+const NOTLAR: Record<string, string> = {
+  "iki-altin":
+    "Beş fon: ikisi ayrı şirketlerin altın fonu, kalanı başka kategorilerden.",
+  "ayni-endeks":
+    "Dört fon: ikisi aynı endeksi izleyen, ayrı şirketlerin fonu.",
+  dagilmis:
+    "Dört fon: para piyasası, altın, yabancı hisse ve borçlanma araçları.",
+  "tek-fon":
+    "Tek fon: karşılaştıracak ikinci fon olmadığında ne olduğunu gösterir.",
+};
+
+const SCENARIOS: readonly SampleScenario[] = (
+  raw.scenarios as RawScenario[]
+).map((s) => {
+  const note = NOTLAR[s.id];
+  if (!note) {
+    // A scenario with no sentence would load a basket the page cannot
+    // describe. Better to fail the build than to ship a blank line.
+    throw new Error(
+      `sample-scenarios.json has a scenario "${s.id}" with no Turkish note ` +
+        `in lib/sample.ts`,
+    );
+  }
+  return {
+    id: s.id,
+    note,
+    expect: s.expect as ExpectedTier,
+    holdings: s.holdings,
+  };
+});
 
 /** How many examples there are, for wording like "4 örnekten biri". */
 export const SAMPLE_COUNT = SCENARIOS.length;

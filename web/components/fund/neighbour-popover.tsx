@@ -157,6 +157,19 @@ export function NeighbourPopover({
             {komsu.fund.code} · {komsu.fund.name}
           </span>
 
+          {/* The house. It used to be the second line of every row in the
+              list; it belongs here, with the size and returns it is read
+              alongside, because two funds that overlap are usually two
+              houses selling the same thing and which houses is the part a
+              reader acts on. Not tabular, unlike the figures below it. */}
+          <span
+            className={`mt-1.5 block text-caption ${
+              komsu.fund.founder ? "text-ink-muted" : "text-ink-subtle"
+            }`}
+          >
+            {komsu.fund.founder ?? "Kurucusu belirtilmemiş"}
+          </span>
+
           <span className="mt-2 block space-y-1 text-caption text-ink-muted tabular-nums">
             <GetiriSatirlari komsu={komsu} />
             <span className="block">

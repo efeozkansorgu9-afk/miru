@@ -21,6 +21,7 @@ import type {
   NeighboursUnavailable,
   ReturnUnavailable,
 } from "@/lib/api";
+import { korelasyon } from "@/lib/format";
 
 /* ------------------------------------------------------------------ */
 /* The bucket vocabulary                                               */
@@ -319,6 +320,138 @@ export function bulguCumlesi(komsu: Neighbour): string {
   // one is not a typo anybody forgives on a page about someone's money.
   const nokta = kurum.endsWith(".") ? "" : ".";
   return `${komsu.fund.code}, ${kurum}${nokta}`;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* The hero's verdict                                                  */
+/* ------------------------------------------------------------------ */
+
+export interface HeroBulgusu {
+  tur: BulguTuru;
+  /** The verdict on its own, naming no fund. Never empty. */
+  hukum: string;
+  /**
+   * The pair the verdict is about, framed for one sentence.
+   *
+   * Split into the words before the fund's name and the words after it,
+   * rather than handed over as a finished string, because the name in the
+   * middle is a link to that fund's own page. A component cannot put an
+   * anchor inside a sentence it was given whole, and building the sentence
+   * in the component instead would put the page's wording in two files.
+   */
+  es: { komsu: Neighbour; oncesi: string; sonrasi: string } | null;
+  /** Only for `none`: what stopped the measurement. */
+  sebep: string | null;
+}
+
+/**
+ * The finding, compressed to one line for the top of the page.
+ *
+ * It used to be a section of its own halfway down, which said the same fund
+ * twice: once as "this fund has a twin, here it is" and again as the single
+ * row of the "Örtüşenler (1)" group directly beneath. One of the two had to
+ * go, and it is the block, because the verdict is the reason the page
+ * exists and burying it under three boxes of metadata puts the filing above
+ * the finding.
+ *
+ * Derived from `bulgu` rather than deciding anything itself, so there is
+ * still exactly one place that maps a bucket to a verdict. All this adds is
+ * the phrasing that fits on one line, and the correlation — which the old
+ * block carried in a card of its own and which belongs in the sentence when
+ * the sentence is the whole finding.
+ *
+ * Three decimals, as in the block it replaces: this is the one coefficient
+ * the page quotes as its point, and at two decimals 0,9998 prints as "1,00",
+ * a value the maths keeps for a fund against itself.
+ */
+export function heroBulgusu(b: Bulgu): HeroBulgusu {
+  const r = (komsu: Neighbour) => korelasyon(komsu.correlation);
+
+  if (b.tur === "overlapping" && b.komsu) {
+    return {
+      tur: b.tur,
+      hukum: "Bu fonun bir eşi var.",
+      es: {
+        komsu: b.komsu,
+        oncesi: "Neredeyse aynı hareket ettiği fon:",
+        sonrasi: `${r(b.komsu)} korelasyon.`,
+      },
+      sebep: null,
+    };
+  }
+
+  if (b.tur === "similar" && b.komsu) {
+    return {
+      tur: b.tur,
+      hukum: "Bu fona çok benzeyen fonlar var.",
+      es: {
+        komsu: b.komsu,
+        oncesi: "En yakını:",
+        sonrasi: `${r(b.komsu)} korelasyon.`,
+      },
+      sebep: null,
+    };
+  }
+
+  // Not "no relationships": the fund has neighbours and they are listed
+  // below, they are simply not close enough for the page to name one. The
+  // sentence says what was looked for and not found, and the list stays the
+  // place that says what *was* found.
+  if (b.tur === "weaker") {
+    return {
+      tur: b.tur,
+      hukum: "Bu fonun bir eşi bulunamadı.",
+      es: null,
+      sebep:
+        "Ölçülen fonların hiçbiri bu fonla örtüşecek kadar benzer hareket " +
+        "etmiyor. Bu, fonun risksiz olduğu anlamına gelmez.",
+    };
+  }
+
+  return {
+    tur: "none",
+    hukum: b.baslik,
+    es: null,
+    sebep: b.sebep,
+  };
+}
+
+/**
+ * The seven-step risk scale as a bar, plus the number.
+ *
+ * TEFAS publishes a 1-7 integer and nothing else, so the bar is a reading
+ * aid and not a second measurement: seven segments, the first `risk` of them
+ * filled. It is not coloured by level. A 7 is not a warning — this page does
+ * not rate funds, and turning TEFAS's filing into a red bar would be this
+ * page's judgement dressed as their data.
+ *
+ * A fifth of the registry has no risk value. That returns null segments and
+ * the caller prints "belirtilmemiş" instead of drawing an empty bar, which
+ * would read as a risk of zero.
+ */
+export const RISK_SEGMENTS = 7;
+
+export function riskSegmentleri(risk: number | null): boolean[] | null {
+  if (risk === null) return null;
+  const dolu = Math.max(0, Math.min(RISK_SEGMENTS, Math.round(risk)));
+  return Array.from({ length: RISK_SEGMENTS }, (_, i) => i < dolu);
+}
+
+/**
+ * The one line of metadata under the fund's name.
+ *
+ * House, category, risk — three facts that used to be three bordered cards
+ * across the full width, which is a lot of furniture for three short
+ * strings and pushed the actual finding below the fold. Missing ones say so
+ * rather than being dropped, because a line with two entries does not
+ * announce which of the three is absent.
+ */
+export function kimlikSatiri(fund: FundIdentity): string[] {
+  return [
+    fund.founder ?? `Kurum ${BELIRTILMEMIS}`,
+    fund.category ?? `Kategori ${BELIRTILMEMIS}`,
+  ];
 }
 
 /* ------------------------------------------------------------------ */

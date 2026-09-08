@@ -1,20 +1,49 @@
 /**
- * Who the fund is, before anything is claimed about it.
+ * Who the fund is and what was found about it, in one block.
  *
- * Four facts and no more: the name, the house that runs it, what TEFAS files
- * it under, and the risk number TEFAS publishes. Size and investor count are
- * deliberately not here — they belong to comparing one fund against another,
- * which is what the neighbour popovers are for, and putting them at the top
- * would make the page open on a scorecard.
+ * This used to be four facts in three bordered cards, with the finding — the
+ * reason the page exists — in a section of its own halfway down. Two things
+ * were wrong with that. The metadata took the full width and most of the
+ * first screen to say three short strings, so the fund's name and its
+ * verdict were never on screen together. And the finding then said the same
+ * fund twice: once as "this fund has a twin, here it is", and again as the
+ * only row of the "Örtüşenler (1)" group directly beneath it.
  *
- * Nothing is filled in. A fifth of the registry has no risk value and seven
- * funds have no founder on record, and those say so.
+ * So the three cards are one line of text, and the verdict has come up here.
+ * What is below is now only what the verdict is read off: the neighbour
+ * list, grouped.
+ *
+ * Nothing is filled in and nothing is coloured. A fifth of the registry has
+ * no risk value and seven funds have no founder on record, and those say so.
+ * The risk bar is a reading aid for TEFAS's 1-7 integer, not a rating: a 7
+ * is not tinted red, because this page does not grade funds and colouring
+ * their filing would be its judgement wearing their data.
  */
 
-import type { FundIdentity } from "@/lib/api";
-import { BELIRTILMEMIS, riskDegeri } from "@/lib/fund";
+import Link from "next/link";
 
-export function Identity({ fund }: { fund: FundIdentity }) {
+import type { FundIdentity } from "@/lib/api";
+import {
+  BELIRTILMEMIS,
+  RISK_SEGMENTS,
+  kimlikSatiri,
+  riskDegeri,
+  riskSegmentleri,
+} from "@/lib/fund";
+import type { HeroBulgusu } from "@/lib/fund";
+import { kisalt } from "@/lib/format";
+import { fundHref } from "@/lib/site";
+
+export function Identity({
+  fund,
+  bulgu,
+}: {
+  fund: FundIdentity;
+  bulgu: HeroBulgusu;
+}) {
+  const meta = kimlikSatiri(fund);
+  const segmentler = riskSegmentleri(fund.risk_value);
+
   return (
     <header>
       {/* The code, not the word "fon". It is what the reader typed to get
@@ -24,37 +53,114 @@ export function Identity({ fund }: { fund: FundIdentity }) {
       {/* Fund titles run past seventy upper case characters, so this sits a
           step below the display size the tool's own heading takes: at
           display-lg the same string is six lines on a phone. */}
-      <h1 className="mt-4 max-w-prose text-display-sm text-balance sm:text-display-md">
+      <h1 className="mt-3 max-w-prose text-display-sm text-balance sm:text-display-md">
         {fund.name}
       </h1>
 
-      <dl className="mt-8 grid gap-4 sm:grid-cols-3">
-        <Fact label="Kurum" value={fund.founder ?? BELIRTILMEMIS} />
-        <Fact label="Kategori" value={fund.category ?? BELIRTILMEMIS} />
-        <Fact label="Risk değeri" value={riskDegeri(fund.risk_value)} />
-      </dl>
+      {/* One row, wrapping. Dot separators rather than borders: these are
+          three short facts read left to right, and every rule drawn round
+          them is a rule the eye has to cross to get to the finding. */}
+      <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-2 text-caption text-ink-muted">
+        {meta.map((parca) => (
+          <span key={parca} className="flex items-center gap-2.5">
+            <span className={parca.endsWith(BELIRTILMEMIS) ? "text-ink-subtle" : ""}>
+              {parca}
+            </span>
+            <Ayirac />
+          </span>
+        ))}
+        <span className="flex items-center gap-2">
+          <span className={segmentler ? "" : "text-ink-subtle"}>
+            Risk {riskDegeri(fund.risk_value)}
+          </span>
+          {segmentler && <RiskBar segmentler={segmentler} risk={fund.risk_value} />}
+        </span>
+      </div>
+
+      {/* The verdict, on the same screen as the name for the first time. The
+          rule above it is the page changing register: everything over it
+          describes the fund on its own, everything from here on is measured
+          against other funds. */}
+      <div className="mt-8 border-t border-border pt-8">
+        <p className="text-overline uppercase text-accent">Bulgu</p>
+        <h2 className="mt-3 max-w-prose text-display-sm text-balance sm:text-display-md">
+          {bulgu.hukum}
+        </h2>
+
+        {bulgu.es && (
+          <p className="mt-4 max-w-prose text-lead text-ink-muted text-pretty">
+            {bulgu.es.oncesi}{" "}
+            {/* The named fund is a link, because the next question after
+                "which fund" is always "and what is that one". */}
+            <Link
+              href={fundHref(bulgu.es.komsu.fund.code)}
+              className="text-ink underline decoration-border decoration-1 underline-offset-4 transition-colors hover:text-accent hover:decoration-accent"
+            >
+              {kisalt(bulgu.es.komsu.fund.name, 64)}
+            </Link>
+            {" — "}
+            <span className="tabular-nums">{bulgu.es.sonrasi}</span>
+          </p>
+        )}
+
+        {bulgu.sebep && (
+          <p className="mt-4 max-w-prose text-lead text-ink-muted text-pretty">
+            {bulgu.sebep}
+          </p>
+        )}
+
+        {/* Offered only when there is something under it. A fund whose
+            relationships could not be measured has an empty section below,
+            and a link into it is worse than no link. */}
+        {bulgu.tur !== "none" && (
+          <p className="mt-5">
+            <a
+              href="#komsular"
+              className="text-label text-accent underline-offset-4 hover:underline"
+            >
+              Ölçülen bütün fonları gör
+            </a>
+          </p>
+        )}
+      </div>
     </header>
   );
 }
 
-/**
- * One fact.
- *
- * A missing one is set in the muted ink rather than the page's own, which is
- * the only thing separating "belirtilmemiş" from a value that happens to be
- * a word. Nothing is coloured beyond that: a risk value of 7 is not a
- * warning, it is what TEFAS filed.
- */
-function Fact({ label, value }: { label: string; value: string }) {
-  const eksik = value === BELIRTILMEMIS;
+function Ayirac() {
   return (
-    <div className="rounded-card border border-border bg-surface px-5 py-4">
-      <dt className="text-label text-ink-muted">{label}</dt>
-      <dd
-        className={`mt-2 text-body text-pretty ${eksik ? "text-ink-subtle" : "text-ink"}`}
-      >
-        {value}
-      </dd>
-    </div>
+    <span aria-hidden="true" className="text-ink-subtle">
+      ·
+    </span>
+  );
+}
+
+/**
+ * Seven segments, the first `risk` of them filled.
+ *
+ * `aria-hidden`, because the number it illustrates is already read out next
+ * to it as "Risk 6 / 7". A screen reader announcing seven anonymous boxes
+ * after that is noise, not a second reading.
+ */
+function RiskBar({
+  segmentler,
+  risk,
+}: {
+  segmentler: boolean[];
+  risk: number | null;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex items-center gap-0.5"
+      title={`TEFAS risk değeri: ${risk} / ${RISK_SEGMENTS}`}
+    >
+      {segmentler.map((dolu, i) => (
+        <span
+          key={i}
+          className={`h-3 w-1 rounded-[1px] ${dolu ? "bg-ink-muted" : "bg-border"}`}
+        />
+      ))}
+    </span>
   );
 }

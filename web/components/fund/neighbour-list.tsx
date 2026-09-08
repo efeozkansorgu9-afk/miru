@@ -196,36 +196,48 @@ function Fold({
 }
 
 /**
- * One neighbour.
+ * One neighbour, on one line.
  *
- * The name is the control: pressing it opens the card with that fund's size,
- * returns and the measurement behind the coefficient. The bucket label sits
- * next to it at full strength and the correlation behind it, small and
- * muted — the word is what the row is for, and the number is the evidence
- * under it rather than the finding.
+ * Code, name, bucket, coefficient, and nothing stacked. It was two lines —
+ * the name over the founder — which at twenty neighbours is forty lines of
+ * list on a page whose finding is one sentence. The founder has not been
+ * dropped, it has moved into the card the name opens, next to the size and
+ * returns it belongs with; what a reader scanning the list needs is which
+ * fund and how close.
  *
- * The founder is on its own line because two funds that overlap are usually
- * two houses selling the same thing, and which houses is the part a reader
- * acts on.
+ * The code leads because it is the shortest unique handle and the thing a
+ * reader carries to the basket tool. The name is the control: pressing it
+ * opens the card with that fund's size, returns and the measurement behind
+ * the coefficient. The bucket label sits at full strength and the number
+ * behind it, small and muted — the word is what the row is for, and the
+ * number is the evidence under it rather than the finding.
+ *
+ * `h-12` sets the row at 48px and the name truncates into whatever is left,
+ * so a long title cannot push the coefficient off the end or wrap the row
+ * to a second line.
  */
 function Row({ komsu }: { komsu: Neighbour }) {
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 border-t border-border px-6 py-3 first:border-t-0">
-      <div className="min-w-0">
-        <NeighbourPopover komsu={komsu}>{kisalt(komsu.fund.name, 52)}</NeighbourPopover>
-        <p className="mt-0.5 truncate text-caption text-ink-subtle">
-          {komsu.fund.founder ?? "kurucusu belirtilmemiş"}
-        </p>
-      </div>
+    <li className="flex h-12 items-center gap-3 border-t border-border px-6 first:border-t-0 sm:gap-4">
+      <span className="w-12 shrink-0 font-mono text-label text-accent">
+        {komsu.fund.code}
+      </span>
 
-      <p className="flex items-baseline gap-3">
-        <span className="rounded-control border border-border bg-canvas-sunken px-2.5 py-1 text-label text-ink">
-          {KOVA_ETIKETLERI[komsu.bucket]}
-        </span>
-        <span className="text-caption tabular-nums text-ink-subtle">
-          {oran(komsu.correlation)}
-        </span>
-      </p>
+      <span className="min-w-0 flex-1 truncate">
+        <NeighbourPopover komsu={komsu}>{kisalt(komsu.fund.name, 64)}</NeighbourPopover>
+      </span>
+
+      {/* Hidden below `sm` rather than shortened. The group heading already
+          names the bucket every row in it belongs to, so on a phone the
+          badge is the same word repeated down the column, and the space is
+          better spent on the fund's name. */}
+      <span className="hidden shrink-0 rounded-control border border-border bg-canvas-sunken px-2.5 py-1 text-label text-ink sm:inline">
+        {KOVA_ETIKETLERI[komsu.bucket]}
+      </span>
+
+      <span className="w-11 shrink-0 text-right text-caption tabular-nums text-ink-subtle">
+        {oran(komsu.correlation)}
+      </span>
     </li>
   );
 }

@@ -8,11 +8,16 @@ import { Column } from "@/components/column";
 import { Reveal } from "@/components/reveal";
 import { ScrollRise } from "@/components/scroll-rise";
 import { BasketBridge, Footnote } from "@/components/fund/footer";
-import { Finding } from "@/components/fund/finding";
 import { Identity } from "@/components/fund/identity";
 import { NeighbourList } from "@/components/fund/neighbour-list";
 import { Returns } from "@/components/fund/returns";
-import { bulgu, enYakinKomsu, fonAciklamasi, komsuListesi } from "@/lib/fund";
+import {
+  bulgu,
+  enYakinKomsu,
+  fonAciklamasi,
+  heroBulgusu,
+  komsuListesi,
+} from "@/lib/fund";
 import { SITE } from "@/lib/site";
 
 /**
@@ -127,21 +132,26 @@ export default async function FonSayfasi({ params }: PageProps<"/fon/[kod]">) {
   const page = await load(kod);
 
   const komsular = komsuListesi(page.high, page.low);
-  const finding = bulgu(
-    enYakinKomsu(page.high, komsular),
-    page.neighbours_unavailable,
-    page.fund.returns,
+  // One decision, two renderings: `bulgu` still owns the bucket-to-verdict
+  // mapping, and `heroBulgusu` only rephrases it for a single line.
+  const finding = heroBulgusu(
+    bulgu(
+      enYakinKomsu(page.high, komsular),
+      page.neighbours_unavailable,
+      page.fund.returns,
+    ),
   );
 
   return (
     <div>
-      {/* Who the fund is, and what it did. Both are facts about the fund on
-          its own, and both are here before anything is claimed about how it
-          relates to anything else. */}
+      {/* Who the fund is, what was found about it, and what it returned.
+          The finding is up here rather than in a section of its own further
+          down: it is why the page exists, and it used to sit below three
+          boxes of metadata that between them said thirty characters. */}
       <Column className="pt-section pb-section">
         <div className="flex flex-col gap-section">
           <Reveal>
-            <Identity fund={page.fund} />
+            <Identity fund={page.fund} bulgu={finding} />
           </Reveal>
 
           <ScrollRise>
@@ -157,10 +167,10 @@ export default async function FonSayfasi({ params }: PageProps<"/fon/[kod]">) {
       <div className="border-t border-border bg-canvas-sunken">
         <Column className="py-section">
           <div className="flex flex-col gap-section">
-            <ScrollRise>
-              <Finding bulgu={finding} />
-            </ScrollRise>
-
+            {/* No finding block here any more. It said the same fund the
+                "Örtüşenler (1)" group below it said, and the verdict now
+                leads the page. What is left is only the list the verdict
+                was read off. */}
             <ScrollRise>
               <NeighbourList komsular={komsular} />
             </ScrollRise>

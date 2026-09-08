@@ -46,6 +46,7 @@ import pandas as pd
 from src import db
 from src import inflation as inf
 from src import precompute as pc
+from src import scenarios as scen
 from src import universe as uni
 from src.data import _fetch_all
 from src.tefas_client import TEFASClient
@@ -194,11 +195,54 @@ def _why_excluded(
     return "too_few_returns"
 
 
+def _check_scenarios(skip: bool = False) -> Optional[str]:
+    """Re-measure the frontend's example baskets, and say so loudly.
+
+    The pool's `expect` fields are claims about live correlations, and the
+    correlations are what this job just recomputed — so this is the run that
+    can tell whether the examples still show what they say they show. See
+    `src.scenarios` for why it re-runs the live path rather than reusing the
+    matrix above.
+
+    Never raises and never changes the run's status. A snapshot of 1374 funds
+    has not failed because an example basket drifted, and the frontend is not
+    this job's to repair. What it must not do is pass quietly, so the report
+    goes to the log, to stdout inside a rule, and into `job_runs.detail`.
+    """
+    if skip:
+        logger.info("--skip-scenarios: example baskets not re-measured")
+        return None
+
+    try:
+        results = scen.check_all()
+    except Exception as exc:  # noqa: BLE001 - a check that broke is not a failed run
+        note = f"scenario check could not run: {type(exc).__name__}: {exc}"
+        logger.warning(note)
+        return note
+
+    note = scen.report(results)
+    drifted = [r for r in results if not r.holds]
+
+    if drifted:
+        # A block with a rule round it, because the thing this must not do is
+        # scroll past unnoticed in a job that prints 1374 fetch lines.
+        bar = "=" * 72
+        print(f"\n{bar}\n  EXAMPLE BASKET DRIFT\n{bar}")
+        print(note)
+        print(f"{bar}\n")
+        logger.warning("%s", note)
+    else:
+        logger.info("%s", note)
+
+    return note
+
+
 def run(
     months: int = pc.HISTORY_MONTHS,
     limit: Optional[int] = None,
     reuse_prices: bool = False,
     dry_run: bool = False,
+    skip_scenarios: bool = False,
 ) -> int:
     """One end-to-end run. Returns a process exit code."""
     started = datetime.now(timezone.utc)
@@ -210,6 +254,7 @@ def run(
     logger.info("Thresholds: %s", thresholds)
 
     status, detail = "failed", None
+    scenario_note: Optional[str] = None
     universe_size = included_count = pair_count = 0
     fetch_seconds = compute_seconds = 0.0
     cpi_latest = None
@@ -293,9 +338,21 @@ def run(
                 db.replace_snapshot(conn, fund_rows, correlation_rows)
             status = "ok"
 
+        # After the write, because it is about the frontend rather than about
+        # this snapshot, and because it must never be the reason a good
+        # snapshot fails to land.
+        scenario_note = _check_scenarios(skip=skip_scenarios)
+
     except Exception as exc:  # noqa: BLE001 - recorded, then re-raised as a code
         detail = f"{type(exc).__name__}: {exc}"
         logger.exception("Run failed: %s", detail)
+
+    # The scenario note rides along in `detail` when the run itself had
+    # nothing to say there. `status` is deliberately untouched: the API's
+    # freshness block reads the last row with status 'ok', and an example
+    # basket drifting must not make a good snapshot look unpublished.
+    if scenario_note and detail is None:
+        detail = scenario_note
 
     duration = time.perf_counter() - t0
     try:
@@ -352,6 +409,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         action="store_true",
         help="Compute everything, write nothing but the job_runs row.",
     )
+    parser.add_argument(
+        "--skip-scenarios",
+        action="store_true",
+        help=(
+            "Skip re-measuring the frontend's example baskets. They cost ten "
+            "TEFAS requests down the live path; skip them when running the "
+            "job repeatedly against a slice."
+        ),
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -364,6 +430,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             months=args.months,
             limit=args.limit,
             reuse_prices=args.reuse_prices,
+            skip_scenarios=args.skip_scenarios,
             dry_run=args.dry_run,
         )
     except db.DatabaseNotConfigured as exc:

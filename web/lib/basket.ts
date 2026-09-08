@@ -42,6 +42,38 @@ export function nextId(prefix: string): string {
   return `${prefix}-${counter}`;
 }
 
+/**
+ * Fund codes handed over by another page, out of `?fon=`.
+ *
+ * A fund page links here with the fund it was about already chosen, because
+ * asking someone to type a code they have just spent a minute reading is
+ * asking them to do the page's work. Comma separated, so the same link shape
+ * carries a pair when there is a pair to carry.
+ *
+ * Upper cased with the plain `toUpperCase`, deliberately not the Turkish
+ * locale one: that turns "tie" into "TİE" and there is no such fund. Same
+ * rule as the search box's manual entry, and for the same reason.
+ *
+ * Anything that is not a plausible code is dropped rather than sent on. This
+ * is a query string, which means it is whatever was in the address bar, and
+ * a code is three or four letters and digits on TEFAS.
+ */
+const KOD_BICIMI = /^[A-Z0-9]{2,6}$/;
+
+export function koprudenGelenKodlar(search: string): string[] {
+  const raw = new URLSearchParams(search).get("fon");
+  if (!raw) return [];
+
+  const out: string[] = [];
+  for (const part of raw.split(",")) {
+    const code = part.trim().toUpperCase();
+    if (KOD_BICIMI.test(code) && !out.includes(code)) out.push(code);
+  }
+  // A link is a starting point, not a basket. More than a handful means
+  // something built the URL rather than someone following a page.
+  return out.slice(0, 10);
+}
+
 /** Today as an ISO date, in the browser's own timezone rather than UTC. */
 export function todayISO(): string {
   const now = new Date();

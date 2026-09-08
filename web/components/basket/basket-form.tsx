@@ -1,14 +1,17 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 
 import {
   checkSimpleBasket,
   checkStagedBasket,
+  koprudenGelenKodlar,
   nextId,
 } from "@/lib/basket";
 import type { BasketFund, PurchaseRow } from "@/lib/basket";
+import { useFundRegistry } from "@/lib/funds";
 import type { SearchableFund } from "@/lib/funds";
 import { sampleBasket } from "@/lib/sample";
 import { Reveal } from "@/components/reveal";
@@ -46,6 +49,8 @@ export function BasketForm({
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [staged, setStaged] = useState(false);
   const reduceMotion = useReducedMotion();
+
+  useKoprudenGelenler(setFunds);
 
   const chosen = useMemo(() => new Set(funds.map((f) => f.code)), [funds]);
 
@@ -283,6 +288,55 @@ function EmptyBasket({ onSample, busy }: { onSample: () => void; busy: boolean }
       </p>
     </div>
   );
+}
+
+/**
+ * Seed the basket from `?fon=AHB`, once.
+ *
+ * A fund page links here with its fund already chosen. The codes are read
+ * from `window.location` rather than through `useSearchParams`, and that is
+ * the whole design decision in this hook: `useSearchParams` inside this
+ * component would make the page around it opt out of prerendering unless it
+ * were wrapped in a Suspense boundary, and a boundary here means the form is
+ * no longer in the HTML this page ships. The form works without JavaScript
+ * having run; a prefill cannot, because it has to wait for the registry
+ * anyway. So the thing that needs the bundle reads the URL from the bundle,
+ * and the thing that does not stays server rendered.
+ *
+ * It waits for the registry so the row arrives with the fund's name on it. A
+ * registry that failed is not a reason to drop the code: `FundRow` already
+ * knows how to show a fund whose name could not be verified, and the
+ * analysis endpoint never needed the name.
+ *
+ * Runs once, and never over a basket someone has started filling in.
+ */
+function useKoprudenGelenler(setFunds: Dispatch<SetStateAction<BasketFund[]>>) {
+  const registry = useFundRegistry();
+  const done = useRef(false);
+
+  useEffect(() => {
+    if (done.current || registry.phase === "loading") return;
+    done.current = true;
+
+    const codes = koprudenGelenKodlar(window.location.search);
+    if (codes.length === 0) return;
+
+    const known = registry.phase === "ready" ? registry.funds : [];
+    setFunds((current) =>
+      // The registry can take a moment, and a basket someone has already
+      // started is theirs. A link seeds an empty form or nothing.
+      current.length > 0
+        ? current
+        : codes.map((code) => ({
+            id: nextId("fund"),
+            code,
+            title: known.find((fund) => fund.code === code)?.title ?? "",
+            amount: "",
+            basis: "current_value" as const,
+            since: "",
+          })),
+    );
+  }, [registry, setFunds]);
 }
 
 function buttonHint(hasErrors: boolean, canAnalyze: boolean, busy: boolean): string {

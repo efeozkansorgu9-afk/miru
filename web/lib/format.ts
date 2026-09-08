@@ -8,7 +8,7 @@
  * do not take the same one.
  */
 
-import { AY_ADLARI } from "@/lib/date";
+import { AY_ADLARI, AY_KISA } from "@/lib/date";
 
 /* ------------------------------------------------------------------ */
 /* Numbers                                                             */
@@ -54,6 +54,36 @@ export function para(x: number): string {
   const sign = x < 0 ? "-" : "";
   const whole = Math.round(Math.abs(x));
   return `${sign}${whole.toLocaleString("tr-TR", { maximumFractionDigits: 0 })} TL`;
+}
+
+/** A whole count, grouped the Turkish way: "307.603". */
+export function sayi(n: number): string {
+  return Math.round(n).toLocaleString("tr-TR", { maximumFractionDigits: 0 });
+}
+
+/**
+ * Lira at the scale a fund is sized in: "984 mn TL", "29,4 mr TL".
+ *
+ * `para` is right for a basket, where the reader put the number in and wants
+ * it back unchanged. A fund's assets run to eleven digits, and eleven digits
+ * inside a four line popover is a string nobody reads and a box that wraps.
+ * The step is chosen from the magnitude, and a value under a million is
+ * printed in full rather than as "0,4 mn", which says less than the digits do.
+ */
+export function paraKisa(x: number): string {
+  const sign = x < 0 ? "-" : "";
+  const n = Math.abs(x);
+  if (n >= 1e9) return `${sign}${birBasamak(n / 1e9)} mr TL`;
+  if (n >= 1e6) return `${sign}${birBasamak(n / 1e6)} mn TL`;
+  return para(x);
+}
+
+/** One decimal, dropped when it is a zero: "29,4" and "984", never "984,0". */
+function birBasamak(x: number): string {
+  const rounded = Math.round(x * 10) / 10;
+  return Number.isInteger(rounded)
+    ? String(rounded)
+    : rounded.toFixed(1).replace(".", ",");
 }
 
 /**
@@ -132,6 +162,18 @@ export function ayYil(iso: string): string {
   const [y, m] = iso.split("-").map(Number);
   if (!y || !m) return iso;
   return `${AY_ADLARI[m - 1]} ${y}`;
+}
+
+/**
+ * "2026-08-01" becomes "Ağu 2026".
+ *
+ * For a window printed beside its own length — "36 ay (Eyl 2023 – Ağu 2026)"
+ * — where the full month names make a line that wraps and says no more.
+ */
+export function ayYilKisa(iso: string): string {
+  const [y, m] = iso.split("-").map(Number);
+  if (!y || !m) return iso;
+  return `${AY_KISA[m - 1]} ${y}`;
 }
 
 /** Whole days between two ISO dates. */

@@ -15,6 +15,8 @@
 import type {
   AnalyzeRequest,
   AnalyzeResponse,
+  FundListResponse,
+  FundPageResponse,
   FundsResponse,
   HealthResponse,
   ValidationIssue,
@@ -36,6 +38,8 @@ export type ApiErrorKind =
   | "timeout"
   /** 422. The request was understood and rejected; `issues` says where. */
   | "validation"
+  /** 404. There is no such thing, which for a fund page is a real answer. */
+  | "not_found"
   /** 503. The backend is up but TEFAS is not. */
   | "upstream"
   /** 5xx. The backend broke and told us nothing, by design. */
@@ -136,6 +140,12 @@ async function request<T>(
 
   const message = typeof detail === "string" ? detail : response.statusText;
 
+  // A fund page asks for a code that may not exist, and "no such fund" is
+  // the page it renders rather than a failure it reports. Given its own kind
+  // so a caller can switch on it instead of comparing a status number.
+  if (response.status === 404) {
+    throw new ApiError("not_found", message, 404);
+  }
   if (response.status === 503) {
     throw new ApiError("upstream", message, 503);
   }
@@ -194,5 +204,36 @@ export function analyze(
     // A cold basket is three TEFAS fetches at half a second apart plus a CPI
     // call, so it gets longer than the default.
     { timeoutMs: 40_000, ...options },
+  );
+}
+
+/**
+ * Every fund that has a page, for generating them.
+ *
+ * Around 1370 rows. Only `included` funds are in it: a fund the weekly job
+ * could not price has nothing to put on a page.
+ */
+export function getFundList(options?: RequestOptions): Promise<FundListResponse> {
+  return request<FundListResponse>("/funds/list", { method: "GET" }, options);
+}
+
+/**
+ * One fund: identity, both return windows, and its correlation neighbours.
+ *
+ * Reads Postgres and computes nothing, so it is fast and the default timeout
+ * is generous for it. A `not_found` ApiError means the last weekly run never
+ * saw the code — a typo, or a fund TEFAS no longer lists. It does NOT mean
+ * the fund has no neighbours: that answers 200 with empty lists and a
+ * `neighbours_unavailable` code, because the fund is real and "nothing could
+ * be measured against it" is a finding.
+ */
+export function getFundPage(
+  code: string,
+  options?: RequestOptions,
+): Promise<FundPageResponse> {
+  return request<FundPageResponse>(
+    `/fund/${encodeURIComponent(code)}`,
+    { method: "GET" },
+    options,
   );
 }

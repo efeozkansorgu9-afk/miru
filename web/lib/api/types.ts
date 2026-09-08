@@ -388,3 +388,120 @@ export interface ValidationIssue {
   msg: string;
   type: string;
 }
+
+/* ------------------------------------------------------------------ */
+/* Fund pages                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What a correlation pair was judged to be.
+ *
+ * English on the wire, the same strings `src.precompute` writes into
+ * Postgres. The Turkish lives in `lib/fund`, in one map, and nowhere else.
+ * A value added here without a Turkish label there is a compile error,
+ * which is the point of writing this as a union rather than `string`.
+ */
+export type Bucket =
+  | "overlapping"
+  | "inverse"
+  | "similar"
+  | "moderate"
+  | "unrelated"
+  | "uncertain"
+  | "insufficient_data";
+
+/** Why a fund return is missing. Codes, never sentences. */
+export type ReturnUnavailable =
+  | "insufficient_history"
+  | "cpi_unavailable"
+  | "cpi_window_before_series";
+
+/**
+ * Why a fund has no neighbours at all.
+ *
+ * Two different silences. `no_measurable_pairs` is a priced fund that was
+ * measured against every other one and cleared the bar against none;
+ * `fund_not_priced` never entered the matrix. Neither is an error, and
+ * neither is a 404.
+ */
+export type NeighboursUnavailable = "no_measurable_pairs" | "fund_not_priced";
+
+/**
+ * One fund over one window. Total return, not annualised.
+ *
+ * `window_start` and `window_end` are not decoration. The window ends at the
+ * last month TÜİK has published an index for, not at today, so a "12 month"
+ * figure read on the 20th runs to the end of last month. The page prints the
+ * two months rather than implying otherwise. Both figures are measured over
+ * exactly this window, so the difference between them is inflation.
+ */
+export interface FundReturn {
+  months: number;
+  nominal: number | null;
+  real: number | null;
+  nominal_unavailable: ReturnUnavailable | null;
+  real_unavailable: ReturnUnavailable | null;
+  /** Month starts. Null together, when there was no window to measure. */
+  window_start: string | null;
+  window_end: string | null;
+}
+
+/** What a fund is. Every field but the code and the name may be absent. */
+export interface FundIdentity {
+  code: string;
+  name: string;
+  founder: string | null;
+  fund_type: string | null;
+  umbrella_type: string | null;
+  category: string | null;
+  total_assets: number | null;
+  investor_count: number | null;
+  /** 1 to 7 on TEFAS's own scale. Null means TEFAS did not say, not zero. */
+  risk_value: number | null;
+  returns: FundReturn[];
+}
+
+/**
+ * One stored pair, from the subject fund's side.
+ *
+ * The neighbour's whole identity travels with it, returns included, because
+ * the popover opens the moment a row is pressed and a request per neighbour
+ * would be twenty round trips for one screen.
+ */
+export interface Neighbour {
+  correlation: number;
+  ci_low: number | null;
+  ci_high: number | null;
+  n_weeks: number;
+  bucket: Bucket;
+  fund: FundIdentity;
+}
+
+/** When the numbers on the page were computed. */
+export interface DataFreshness {
+  last_run_at: string | null;
+  universe_size: number | null;
+  included_funds: number | null;
+  /** Last month TÜİK has published. Real returns never run past it. */
+  cpi_latest_month: string | null;
+}
+
+export interface FundPageResponse {
+  fund: FundIdentity;
+  high: Neighbour[];
+  low: Neighbour[];
+  neighbours_unavailable: NeighboursUnavailable | null;
+  freshness: DataFreshness;
+}
+
+export interface FundListItem {
+  code: string;
+  name: string;
+  founder: string | null;
+}
+
+/** Every fund with a page. For static generation, not for search. */
+export interface FundListResponse {
+  count: number;
+  funds: FundListItem[];
+}

@@ -37,6 +37,7 @@ import { StagedTable } from "./staged-table";
 export function BasketForm({
   onAnalyze,
   onBasketChange,
+  submitRef,
   busy = false,
 }: {
   /** Hands the basket to whoever owns the result. Called only when valid. */
@@ -55,6 +56,15 @@ export function BasketForm({
    * then be tempted to read.
    */
   onBasketChange?: (signature: string) => void;
+  /**
+   * Attached to the analyse button.
+   *
+   * The result section's "Sepete dön" needs to put this control back in
+   * front of the reader and focus it. It is handed down as a ref rather
+   * than reached for by id, so the button stays the only thing that knows
+   * it is the button.
+   */
+  submitRef?: React.Ref<HTMLButtonElement>;
   /** True while the analysis is in flight; the button says so and locks. */
   busy?: boolean;
 }) {
@@ -286,6 +296,7 @@ export function BasketForm({
       <div className="flex flex-wrap items-center gap-4">
         <button
           type="submit"
+          ref={submitRef}
           disabled={!canAnalyze}
           className="inline-flex items-center gap-2.5 rounded-control bg-accent px-8 py-4 text-body font-medium text-accent-ink transition-all hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent"
         >

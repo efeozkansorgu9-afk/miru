@@ -38,6 +38,10 @@ export function BasketWorkspace() {
   // Only the newest request may write a result. An answer from a basket the
   // user has already changed is worse than no answer.
   const latest = useRef(0);
+  // The analyse button, so "Sepete dön" can put it back in front of the
+  // reader. Owned here because both the form that renders it and the notice
+  // that points at it hang off this component.
+  const submitRef = useRef<HTMLButtonElement>(null);
 
   /**
    * The basket as it is now, and the basket the result on screen came from.
@@ -57,6 +61,32 @@ export function BasketWorkspace() {
   // Stable, so the form's effect does not fire on every render of this one.
   const onBasketChange = useCallback((signature: string) => {
     setCurrent(signature);
+  }, []);
+
+  /**
+   * Put the basket and its own analyse button back on screen, and focus it.
+   *
+   * Navigation, not a submit. Nothing here starts an analysis: that costs a
+   * TEFAS fetch per fund, and the press that spends it should happen in
+   * front of the basket it applies to, not from a notice several screens
+   * below it.
+   *
+   * The button is scrolled to `center` rather than the form to `start`. The
+   * form is up to five cards tall, so aligning its top puts the button below
+   * the fold and focuses a control the reader cannot see; centring the button
+   * leaves the basket visible above it and the focus ring visible on it.
+   * Focus itself uses `preventScroll` so it does not fight the smooth scroll
+   * it was just given.
+   */
+  const backToBasket = useCallback(() => {
+    const button = submitRef.current;
+    if (!button) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    button.scrollIntoView({
+      behavior: still ? "auto" : "smooth",
+      block: "center",
+    });
+    button.focus({ preventScroll: true });
   }, []);
 
   useEffect(() => {
@@ -127,6 +157,7 @@ export function BasketWorkspace() {
         <BasketForm
           busy={state.phase === "loading"}
           onBasketChange={onBasketChange}
+          submitRef={submitRef}
           onAnalyze={(mode, funds, purchases) =>
             runBasket(mode, funds, purchases)
           }
@@ -135,7 +166,11 @@ export function BasketWorkspace() {
 
       {/* `scroll-mt` clears the sticky header, which is 4rem tall. */}
       <div ref={anchor} className="scroll-mt-16">
-        <ResultSection state={state} stale={stale} />
+        <ResultSection
+          state={state}
+          stale={stale}
+          onBackToBasket={backToBasket}
+        />
       </div>
     </>
   );

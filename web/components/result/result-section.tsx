@@ -43,10 +43,13 @@ export type ResultState =
 export function ResultSection({
   state,
   stale = false,
+  onBackToBasket,
 }: {
   state: ResultState;
   /** The basket has been edited since this result was computed. */
   stale?: boolean;
+  /** Takes the reader back to the form. Navigation, not a second submit. */
+  onBackToBasket?: () => void;
 }) {
   if (state.phase === "idle") return null;
 
@@ -57,7 +60,7 @@ export function ResultSection({
         {state.phase === "error" && <Failure title={state.title} body={state.body} />}
         {state.phase === "ready" && (
           <>
-            {stale && <StaleNotice />}
+            {stale && <StaleNotice onBackToBasket={onBackToBasket} />}
             {/* Faded rather than hidden. What is underneath is still a real
                 answer about a real basket, and someone who has just removed
                 one fund of five is usually still reading the rest of it.
@@ -65,10 +68,21 @@ export function ResultSection({
                 mid-scroll. Dimming says "not about what you are looking at
                 any more" without taking it away, and the notice above says
                 which. Pointer events stay on: the disclosure sections and
-                the chart tooltips still work. */}
+                the chart tooltips still work.
+
+                85%, measured rather than chosen by eye. Composited over the
+                section ground, the muted body text reads 2,09:1 at 45% and
+                3,88:1 at 75% — both under the 4,5:1 that normal text needs,
+                so at either value the dimming was damage rather than a
+                signal. 85% is the lowest step that clears it in *both*
+                themes (4,91:1 light, 5,14:1 dark); 80% clears dark at 4,69:1
+                and fails light at 4,36:1. A light dim is enough because it
+                is no longer carrying the message on its own: the sticky
+                notice above says why, for as long as any of this is on
+                screen. */}
             <div
               className={
-                stale ? "opacity-45 transition-opacity duration-200" : undefined
+                stale ? "opacity-85 transition-opacity duration-200" : undefined
               }
             >
               <Result request={state.request} response={state.response} />
@@ -87,22 +101,51 @@ export function ResultSection({
  * typed in a form it has not been sent, and this is a statement about the
  * page, not about any analysis.
  *
- * It does not offer a button. The analysis is a TEFAS fetch per fund and the
- * one control that starts it is the one the reader already knows, a screen
- * up, where the basket they have just edited is. A second "analyse" here
- * would be a second place to press for the same thing.
+ * ## Why it is sticky
+ *
+ * A result runs several screens deep. Pinned to the top of the section, the
+ * notice scrolled away within one flick and left a faded page with no
+ * remaining explanation of why it was faded — the dimming became damage
+ * rather than a signal. It now sticks under the header for as long as any
+ * part of the result is on screen, so the reason is never further away than
+ * the thing it explains. `top-16` is the header's own height; `z-30` sits
+ * under the header's 50 and over the `ScrollRise` sections, which — like
+ * `Reveal` — each hold a permanent stacking context.
+ *
+ * The sticky wrapper carries a **solid** background. The tint alone is 8%
+ * caution over the ground, which is fine in flow and useless once result
+ * content is passing behind it.
+ *
+ * ## Why the action does not re-run the analysis
+ *
+ * It navigates. The analysis is a TEFAS fetch per fund, and the control that
+ * starts one lives with the basket it would be about; a second trigger down
+ * here would let someone re-run a basket they cannot see. So "Sepete dön"
+ * puts the form and its own button back on screen and focuses that button —
+ * the next press is theirs, in front of the basket it applies to.
  */
-function StaleNotice() {
+function StaleNotice({ onBackToBasket }: { onBackToBasket?: () => void }) {
   return (
-    <div
-      role="status"
-      className="mb-10 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-card border border-caution/35 bg-caution/8 px-5 py-4"
-    >
-      <p className="text-body font-medium text-ink">Sepet değişti.</p>
-      <p className="text-caption text-ink-muted">
-        Aşağıdaki sonuç sepetin önceki hâline ait. Güncel sonuç için tekrar
-        analiz edin.
-      </p>
+    <div className="sticky top-16 z-30 -mx-gutter mb-6 bg-canvas-sunken px-gutter pb-6 pt-4">
+      <div
+        role="status"
+        className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card border border-caution/35 bg-caution/8 px-5 py-4"
+      >
+        <p className="text-body font-medium text-ink">Sepet değişti.</p>
+        <p className="min-w-0 flex-1 text-caption text-ink-muted">
+          Aşağıdaki sonuç sepetin önceki hâline ait. Güncel sonuç için tekrar
+          analiz edin.
+        </p>
+        {onBackToBasket && (
+          <button
+            type="button"
+            onClick={onBackToBasket}
+            className="shrink-0 rounded-control border border-border-strong bg-surface px-4 py-2 text-label font-medium text-ink transition-colors hover:border-accent hover:text-accent"
+          >
+            Sepete dön
+          </button>
+        )}
+      </div>
     </div>
   );
 }

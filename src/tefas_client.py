@@ -30,6 +30,24 @@ _FUND_KINDS = ("YAT", "EMK", "BYF")
 # of the two is the actual registry, so we ask for both.
 _LIST_ISLEM_VALUES = (0, 1)
 
+# Retry policy for a price request that did not complete. Rate limiting is the
+# expected cause — the requests go out back to back — and it clears in
+# seconds, so a couple of spaced retries recover it. Kept small because the
+# weekly job walks ~1374 funds: every second spent here is spent 1374 times.
+_FETCH_ATTEMPTS = 3
+_FETCH_BACKOFF = 1.0
+
+
+class TEFASRequestError(RuntimeError):
+    """A price request did not complete.
+
+    Deliberately distinct from a request that completed and returned nothing.
+    The two used to be one outcome — every exception became an empty frame —
+    and the whole point of this class is that they are not the same claim.
+    "This fund has no prices in this window" is a statement about the fund,
+    and a rate-limited request does not support it.
+    """
+
 
 def _parse_date(value: DateLike) -> date:
     """Accept DD.MM.YYYY, YYYY-MM-DD, date or datetime and return a date."""
@@ -110,27 +128,92 @@ class TEFASClient:
         pd.DataFrame
             Columns: date, fund_code, fund_name, price, category_rank,
             category_total. Empty if the fund returned no data.
-        """
-        end = _parse_date(end_date) if end_date else date.today()
-        start = _parse_date(start_date) if start_date else end - timedelta(days=365)
 
+        Notes
+        -----
+        Never raises. A request that fails is logged and comes back as an
+        empty frame, which makes it indistinguishable from a fund that has no
+        prices — so anything that has to tell those apart must call
+        `fetch_history` instead. This wrapper stays because callers that only
+        want "the prices, if any" (the smoke test, `get_multiple_funds`) read
+        better without a try block, and because `api.main._load` detects a
+        TEFAS outage from the shape of the failures rather than from an
+        exception.
+        """
         try:
-            df = self._crawler.fetch(
-                start=start.isoformat(),
-                end=end.isoformat(),
-                name=fund_code,
-                columns=_COLUMNS,
-            )
-        except Exception as exc:
+            return self.fetch_history(fund_code, start_date, end_date)
+        except TEFASRequestError as exc:
             logger.warning("Failed to fetch %s: %s", fund_code, exc)
             print(f"❌ Error fetching {fund_code}: {exc}")
             return pd.DataFrame()
 
-        if df.empty:
-            print(f"⚠️  No data found for {fund_code}")
-            return pd.DataFrame()
+    def fetch_history(
+        self,
+        fund_code: str,
+        start_date: Optional[DateLike] = None,
+        end_date: Optional[DateLike] = None,
+        *,
+        attempts: int = _FETCH_ATTEMPTS,
+    ) -> pd.DataFrame:
+        """Fetch one fund, telling a failed request from an empty answer.
 
-        return self._clean(df, fund_code)
+        The same request as `get_fund_history`, with the one distinction that
+        method throws away: a request that never completed raises
+        `TEFASRequestError`, and only a request that *did* complete and
+        carried no rows returns an empty frame.
+
+        That distinction is the difference between "this fund has no prices"
+        and "we did not manage to ask", and it is load bearing: the caller
+        caches the first answer and must never cache the second. A single
+        rate-limited request used to be written to disk as a fact about the
+        fund and served for the rest of the day.
+
+        Retries `attempts` times with a widening pause before giving up,
+        because the expected cause is rate limiting from the request before
+        this one and it clears in seconds. Pass `attempts=1` to skip that,
+        which is what the batch loop does once it decides TEFAS is down.
+
+        Raises
+        ------
+        TEFASRequestError
+            Every attempt failed. Carries the last underlying error.
+        """
+        end = _parse_date(end_date) if end_date else date.today()
+        start = _parse_date(start_date) if start_date else end - timedelta(days=365)
+
+        last: Optional[Exception] = None
+        for attempt in range(1, max(1, attempts) + 1):
+            try:
+                df = self._crawler.fetch(
+                    start=start.isoformat(),
+                    end=end.isoformat(),
+                    name=fund_code,
+                    columns=_COLUMNS,
+                )
+            except Exception as exc:
+                last = exc
+                if attempt < attempts:
+                    pause = _FETCH_BACKOFF * (2 ** (attempt - 1))
+                    logger.info(
+                        "Fetch of %s failed (%s), retrying in %.1fs (attempt %d/%d)",
+                        fund_code,
+                        exc,
+                        pause,
+                        attempt + 1,
+                        attempts,
+                    )
+                    time.sleep(pause)
+                continue
+
+            if df.empty:
+                print(f"⚠️  No data found for {fund_code}")
+                return pd.DataFrame()
+
+            return self._clean(df, fund_code)
+
+        raise TEFASRequestError(
+            f"{fund_code}: {attempts} attempt(s) failed, last error: {last}"
+        ) from last
 
     def list_fund_codes(self, refresh: bool = False) -> set:
         """

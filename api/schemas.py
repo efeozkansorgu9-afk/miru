@@ -351,7 +351,8 @@ class MatrixCoverage(BaseModel):
 class FundFailure(BaseModel):
     """A code that returned nothing usable. Mirrors `data.FundFailure`.
 
-    `kind` is the field to branch on — `unknown_code`, `no_prices_in_window`,
+    `kind` is the field to branch on — `request_failed`, `unknown_code`,
+    `no_prices_in_window`,
     `no_valid_prices`, `no_data_unverified`. `reason` is an English
     diagnostic for logs and bug reports; it is not a string to put on a
     screen, in any language.

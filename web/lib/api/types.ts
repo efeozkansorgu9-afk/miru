@@ -66,7 +66,15 @@ export type FailureKind =
   | "unknown_code"
   | "no_prices_in_window"
   | "no_valid_prices"
-  | "no_data_unverified";
+  | "no_data_unverified"
+  /**
+   * The price request never completed, so nothing was observed about the
+   * fund at all. Apart from the others because they are findings and this
+   * is the absence of one: it is the only kind where trying again is the
+   * right advice, and the only one that must never be read as a fact about
+   * the fund.
+   */
+  | "request_failed";
 
 /** Why a fund with prices was still left out of the trimmed matrix. */
 export type ExclusionKind = "stale_series" | "window_cost";

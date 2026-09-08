@@ -37,7 +37,12 @@ from typing import Optional, Sequence
 
 import pandas as pd
 
-from src.tefas_client import DateLike, TEFASClient, _parse_date
+from src.tefas_client import (
+    DateLike,
+    TEFASClient,
+    TEFASRequestError,
+    _parse_date,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +77,11 @@ FAILURE_UNKNOWN_CODE = "unknown_code"
 FAILURE_NO_PRICES_IN_WINDOW = "no_prices_in_window"
 FAILURE_NO_VALID_PRICES = "no_valid_prices"
 FAILURE_UNVERIFIED = "no_data_unverified"
+# The request never completed, so nothing at all was observed about the fund.
+# Kept apart from every kind above because those are findings and this is the
+# absence of one: it must never be cached, and it must never be reported as
+# "no prices in this window", which is a claim the request did not support.
+FAILURE_REQUEST_FAILED = "request_failed"
 
 # Why a fund that *did* return data was still left out of TRIMMED. Same
 # split of duties as the failure kinds above: the sentence is for the
@@ -101,6 +111,29 @@ CACHE_DIR = Path("data/cache")
 # Bumped when the cached payload's shape changes, so old files are ignored
 # instead of misread.
 _CACHE_VERSION = 2
+
+# Where "TEFAS answered, and had nothing for this fund" is remembered, and
+# for how long. Separate from the price cache on purpose: an absence is a
+# much weaker claim than a price, it is the one that a transient failure can
+# forge, and it therefore gets minutes rather than the price cache's day.
+#
+# Ten minutes is long enough to stop a basket refetching the same empty fund
+# on every press, and short enough that a fund wrongly recorded as empty is
+# retried within one sitting rather than at tomorrow's first request.
+#
+# A request that *failed* is never written here at all. That is the whole
+# fix: one rate-limited response used to be persisted for the day as a fact
+# about the fund, which turned something measurable into "insufficient data"
+# — the exact inversion of this product's rule about not claiming what it
+# has not measured.
+ABSENCE_FILE = "absences.json"
+ABSENCE_TTL_SECONDS = 600
+
+# How many consecutive failed requests mean TEFAS is down rather than busy.
+# Past this the batch loop stops retrying each fund: when nothing is
+# answering, three attempts per fund is the same answer three times, and
+# across the weekly job's ~1374 funds it is an hour of it.
+_OUTAGE_STREAK = 5
 
 
 # ----------------------------------------------------------------------
@@ -270,18 +303,9 @@ def load_price_data(
     end = pd.Timestamp(_parse_date(end_date) if end_date else date.today())
     start, notes = _resolve_start(end, months)
 
-    cache_path = _cache_path(cache_dir, codes, start, end)
-    cached = _read_cache(cache_path) if use_cache else None
-
-    if cached is not None:
-        long_df, raw_failures, listed, from_cache = *cached, True
-    else:
-        client = client or TEFASClient()
-        long_df, raw_failures = _fetch_all(codes, start, end, client, delay)
-        listed = _registry_flags(client, codes, long_df, raw_failures)
-        from_cache = False
-        if use_cache:
-            _write_cache(cache_path, long_df, raw_failures, listed)
+    long_df, raw_failures, listed, from_cache = _gather(
+        codes, start, end, client, delay, use_cache, cache_dir
+    )
 
     return _build(
         long_df=long_df,
@@ -373,6 +397,71 @@ def print_coverage_report(ds: FundDataset) -> None:
 # ----------------------------------------------------------------------
 
 
+def _gather(
+    codes: list[str],
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    client: Optional[TEFASClient],
+    delay: float,
+    use_cache: bool,
+    cache_dir: Path | str,
+) -> tuple[pd.DataFrame, dict[str, dict], dict[str, bool], bool]:
+    """Prices for every code, from the cache where possible.
+
+    The cache holds prices, and only prices. So a code the cache has no rows
+    for is not "a fund with no prices" — it is a code this cache cannot
+    answer for, and it gets asked again. That is what makes a transient
+    failure self-healing: the good rows from the same run stay cached, and
+    the fund that failed is retried on the next request rather than at
+    tomorrow's.
+
+    Asked again *unless* the absence cache says TEFAS answered for it within
+    the last few minutes, which is the one case where "no rows" is a fact
+    with a short shelf life rather than a gap in what we know.
+
+    `from_cache` means the whole basket came off the disk. A run that had to
+    fetch even one code reports False, because the note it feeds says the
+    result was served from cache and that would no longer be true.
+    """
+    cache_path = _cache_path(cache_dir, codes, start, end)
+    cached = _read_cache(cache_path) if use_cache else None
+
+    def fetch(wanted: list[str], seed: pd.DataFrame, known: dict[str, dict]):
+        nonlocal client
+        client = client or TEFASClient()
+        fresh, raw = _fetch_all(wanted, start, end, client, delay)
+        frames = [f for f in (seed, fresh) if not f.empty]
+        merged = pd.concat(frames, ignore_index=True) if frames else _empty_long()
+        failures = {**known, **raw}
+        flags = _registry_flags(client, codes, merged, failures)
+        if use_cache:
+            _write_cache(cache_path, merged, flags)
+            _remember_absences(cache_dir, raw, start, end)
+        return merged, failures, flags, False
+
+    if cached is None:
+        return fetch(codes, _empty_long(), {})
+
+    cached_df, listed = cached
+    priced = set(cached_df["fund_code"].unique()) if not cached_df.empty else set()
+    missing = [code for code in codes if code not in priced]
+    if not missing:
+        return cached_df, {}, listed, True
+
+    remembered = _recent_absences(cache_dir, missing, start, end)
+    retry = [code for code in missing if code not in remembered]
+    if not retry:
+        return cached_df, remembered, listed, True
+
+    logger.info(
+        "Cache %s has no prices for %s; asking TEFAS again rather than "
+        "treating that as an answer",
+        cache_path.name,
+        ", ".join(retry),
+    )
+    return fetch(retry, cached_df, remembered)
+
+
 def _fetch_all(
     codes: list[str],
     start: pd.Timestamp,
@@ -384,13 +473,46 @@ def _fetch_all(
 
     Records only what was observed here; the registry lookup turns that into
     a diagnosis later, so this stays cheap and cacheable.
+
+    Three outcomes per code, not two. `no_rows` and `no_valid_prices` are
+    findings: TEFAS answered and the fund had nothing usable. `request_failed`
+    is the absence of a finding, and it is tracked separately because the
+    caller may cache the first two and must not cache the third.
+
+    Failures get a cooldown after them, and once `_OUTAGE_STREAK` requests in
+    a row have failed the per-fund retries are dropped. Rate limiting is the
+    expected cause of one failure and backing off is the cure; nothing
+    answering at all is a different situation, and retrying 1374 funds three
+    times each is an hour spent confirming it.
     """
     frames: list[pd.DataFrame] = []
     raw: dict[str, dict] = {}
+    consecutive_failures = 0
 
     for i, code in enumerate(codes, 1):
         logger.info("Fetching %s (%d/%d)", code, i, len(codes))
-        df = client.get_fund_history(code, start.date(), end.date())
+        outage = consecutive_failures >= _OUTAGE_STREAK
+
+        try:
+            df = client.fetch_history(
+                code, start.date(), end.date(), attempts=1 if outage else 3
+            )
+        except TEFASRequestError as exc:
+            consecutive_failures += 1
+            raw[code] = {"observed": "request_failed", "error": str(exc)}
+            logger.warning(
+                "Request for %s failed (%d in a row); recorded as unmeasured, "
+                "not as an empty fund",
+                code,
+                consecutive_failures,
+            )
+            if i < len(codes):
+                # Longer than the ordinary spacing: whatever refused that
+                # request is likely to refuse the next one too.
+                time.sleep(delay * 4 if not outage else delay)
+            continue
+
+        consecutive_failures = 0
 
         if df.empty:
             raw[code] = {"observed": "no_rows"}
@@ -513,7 +635,20 @@ def _classify_failures(
     for code in codes:
         observed = raw_failures.get(code, {}).get("observed", "no_rows")
 
-        if observed == "no_valid_prices":
+        if observed == "request_failed":
+            # Tested first, and never falls through to the registry branches
+            # below. Those all describe the fund — it is not listed, it is
+            # listed but silent — and none of them is supportable when the
+            # request did not complete. The honest answer is that we do not
+            # know, and it is the only failure kind that says a retry is
+            # worth something.
+            out[code] = FundFailure(
+                code,
+                FAILURE_REQUEST_FAILED,
+                "TEFAS did not answer for this fund; nothing was measured, "
+                "so try again shortly",
+            )
+        elif observed == "no_valid_prices":
             rows = raw_failures[code].get("rows", 0)
             out[code] = FundFailure(
                 code,
@@ -747,8 +882,19 @@ def _cache_path(cache_dir: Path | str, codes: list[str], start, end) -> Path:
 
 def _read_cache(
     path: Path,
-) -> Optional[tuple[pd.DataFrame, dict[str, dict], dict[str, bool]]]:
-    """Return the cached frame if it was written today, else None."""
+) -> Optional[tuple[pd.DataFrame, dict[str, bool]]]:
+    """Return today's cached prices and registry flags, or None.
+
+    Failures are **not** read back, even from files that still carry them.
+    Entries written before the split recorded `raw_failures` next to the
+    prices under the same day-long TTL, so a fund that happened to be
+    rate-limited during one basket was served as "returned no prices" until
+    midnight. Such a file is skipped outright rather than partly trusted:
+    the prices in it are fine, but the set of codes it claims to have asked
+    about is exactly what cannot be believed, and refetching is cheap.
+
+    There is no migration. The entries expire on their own within the day.
+    """
     meta_path = path.with_suffix(".json")
     if not path.exists():
         return None
@@ -765,26 +911,143 @@ def _read_cache(
         logger.warning("Ignoring unreadable cache %s: %s", path.name, exc)
         return None
 
+    if meta.get("raw_failures"):
+        logger.info(
+            "Cache %s predates the failure split and carries %d cached "
+            "failure(s); ignoring it and refetching",
+            path.name,
+            len(meta["raw_failures"]),
+        )
+        return None
+
     logger.info("Loaded %d rows from cache %s", len(df), path.name)
     # Registry flags are cached too, so a cached run diagnoses failures
     # exactly the way the fetching run did.
-    return df, meta.get("raw_failures", {}), meta.get("listed", {})
+    return df, meta.get("listed", {})
 
 
 def _write_cache(
     path: Path,
     long_df: pd.DataFrame,
-    raw_failures: dict[str, dict],
     listed: dict[str, bool],
 ) -> None:
+    """Persist prices and registry flags. Never failures.
+
+    What goes in here gets a day. Nothing that a single refused request could
+    have produced is allowed to earn that, which is why the signature has no
+    room for a failure to be passed in by accident.
+    """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         long_df.to_parquet(path, index=False)
         path.with_suffix(".json").write_text(
-            json.dumps({"raw_failures": raw_failures, "listed": listed}, indent=2)
+            json.dumps({"listed": listed}, indent=2)
         )
     except Exception as exc:  # a cache we cannot write is not a fatal error
         logger.warning("Could not write cache %s: %s", path.name, exc)
+
+
+# ----------------------------------------------------------------------
+# Absence cache
+# ----------------------------------------------------------------------
+#
+# "TEFAS answered and had nothing for this fund, in this window, minutes
+# ago." Keyed per fund and per window rather than per basket, so two baskets
+# holding the same empty fund do not each go and ask; keyed on the window
+# because a fund with no prices in twelve months may well have some in sixty,
+# and a shorter window's silence is not evidence about a longer one.
+#
+# Best effort throughout. A lost or unwritable file costs one refetch, and
+# two processes writing at once may drop an entry — which is also one
+# refetch. Nothing here is allowed to fail a request.
+
+
+def _absence_path(cache_dir: Path | str) -> Path:
+    return Path(cache_dir) / ABSENCE_FILE
+
+
+def _absence_key(code: str, start, end) -> str:
+    return f"{code}|{start.date()}|{end.date()}"
+
+
+def _load_absences(cache_dir: Path | str) -> dict[str, dict]:
+    path = _absence_path(cache_dir)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception as exc:
+        logger.warning("Ignoring unreadable absence cache: %s", exc)
+        return {}
+
+
+def _recent_absences(
+    cache_dir: Path | str, codes: Sequence[str], start, end
+) -> dict[str, dict]:
+    """The codes among `codes` confirmed empty inside the TTL."""
+    stored = _load_absences(cache_dir)
+    now = time.time()
+    out: dict[str, dict] = {}
+
+    for code in codes:
+        entry = stored.get(_absence_key(code, start, end))
+        if not entry:
+            continue
+        if now - entry.get("at", 0) > ABSENCE_TTL_SECONDS:
+            continue
+        out[code] = {
+            k: v for k, v in entry.items() if k != "at"
+        }
+
+    if out:
+        logger.info(
+            "Skipping refetch of %s: TEFAS confirmed empty within the last "
+            "%d minutes",
+            ", ".join(sorted(out)),
+            ABSENCE_TTL_SECONDS // 60,
+        )
+    return out
+
+
+def _remember_absences(
+    cache_dir: Path | str, raw_failures: dict[str, dict], start, end
+) -> None:
+    """Record the confirmed-empty codes. Failed requests are dropped.
+
+    The filter is the point of the whole file, so it is done here rather than
+    trusted to callers: whatever is handed in, only an answer TEFAS actually
+    gave is written down.
+    """
+    keep = {
+        code: info
+        for code, info in raw_failures.items()
+        if info.get("observed") in ("no_rows", "no_valid_prices")
+    }
+    dropped = len(raw_failures) - len(keep)
+    if dropped:
+        logger.info(
+            "Not caching %d unanswered request(s); they will be retried", dropped
+        )
+    if not keep:
+        return
+
+    now = time.time()
+    stored = _load_absences(cache_dir)
+    # Expired entries go on the way past, so the file cannot grow forever.
+    stored = {
+        key: entry
+        for key, entry in stored.items()
+        if now - entry.get("at", 0) <= ABSENCE_TTL_SECONDS
+    }
+    for code, info in keep.items():
+        stored[_absence_key(code, start, end)] = {**info, "at": now}
+
+    try:
+        path = _absence_path(cache_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(stored, indent=2))
+    except Exception as exc:
+        logger.warning("Could not write absence cache: %s", exc)
 
 
 # ----------------------------------------------------------------------

@@ -404,13 +404,18 @@ def analyze(request: sc.AnalyzeRequest) -> sc.AnalyzeResponse:
 def _load(request: sc.AnalyzeRequest) -> dl.FundDataset:
     """Fetch the basket, turning an unreachable TEFAS into a 503.
 
-    `load_price_data` does not raise when TEFAS is down: `get_fund_history`
-    logs and returns an empty frame, and the registry lookup that would
-    diagnose the emptiness degrades to "unverified" rather than failing. So
-    an outage arrives here looking like a basket of codes that all returned
-    nothing, unverified — which is exactly the signature tested for below.
-    A basket that genuinely holds only bad codes comes back tagged
-    `unknown_code`, because the registry answered.
+    `load_price_data` does not raise when TEFAS is down, so an outage has to
+    be recognised from the shape of the failures instead. Two shapes mean it,
+    and both are checked:
+
+    `request_failed` on every code is the direct signal — the price requests
+    themselves did not complete. `no_data_unverified` on every code is the
+    indirect one: the requests completed empty *and* the registry lookup that
+    would have diagnosed the emptiness also failed to answer.
+
+    Neither is the same as a basket of bad codes, which comes back tagged
+    `unknown_code` because the registry did answer and did not know them.
+    That basket is a 200 with an explanation, not a 503.
     """
     try:
         ds = dl.load_price_data(request.codes, months=request.months)
@@ -418,12 +423,16 @@ def _load(request: sc.AnalyzeRequest) -> dl.FundDataset:
         raise _invalid("funds" if request.mode == "simple" else "purchases", str(exc))
 
     failures = ds.failed_codes
-    if len(failures) == len(ds.requested_codes) and all(
-        f.kind == dl.FAILURE_UNVERIFIED for f in failures.values()
-    ):
-        raise UpstreamUnavailable(
-            "no fund returned data and the TEFAS fund registry did not answer"
-        )
+    if len(failures) == len(ds.requested_codes):
+        kinds = {f.kind for f in failures.values()}
+        if kinds == {dl.FAILURE_REQUEST_FAILED}:
+            raise UpstreamUnavailable(
+                "no fund's prices could be requested from TEFAS"
+            )
+        if kinds == {dl.FAILURE_UNVERIFIED}:
+            raise UpstreamUnavailable(
+                "no fund returned data and the TEFAS fund registry did not answer"
+            )
     return ds
 
 

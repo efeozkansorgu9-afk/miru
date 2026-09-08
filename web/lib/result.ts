@@ -345,6 +345,11 @@ export function failureText(code: string, kind: FailureKind): string {
       return `${code}: bu dönemde hiç fiyat vermemiş.`;
     case "no_valid_prices":
       return `${code}: dönen fiyatların hiçbiri kullanılabilir değil.`;
+    // Not a finding about the fund, so it says nothing about the fund. The
+    // other kinds are all conclusions; this one is the absence of one, and
+    // the only useful thing to say is that a retry may well work.
+    case "request_failed":
+      return `${code}: TEFAS yanıt vermedi, bu fon ölçülemedi. Birazdan tekrar deneyin.`;
     default:
       return `${code}: verisi alınamadı ve fon listesi de doğrulanamadı.`;
   }

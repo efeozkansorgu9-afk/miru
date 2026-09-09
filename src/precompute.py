@@ -55,15 +55,17 @@ import numpy as np
 import pandas as pd
 
 from src import analysis as an
+from src import windows as win
 from src import inflation as inf
 
 logger = logging.getLogger(__name__)
 
-#: How much history to correlate over. Three years of weekly returns is ~156
-#: observations, which is wide enough for the intervals below to be worth
-#: quoting and recent enough that a fund's strategy has probably not changed
-#: underneath it.
-HISTORY_MONTHS = 36
+#: How much history to correlate over is no longer a constant here. It is
+#: whatever the job fetched, and the job sizes its fetch from the return
+#: periods plus the CPI margin — see `src.windows.fetch_months`. The 36 that
+#: used to live here was read as "the correlation window" and silently acted
+#: as "the fetch window", which is how the 36-month return came to depend on
+#: which day of the month the job ran.
 
 #: Neighbours kept per fund, at each end.
 TOP_N = 10
@@ -502,7 +504,10 @@ def _maybe(value: float) -> Optional[float]:
 # ----------------------------------------------------------------------
 
 #: The windows a fund page reports, in months.
-RETURN_PERIODS = (12, 36)
+#: Re-exported from `src.windows`, which reads it from the JSON the frontend
+#: reads too. Kept under this name because `fund_returns`, `jobs.weekly` and
+#: the schema all already say `pc.RETURN_PERIODS`.
+RETURN_PERIODS = win.RETURN_PERIODS
 
 #: How far after a window's start edge the fund's first price may sit and the
 #: window still count as covered. Absorbs weekends and public holidays, the

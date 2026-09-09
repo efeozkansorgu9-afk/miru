@@ -79,10 +79,33 @@ export function ResultSection({
                 and fails light at 4,36:1. A light dim is enough because it
                 is no longer carrying the message on its own: the sticky
                 notice above says why, for as long as any of this is on
-                screen. */}
+                screen.
+
+                Opacity is not the only signal, because on this page it is
+                the weakest one available: what reads as "live" is the green
+                and red percentages, and 15% less opacity barely touches
+                them. `saturate(0.4)` drains those instead.
+
+                It costs nothing in legibility and in one place it helps.
+                Grey text is unaffected by construction — muted body stays
+                at 4.91:1 light and 5.14:1 dark at every saturation value.
+                The green figure in light theme actually *gains*: 3.58:1
+                under opacity alone, 4.01:1 desaturated, because a green
+                turned toward grey sits further from a pale ground than the
+                green did. Those figures are 26px, which is WCAG large text
+                and a 3:1 threshold, so 4.01 clears it with room.
+
+                Worth knowing: no saturation value reaches 4.5:1 there — the
+                ceiling is 4.11 at `saturate(0)` — because the `--positive`
+                token is only 4.54:1 undimmed to begin with. Any dimming at
+                all puts it under the *normal* text threshold, which is a
+                marginal colour token rather than anything this dimming
+                introduced. */}
             <div
               className={
-                stale ? "opacity-85 transition-opacity duration-200" : undefined
+                stale
+                  ? "opacity-85 saturate-[0.4] transition-[opacity,filter] duration-200"
+                  : undefined
               }
             >
               <Result request={state.request} response={state.response} />

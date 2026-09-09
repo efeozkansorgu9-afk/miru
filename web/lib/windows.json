@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "Every time window in the product, in one place, because the name",
+    "HISTORY_MONTHS had been used for four different quantities across two",
+    "languages: 60 in web/lib/request.ts (the basket window), 60 in",
+    "src/scenarios.py (a copy of it), 72 in src/inflation.py (how much CPI",
+    "to load) and 36 in src/precompute.py (what the weekly job fetched).",
+    "The last of those silently decided whether 850 funds had a 36-month",
+    "return at all.",
+    "Read by src/windows.py and web/lib/windows.ts. Under web/ because the",
+    "frontend imports it directly and a Next build cannot reach outside its",
+    "own tree.",
+    "tefas_reach_months is a measured fact, not a policy: on 2026-09-09,",
+    "asking tefas-crawler for 72, 84 and 120 months of GAL, AFO and TI2 all",
+    "returned the same first row, 2021-09-08. The floor is five years back",
+    "from today and it moves forward every day. This is why there is no",
+    "five-year return period: such a window would end at the last published",
+    "CPI month and would therefore need prices from before that floor.",
+    "return_periods_months is the single source for both the figures the",
+    "weekly job computes and the selector the fund page draws."
+  ],
+  "tefas_reach_months": 60,
+  "return_periods_months": [6, 12, 36, 48],
+  "cpi_release_day_of_month": 5,
+  "fetch_safety_days": 14
+}

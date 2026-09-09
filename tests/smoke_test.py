@@ -16,7 +16,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.tefas_client import TEFASClient
+from src.tefas_client import TEFASClient, TEFASRequestError
 
 # One fund per category from TEFASClient.POPULAR_FUNDS
 DEFAULT_FUNDS = ["TI2", "AK2", "AFO", "GAL", "IPB"]
@@ -45,14 +45,21 @@ def check_fund(client: TEFASClient, fund_code: str, start: date, end: date) -> b
     print(f"  {fund_code} - {client.POPULAR_FUNDS.get(fund_code, '?')}")
     print("=" * 60)
 
+    # Two different failures, reported as two. `fetch_history` raises when
+    # the request did not complete and returns empty only when TEFAS
+    # answered with nothing, so a smoke test can finally say which happened
+    # instead of printing "no rows" at a rate limit.
     try:
-        df = client.get_fund_history(fund_code, start, end)
+        df = client.fetch_history(fund_code, start, end)
+    except TEFASRequestError as exc:
+        print(f"  FAIL  request did not complete: {exc}")
+        return False
     except Exception as exc:
         print(f"  FAIL  fetch raised {type(exc).__name__}: {exc}")
         return False
 
     if df.empty:
-        print("  FAIL  no rows returned")
+        print("  FAIL  TEFAS answered with no rows for this window")
         return False
 
     first, last = df["date"].iloc[0], df["date"].iloc[-1]

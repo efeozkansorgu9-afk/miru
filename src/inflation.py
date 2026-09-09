@@ -63,10 +63,16 @@ REQUEST_TIMEOUT = 20
 # rebase degrades to a fallback instead of an empty screen.
 CPI_SERIES: tuple[str, ...] = ("TP.TUKFIY2025.GENEL", "TP.GENENDEKS.T1")
 
-# TEFAS gives at most 5 years of prices. Fetching a fixed window a little
-# longer than that means every basket, whatever its length, is served by one
-# cache entry rather than one per requested period.
-HISTORY_MONTHS = 72
+# How many months of CPI to load when the caller does not say. Not a history
+# window for prices, and not the same quantity as anything in `src.windows`:
+# TEFAS gives at most 5 years of prices, so fetching a fixed CPI window a
+# little longer than that means every basket, whatever its length, is served
+# by one cache entry rather than one per requested period.
+#
+# Named for what it is. It used to be `HISTORY_MONTHS`, which was also the
+# name of the basket window, the scenario check's copy of that, and the
+# weekly job's fetch window — four different quantities, one identifier.
+CPI_DEFAULT_MONTHS = 72
 
 # TUIK publishes month M in the first days of month M+1. Used both to decide
 # when the cache is worth refetching and which month is the latest we should
@@ -138,7 +144,7 @@ class RealReturn:
 
 
 def load_cpi(
-    months: int = HISTORY_MONTHS,
+    months: int = CPI_DEFAULT_MONTHS,
     end: Optional[date] = None,
     *,
     api_key: Optional[str] = None,

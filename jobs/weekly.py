@@ -47,6 +47,7 @@ from src import db
 from src import inflation as inf
 from src import precompute as pc
 from src import scenarios as scen
+from src import windows as win
 from src import universe as uni
 from src.data import _fetch_all
 from src.tefas_client import TEFASClient
@@ -55,6 +56,10 @@ logger = logging.getLogger("jobs.weekly")
 
 #: Seconds between price requests. `src.data` uses the same pacing.
 FETCH_DELAY = 0.5
+
+#: The return periods the current `funds` schema has columns for. A subset of
+#: `pc.RETURN_PERIODS` until the `fund_returns` table lands; see `_fund_rows`.
+STORED_PERIODS = (12, 36)
 
 #: Where `--reuse-prices` parks the fetched frame. A development aid for
 #: re-running the write path without spending twenty minutes on TEFAS again;
@@ -158,10 +163,14 @@ def _fund_rows(
             if profile.code in included
             else _why_excluded(profile.code, stats, failures),
         }
-        # One pair of columns per window, flattened: the table is read by
-        # SQL far more often than it is written, and a fund page asking for
-        # `return_12m_real` beats it unpacking a JSON blob.
-        for months in pc.RETURN_PERIODS:
+        # Only the periods the `funds` table actually has columns for. The
+        # return periods are now (6, 12, 36, 48) and the flat-column schema
+        # holds two of them, so the other two are computed and dropped here
+        # rather than silently vanishing into `executemany`, which ignores
+        # dict keys it has no placeholder for. Phase 2.3 replaces this with a
+        # `fund_returns` table keyed on the period, at which point this loop
+        # goes back to `pc.RETURN_PERIODS` and this constant disappears.
+        for months in STORED_PERIODS:
             r = fund_returns.get(months)
             row[f"return_{months}m_nominal"] = r.nominal if r else None
             row[f"return_{months}m_real"] = r.real if r else None
@@ -238,13 +247,21 @@ def _check_scenarios(skip: bool = False) -> Optional[str]:
 
 
 def run(
-    months: int = pc.HISTORY_MONTHS,
+    months: Optional[int] = None,
     limit: Optional[int] = None,
     reuse_prices: bool = False,
     dry_run: bool = False,
     skip_scenarios: bool = False,
 ) -> int:
-    """One end-to-end run. Returns a process exit code."""
+    """One end-to-end run. Returns a process exit code.
+
+    `months` is normally None, meaning "work it out". The window is sized
+    from the return periods plus the real gap between today and the last
+    published CPI month, which is why the CPI is loaded before a single price
+    is fetched rather than after. Fetching the longest period exactly is what
+    made the 36-month figure depend on the day of the month; see
+    `src.windows`.
+    """
     started = datetime.now(timezone.utc)
     t0 = time.perf_counter()
 
@@ -260,6 +277,29 @@ def run(
     cpi_latest = None
 
     try:
+        # First, and before TEFAS: the fetch window is derived from the CPI
+        # cap, so the index has to be in hand to size it. It never raises —
+        # no key, no network or a rejected key all come back None — and a
+        # run without it falls back to the worst case the publication
+        # calendar allows, which over-fetches rather than under-fetches.
+        cpi = inf.load_cpi(months=inf.CPI_DEFAULT_MONTHS)
+        if cpi is None:
+            logger.warning("No CPI series; real returns will be unavailable")
+        else:
+            logger.info("CPI: %s", cpi)
+            cpi_latest = cpi.latest_month.date()
+
+        if months is None:
+            months = win.fetch_months(cpi)
+            logger.info(
+                "Fetching %d months: longest return period %d + %d days of "
+                "CPI margin (cap %s)",
+                months,
+                max(win.RETURN_PERIODS),
+                win.fetch_margin_days(cpi),
+                win.cpi_cap(cpi).date() if cpi is not None else "none",
+            )
+
         client = TEFASClient()
 
         logger.info("Loading universe...")
@@ -288,17 +328,6 @@ def run(
 
         stats = pc.series_stats(matrix)
         included = set(matrix.columns)
-
-        # The CPI is loaded once for all 1374 funds, not per fund. It never
-        # raises: no key, no network or a rejected key all come back None,
-        # and every real return then reports `cpi_unavailable` while the
-        # nominal ones carry on.
-        cpi = inf.load_cpi(months=months + 3)
-        if cpi is None:
-            logger.warning("No CPI series; real returns will be unavailable")
-        else:
-            logger.info("CPI: %s", cpi)
-            cpi_latest = cpi.latest_month.date()
 
         returns = _fund_return_table(long_df, cpi)
         included_count = len(included)
@@ -391,8 +420,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument(
         "--months",
         type=int,
-        default=pc.HISTORY_MONTHS,
-        help=f"History to correlate over (default {pc.HISTORY_MONTHS}).",
+        default=None,
+        help=(
+            "Override the fetch window, in months. By default it is derived: "
+            f"the longest return period ({max(win.RETURN_PERIODS)}) plus the "
+            "gap between today and the last published CPI month. Overriding "
+            "it with the longest period alone is what used to blank every "
+            "36-month return."
+        ),
     )
     parser.add_argument(
         "--limit",

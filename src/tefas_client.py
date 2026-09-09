@@ -105,48 +105,6 @@ class TEFASClient:
     # Public API
     # ------------------------------------------------------------------
 
-    def get_fund_history(
-        self,
-        fund_code: str,
-        start_date: Optional[DateLike] = None,
-        end_date: Optional[DateLike] = None,
-    ) -> pd.DataFrame:
-        """
-        Fetch historical data for a specific fund.
-
-        Parameters
-        ----------
-        fund_code : str
-            Fund code (e.g., 'GAL', 'TI2')
-        start_date : str | date | datetime, optional
-            Start date. Defaults to one year before `end_date`.
-        end_date : str | date | datetime, optional
-            End date. Defaults to today.
-
-        Returns
-        -------
-        pd.DataFrame
-            Columns: date, fund_code, fund_name, price, category_rank,
-            category_total. Empty if the fund returned no data.
-
-        Notes
-        -----
-        Never raises. A request that fails is logged and comes back as an
-        empty frame, which makes it indistinguishable from a fund that has no
-        prices — so anything that has to tell those apart must call
-        `fetch_history` instead. This wrapper stays because callers that only
-        want "the prices, if any" (the smoke test, `get_multiple_funds`) read
-        better without a try block, and because `api.main._load` detects a
-        TEFAS outage from the shape of the failures rather than from an
-        exception.
-        """
-        try:
-            return self.fetch_history(fund_code, start_date, end_date)
-        except TEFASRequestError as exc:
-            logger.warning("Failed to fetch %s: %s", fund_code, exc)
-            print(f"❌ Error fetching {fund_code}: {exc}")
-            return pd.DataFrame()
-
     def fetch_history(
         self,
         fund_code: str,
@@ -157,10 +115,17 @@ class TEFASClient:
     ) -> pd.DataFrame:
         """Fetch one fund, telling a failed request from an empty answer.
 
-        The same request as `get_fund_history`, with the one distinction that
-        method throws away: a request that never completed raises
-        `TEFASRequestError`, and only a request that *did* complete and
-        carried no rows returns an empty frame.
+        The only way to fetch prices. There used to be a second,
+        `get_fund_history`, which caught every exception and returned an
+        empty frame — so a rate-limited request was indistinguishable from a
+        fund with no prices, and its name said nothing about that. It was
+        deleted rather than renamed: with two callers, both of which read
+        better with the swallowing written out, a correctly-named lenient
+        method would still have been the one somebody reached for next.
+
+        A request that never completed raises `TEFASRequestError`. Only a
+        request that *did* complete and carried no rows returns an empty
+        frame.
 
         That distinction is the difference between "this fund has no prices"
         and "we did not manage to ask", and it is load bearing: the caller
@@ -226,7 +191,7 @@ class TEFASClient:
         Note the registry holds *currently listed* funds only. A fund that has
         been closed and delisted is absent from it — and so is a typo. TEFAS
         exposes no historical registry, so those two cases cannot be
-        separated here; see `get_fund_history` for the case that can (a fund
+        separated here; see `fetch_history` for the case that can (a fund
         that closed recently still returns prices, ending on its last
         trading day).
 
@@ -283,7 +248,7 @@ class TEFASClient:
         fund_codes : list, optional
             Fund codes. Defaults to `POPULAR_FUNDS`.
         start_date, end_date : optional
-            See `get_fund_history`.
+            See `fetch_history`.
         delay : float
             Delay between requests, in seconds.
 
@@ -291,6 +256,16 @@ class TEFASClient:
         -------
         pd.DataFrame
             Combined data for all funds that returned rows.
+
+        Notes
+        -----
+        A fund whose request fails is reported and skipped: this is the
+        "fetch what you can" helper, used by `main()` to fill a CSV and by
+        exploration in the notebooks. The swallowing is written out here
+        rather than hidden behind a method that does it silently, because
+        that method is what let a rate-limited request be cached as a fact
+        about a fund. Anything that stores what it gets must call
+        `fetch_history` and handle `TEFASRequestError` itself.
         """
         if fund_codes is None:
             fund_codes = list(self.POPULAR_FUNDS.keys())
@@ -301,7 +276,12 @@ class TEFASClient:
             fund_name = self.POPULAR_FUNDS.get(code, code)
             print(f"📥 [{i}/{len(fund_codes)}] Fetching {code} - {fund_name}...")
 
-            df = self.get_fund_history(code, start_date, end_date)
+            try:
+                df = self.fetch_history(code, start_date, end_date)
+            except TEFASRequestError as exc:
+                logger.warning("Skipping %s: %s", code, exc)
+                print(f"   ❌ {exc}")
+                df = pd.DataFrame()
 
             if not df.empty:
                 all_data.append(df)

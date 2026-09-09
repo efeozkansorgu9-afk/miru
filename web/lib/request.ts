@@ -11,16 +11,8 @@
 import type { AnalyzeRequest, FundAmount, PurchaseIn } from "@/lib/api";
 import { checkAmount } from "@/lib/basket";
 import type { BasketFund, PurchaseRow } from "@/lib/basket";
+import { BASKET_MONTHS } from "@/lib/windows";
 
-/**
- * How far back to ask for, in months.
- *
- * The maximum the price endpoint has: TEFAS reaches back five years and
- * silently truncates anything longer. There is no control for this anywhere
- * in the form on purpose, so the analysis always runs on everything there
- * is rather than on a window someone picked without knowing what it costs.
- */
-export const HISTORY_MONTHS = 60;
 
 export type BuildResult =
   | { ok: true; request: AnalyzeRequest }
@@ -57,7 +49,7 @@ export function buildSimpleRequest(funds: BasketFund[]): BuildResult {
   if (rows.length === 0) {
     return { ok: false, error: "Tutarı girilmiş fon yok." };
   }
-  return { ok: true, request: { funds: rows, months: HISTORY_MONTHS } };
+  return { ok: true, request: { funds: rows, months: BASKET_MONTHS } };
 }
 
 /** Dated deposits: a fund appears once for every time money went into it. */
@@ -74,5 +66,5 @@ export function buildStagedRequest(rows: PurchaseRow[]): BuildResult {
   if (purchases.length === 0) {
     return { ok: false, error: "Tamamlanmış alım satırı yok." };
   }
-  return { ok: true, request: { purchases, months: HISTORY_MONTHS } };
+  return { ok: true, request: { purchases, months: BASKET_MONTHS } };
 }

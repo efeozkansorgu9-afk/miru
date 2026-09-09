@@ -43,6 +43,7 @@ from typing import Optional
 
 from src import analysis as an
 from src import data as dl
+from src import windows as win
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +60,11 @@ SCENARIO_FILE = Path("web/lib/sample-scenarios.json")
 GROUP_DOMINANT = 0.5
 GROUP_NOTABLE = 0.25
 
-#: How much history the frontend asks for. `web/lib/request.ts` sends 60.
-HISTORY_MONTHS = 60
+#: How much history the frontend asks for: the whole of TEFAS's reach, which
+#: is what `web/lib/request.ts` sends. Read from the shared JSON rather than
+#: written again here, so the check cannot ask for a different window than
+#: the page it is checking.
+BASKET_MONTHS = win.TEFAS_REACH_MONTHS
 
 
 @dataclass(frozen=True)
@@ -121,7 +125,7 @@ def tier(analysis, grouping) -> str:
     return "minor"
 
 
-def check_scenario(scenario: dict, months: int = HISTORY_MONTHS) -> ScenarioResult:
+def check_scenario(scenario: dict, months: int = BASKET_MONTHS) -> ScenarioResult:
     """Re-measure one example basket down the live path.
 
     Never raises for a data problem. A basket that cannot be fetched or
@@ -181,7 +185,7 @@ def check_scenario(scenario: dict, months: int = HISTORY_MONTHS) -> ScenarioResu
 
 
 def check_all(
-    path: Path | str = SCENARIO_FILE, months: int = HISTORY_MONTHS
+    path: Path | str = SCENARIO_FILE, months: int = BASKET_MONTHS
 ) -> list[ScenarioResult]:
     """Every scenario, in the order the pool hands them out."""
     results = [check_scenario(s, months) for s in load_scenarios(path)]

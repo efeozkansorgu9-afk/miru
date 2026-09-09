@@ -45,28 +45,35 @@ export function FundRow({
       transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
       className="overflow-hidden"
     >
-      <div className="rounded-card border border-border bg-surface p-5 sm:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <span className="font-mono text-label text-accent">{fund.code}</span>
-            {/* A fund typed in by hand when the registry was unreachable has
-                no name. Saying so beats an empty line that reads as a title
-                still loading, and beats inventing one. */}
-            <p
-              className={`mt-1 text-caption ${
-                fund.title ? "text-ink-muted" : "text-ink-subtle"
-              }`}
-              title={fund.title || undefined}
-            >
-              {fund.title || "Fon adı doğrulanamadı."}
-            </p>
-          </div>
+      <div className="rounded-card border border-border bg-surface p-4 sm:p-5">
+        {/* The identity on one line: code, then title, then the way out.
+            It used to be two, the title stacked under the code, which cost
+            every card a line to say something that fits beside it — and with
+            five funds those lines are most of the reason the form ran past
+            two thousand pixels. The title gives up characters instead: it is
+            the only part that can be long, `title` keeps the whole of it
+            reachable, and the code beside it is what identifies the row. */}
+        <div className="flex items-center gap-3">
+          <span className="shrink-0 font-mono text-label text-accent">
+            {fund.code}
+          </span>
+          {/* A fund typed in by hand when the registry was unreachable has
+              no name. Saying so beats an empty line that reads as a title
+              still loading, and beats inventing one. */}
+          <p
+            className={`min-w-0 flex-1 truncate text-caption ${
+              fund.title ? "text-ink-muted" : "text-ink-subtle"
+            }`}
+            title={fund.title || undefined}
+          >
+            {fund.title || "Fon adı doğrulanamadı."}
+          </p>
           <button
             type="button"
             onClick={onRemove}
             aria-label={`${fund.code} fonunu kaldır`}
             title="Kaldır"
-            className="grid size-9 shrink-0 place-items-center rounded-control border border-transparent text-ink-subtle transition-colors hover:border-border hover:text-negative"
+            className="-my-1 grid size-8 shrink-0 place-items-center rounded-control border border-transparent text-ink-subtle transition-colors hover:border-border hover:text-negative"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" className="size-4.5" aria-hidden="true">
               <path d="m6 6 12 12M18 6 6 18" />
@@ -74,7 +81,10 @@ export function FundRow({
           </button>
         </div>
 
-        <div className="mt-5 grid gap-x-5 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+        {/* The three answers on the second line, all of them from `sm` up.
+            They used to fold to two columns until `lg`, which put a third
+            row under every card on the width most people are reading at. */}
+        <div className="mt-3 grid gap-x-4 gap-y-3 sm:grid-cols-3">
           <AmountInput
             value={fund.amount}
             onChange={(amount) => onChange({ amount })}

@@ -18,9 +18,9 @@
  * Collapsed content stays in the document. It is only given a height of
  * zero, never dropped from the tree, so the whole list is in the HTML this
  * page ships — which is what a crawler reads, and what a reader with no
- * JavaScript still gets. The same reason `Disclosure` is a native
- * `<details>`: a panel that is empty until a bundle arrives is a panel that
- * is sometimes empty.
+ * JavaScript still gets. `Disclosure` folds the same way, for the same
+ * reasons and with the same easing; a panel that is empty until a bundle
+ * arrives is a panel that is sometimes empty.
  */
 
 import { motion, useReducedMotion } from "framer-motion";

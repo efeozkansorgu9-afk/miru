@@ -20,13 +20,22 @@ import { eksenTarihi, monthTicks } from "./axis";
  * The basket over time, against the money that was put into it and against
  * what that money would be worth if it had only kept up with prices.
  *
- * Three lines, and each one answers a question the others cannot. A single
- * value line makes every deposit look like a gain: the money arrives, the
- * line steps up, and nothing says which of the two happened, so the
- * principal line is where the deposits are and the gap above it is the
- * return. But in a country running Turkish inflation a gain is not yet good
- * news, and the third line is the test: below it the basket has lost buying
- * power in lira that grew.
+ * How many lines depends on how the basket was bought, and the rule is that
+ * a line has to answer a question the others cannot.
+ *
+ * The inflation line always does, and it is the one the chart exists for: in
+ * a country running Turkish inflation a gain is not yet good news, and below
+ * that line the basket has lost buying power in lira that grew. The claim is
+ * the gap between it and the market value, and nothing else on the plot.
+ *
+ * The principal line earns its place only when it is a staircase. A staged
+ * basket needs it — a single value line makes every deposit look like a
+ * gain, the money arrives, the line steps up, and nothing says which of the
+ * two happened. A basket bought in one go has no deposits to mark, so its
+ * principal is a flat line at the opening value, and drawing it offers the
+ * eye a second and easier gap to read: the wrong one, since a basket can sit
+ * far above what was paid for it and still be under inflation. It is left
+ * off the plot and reported in the tooltip instead.
  *
  * The inflation line can be switched off, and is on by default, because it
  * is the comparison most people came for. Without a CPI it is not drawn and
@@ -74,9 +83,31 @@ export function ValueChart({
   const withInflation = data.hasInflation && showInflation;
   const reference = staged ? LINES.invested : LINES.opening;
   const inflationLine = staged ? LINES.inflation : LINES.openingInflation;
-  const series = withInflation
-    ? [LINES.market, inflationLine, reference]
-    : [LINES.market, reference];
+
+  /**
+   * The reference line is drawn for a staged basket and not for a held one.
+   *
+   * What this chart claims is whether the basket kept its purchasing power,
+   * and that is read in one place: the gap between the market line and the
+   * inflation line. For a basket bought in one go the reference is a flat
+   * line at the opening value — nominal money, held still — and it does not
+   * belong to that question. It only gives the eye a second, easier gap to
+   * measure, which is the wrong one: a basket can sit far above its opening
+   * value and still be below inflation.
+   *
+   * A staged basket's reference is not flat. It is a staircase, one step per
+   * deposit, so it carries something the other lines do not — when money
+   * went in, and how much. That is worth a line, so it keeps one.
+   *
+   * The value is in the tooltip either way. Taking a line off the chart is
+   * not the same as withholding the number, and the tooltip is where a
+   * reader goes for a figure rather than a shape.
+   */
+  const series = [
+    LINES.market,
+    ...(withInflation ? [inflationLine] : []),
+    ...(staged ? [reference] : []),
+  ];
 
   // Both axes are ticked here rather than by Recharts. On a log axis
   // Recharts labels every digit and they collide at the bottom of the range;
@@ -216,7 +247,25 @@ export function ValueChart({
               axisLine={false}
               tick={{ fill: "var(--ink-subtle)", fontSize: 12 }}
             />
-            <Tooltip content={<ChartTooltip />} />
+            {/* Pinned to the top left of the plot rather than following the
+                pointer. A tooltip that tracks the cursor sits on top of the
+                lines it is describing, and on a chart whose whole point is
+                the gap between two of them, covering that gap to read it is
+                the wrong trade. The corner is chosen for the shape these
+                charts actually have: a value series over Turkish inflation
+                rises left to right, so the top left is the emptiest part of
+                the plot. `x` clears the 82px value axis. */}
+            <Tooltip
+              content={
+                <ChartTooltip
+                  extra={staged ? undefined : reference}
+                  scale={scale}
+                />
+              }
+              position={{ x: 92, y: 8 }}
+              isAnimationActive={false}
+              cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
+            />
             {series.map((line) => (
               <Line
                 key={line.key}
@@ -250,21 +299,38 @@ export function ValueChart({
  * than as a definition: a reader who has just seen a large green number
  * needs to know which side of that line to look for it on.
  */
+/**
+ * What the lines are, naming only the ones that are on the plot.
+ *
+ * A held basket no longer has a dashed line, so its caption no longer
+ * mentions one; the opening value is in the tooltip and the sentence says
+ * where to find it rather than describing something the reader cannot see.
+ */
 function caption(staged: boolean, withInflation: boolean): string {
-  const principal = staged
-    ? "kesikli çizgi o güne kadar yatırdığınız para"
-    : "kesikli çizgi sepetin dönem başındaki değeri";
+  if (staged) {
+    const principal = "kesikli çizgi o güne kadar yatırdığınız para";
+    if (!withInflation) {
+      return `Renkli çizgi sepetin piyasa değeri, ${principal}. Aradaki açıklık kazancınız.`;
+    }
+    return (
+      `Renkli çizgi sepetin piyasa değeri, ${principal}, üçüncü çizgi aynı paranın ` +
+      `yalnız enflasyon kadar artmış hali. Piyasa değeri enflasyon çizgisinin ` +
+      `üstündeyse sepet alım gücünü korumuş, altındaysa korumamış.`
+    );
+  }
 
   if (!withInflation) {
-    return `Renkli çizgi sepetin piyasa değeri, ${principal}. Aradaki açıklık ${
-      staged ? "kazancınız" : "değer artışı"
-    }.`;
+    return (
+      "Renkli çizgi sepetin piyasa değeri. Dönem başındaki değeri, grafiğin " +
+      "üzerine gelince kutuda yazıyor."
+    );
   }
 
   return (
-    `Renkli çizgi sepetin piyasa değeri, ${principal}, üçüncü çizgi aynı paranın ` +
-    `yalnız enflasyon kadar artmış hali. Piyasa değeri enflasyon çizgisinin ` +
-    `üstündeyse sepet alım gücünü korumuş, altındaysa korumamış.`
+    "Renkli çizgi sepetin piyasa değeri, ikinci çizgi aynı paranın yalnız " +
+    "enflasyon kadar artmış hali. Piyasa değeri enflasyon çizgisinin üstündeyse " +
+    "sepet alım gücünü korumuş, altındaysa korumamış. Dönem başındaki değeri, " +
+    "grafiğin üzerine gelince kutuda yazıyor."
   );
 }
 
@@ -410,21 +476,42 @@ interface TooltipEntry {
   value?: number;
   color?: string;
   dataKey?: string | number;
+  /** Recharts hands the whole row along with each series' own value. */
+  payload?: Record<string, number | string | undefined>;
 }
 
+/**
+ * The figures at the hovered week.
+ *
+ * `extra` is a series that is deliberately not drawn but still reported —
+ * the held basket's opening value. Recharts only puts rendered `<Line>`s in
+ * `payload`, so its value is read off the row that comes attached to the
+ * first entry instead. That is the whole reason the prop exists: a line
+ * removed from the plot should not take its number off the page with it.
+ */
 function ChartTooltip({
   active,
   label,
   payload,
+  extra,
+  scale,
 }: {
   active?: boolean;
   label?: string;
   payload?: TooltipEntry[];
+  extra?: { key: string; label: string; color: string };
+  scale?: Scale;
 }) {
   if (!active || !payload || payload.length === 0) return null;
 
+  const row = payload[0]?.payload;
+  const extraValue = extra ? row?.[extra.key] : undefined;
+
   return (
-    <div className="rounded-control border border-border bg-surface-raised px-4 py-3 text-caption shadow-lg">
+    // A fixed corner means the box no longer moves out of a pointer's way,
+    // so it must never be in one: `pointer-events-none` keeps it from
+    // swallowing a hover over the plot underneath it.
+    <div className="pointer-events-none w-72 rounded-control border border-border bg-surface-raised px-4 py-3 text-caption shadow-lg">
       <p className="text-label text-ink-muted">{label ? tarih(label) : ""}</p>
       <ul className="mt-2 space-y-1">
         {payload.map((entry) => (
@@ -435,12 +522,25 @@ function ChartTooltip({
               style={{ backgroundColor: entry.color }}
             />
             <span className="text-ink-muted">{entry.name}</span>
-            <span className="ml-auto tabular-nums">
+            <span className="ml-auto whitespace-nowrap tabular-nums">
               {typeof entry.value === "number" ? para(entry.value) : ""}
             </span>
           </li>
         ))}
+
+        {extra && typeof extraValue === "number" && (
+          // No colour dot: there is no line on the plot for it to match, and
+          // a swatch beside a figure nothing draws would send the reader
+          // looking for a line that is not there.
+          <li className="flex items-center gap-2 border-t border-border pt-1 text-ink">
+            <span className="text-ink-muted">{extra.label}</span>
+            <span className="ml-auto whitespace-nowrap tabular-nums">{para(extraValue)}</span>
+          </li>
+        )}
       </ul>
+      {scale === "log" && (
+        <p className="mt-2 text-ink-subtle">Logaritmik ölçek</p>
+      )}
     </div>
   );
 }

@@ -396,55 +396,6 @@
 }
 
 /* ====================================================================
-   Disclosure
-   ====================================================================
-   The technical panel is a native `<details>`, animated in CSS.
-
-   Native because the content has to be in the document whether or not any
-   JavaScript ran: these are the numbers behind the finding, and a panel that
-   is empty until a bundle arrives is a panel that is sometimes empty. The
-   browser also gives the keyboard behaviour, the accessible name and the
-   find-in-page expansion for free.
-
-   `::details-content` is what makes it open smoothly. `interpolate-size`
-   is what lets `block-size` animate to `auto`, which is the whole trick:
-   without it the only animatable end state is a pixel height nobody knows
-   in advance. Browsers without either simply snap open, which is the
-   correct thing to lose.
-   ==================================================================== */
-@layer utilities {
-  .disclosure {
-    interpolate-size: allow-keywords;
-  }
-
-  .disclosure::details-content {
-    block-size: 0;
-    overflow: hidden;
-    transition:
-      block-size 300ms var(--ease-out-soft),
-      content-visibility 300ms allow-discrete;
-  }
-
-  .disclosure[open]::details-content {
-    block-size: auto;
-  }
-
-  /* The marker is drawn by the summary itself, so the default triangle goes. */
-  .disclosure > summary::-webkit-details-marker {
-    display: none;
-  }
-  .disclosure > summary {
-    list-style: none;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .disclosure::details-content {
-      transition: none;
-    }
-  }
-}
-
-/* ====================================================================
    Arriving on scroll
    ====================================================================
    A result page is a column of sections a reader scrolls through once. Each

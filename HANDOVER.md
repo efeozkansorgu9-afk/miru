@@ -32,6 +32,31 @@ Delete a section from this file when its work is done.
 | 1.5b | Fetch window derived from the return periods + the CPI lag; four `HISTORY_MONTHS` untangled; `get_fund_history` deleted; stale result desaturated | `eeaaa28` |
 | 2.3 | `fund_returns` / `fund_prices` / `cpi_index`; period selector and chart on the fund page | `081c174` |
 | 2.5 | Straggler round in `jobs.weekly`: one retry pass over the `request_failed` codes, after the fetch loop and before compute | this round |
+| 2.6 | Neighbour rows are links; the preview is portalled. Fixes a live regression that cost the section both its preview and its navigation | this round |
+
+**The neighbour rows lost their preview and their navigation at once, and
+that was one bug rather than two.** The name was a `<button>` opening a card,
+and the only route to the fund was a link *inside* that card — so when the
+card stopped painting, twenty listed funds became unreachable. The row is
+the link now: the press works whether or not the preview does, and the 20
+internal links per page are in the markup rather than inside a
+`visibility: hidden` card. The card, with nothing left to press, takes
+`pointer-events: none`, which is what removed the hover bridge, the
+containment test on blur and the focus/click cancellation the old version
+needed.
+
+Why it stopped painting was **measured, and it was not what it looked like**:
+the card was in the DOM with `visibility: visible`, `opacity: 1` and a real
+320×246 box, clipped to nothing by the row's own `min-w-0 flex-1 truncate`
+span — `overflow: hidden` on a box 715×26. Not the stacking context; `z-40`
+could not have been raised out of it. See the note in `CLAUDE.md`.
+
+Verified with headless Chrome at 1280px and 390px, 17 checks: the preview is
+a child of `<body>` with no clipping ancestor and fully on screen, a press
+anywhere on the 48px row navigates (checked at the far right, over the
+coefficient), Tab reaches the row, focus opens the preview with
+`aria-describedby` pointing at it, Escape closes it and Enter navigates. No
+horizontal overflow at 390px.
 
 **The straggler round is the deploy's own finding, fixed.** Three
 full-universe runs on 2026-09-09 each lost a different set of funds to
@@ -152,13 +177,18 @@ those funds have no page, so nothing reads the rows — but the two writers
 should agree on what a snapshot contains. Pick one rule and apply it in
 both.
 
-**Move `InfoTip` and `NeighbourPopover` into portals.** Both are still
-`absolute … z-40` inside their sections, which violates the rule now written
-in CLAUDE.md: `Reveal` and `ScrollRise` each hold a permanent stacking
-context, so no z-index inside one is comparable with anything outside it.
-`DateInput`'s calendar and `FundSearch`'s list are the two that already
+**Move `InfoTip` into a portal.** It is still `absolute … z-40` inside its
+section, which violates the rule in CLAUDE.md. `DateInput`'s calendar,
+`FundSearch`'s list and the neighbour preview are the three that already
 comply — copy their shape (`createPortal` + floating-ui with
-`transform: false`, plus outside-press and Escape).
+`transform: false`, plus dismissal wiring).
+
+`NeighbourPopover` is done — see below — and what it turned up is worth
+carrying into this one: the card was invisible because the row's `truncate`
+span clipped it with `overflow: hidden`, not because of a stacking context.
+`InfoTip` may well be the same. **Measure which before touching it**: walk
+the ancestors for `overflow !== visible` and for a transform. `z-index` is
+the answer to neither.
 
 **Horizontal overflow at 390px, same cause.** With a result on screen the
 basket page measures `scrollWidth` 451 against `clientWidth` 375. The
@@ -183,6 +213,28 @@ reach 4.5:1 for its green figures at any opacity (the ceiling is 4.11 at
 `saturate(0)`); it currently passes only because those figures are 26px and
 so count as large text at a 3:1 threshold. Darken the token rather than
 working around it downstream.
+
+**There is no way to run the `weekly` cron on demand, so the deploy ran it
+in the API's container.** Railway has no "fire this cron now": `railway
+deployment redeploy --service weekly` produces a `SUCCESS` build with the
+container still at `0/1 running`, waiting for the next tick — a build, not a
+run, and no `job_runs` row. The four runs of 2026-09-09 were therefore
+started with `railway ssh --service miru`, detached under
+`start_new_session`, inside the process that serves the API.
+
+It worked and the margins were measured — peak 369 MiB on the ordinary runs
+and 509 MiB on the 27-failure one, against the container's 954 MiB — and the
+write is one transaction, so killing it rolls back. But the `weekly` service
+exists precisely so this does not run next to the API, and the arrangement
+has two sharp edges already hit once each: a `git push` mid-run redeploys
+`miru` and kills the job (31 minutes gone), and the finished process is
+reparented to PID 1, which does not reap it, so it lingers as a zombie and
+`os.kill(pid, 0)` keeps reporting it alive.
+
+Worth an hour to find the real trigger — the GraphQL `serviceInstanceUpdate`
+takes a `cronSchedule`, so nudging the schedule and putting it back is
+probably it — or to give the job a service that can be started on demand.
+Until then `DEPLOY.md` carries the workaround and its two edges.
 
 **Also open, from 3.5:** the search box says "2579 fon arasında arayın" but
 only ~1372 funds have pages. What happens when someone reaches a fund with

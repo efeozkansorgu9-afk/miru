@@ -30,7 +30,7 @@ import type { Neighbour } from "@/lib/api";
 import { oran, kisalt } from "@/lib/format";
 import { GRUP_ONIZLEME, KOVA_ETIKETLERI, acikGruplar, kovaGruplari } from "@/lib/fund";
 import type { KovaGrubu } from "@/lib/fund";
-import { NeighbourPopover } from "./neighbour-popover";
+import { NeighbourRow } from "./neighbour-popover";
 
 /** The one easing and duration everything on this page opens with. */
 const GECIS = { duration: 0.26, ease: [0.22, 1, 0.36, 1] as const };
@@ -172,9 +172,15 @@ function Fold({
    * panel merely grows underneath them — which is not a panel opening, it is
    * a box getting taller.
    *
-   * It has to be off once the panel is open, because a neighbour card opens
-   * downwards out of its row, and a row near the bottom of a group would
-   * have its card cut in half by the group's own edge.
+   * It has to be off once the panel is open, because the focus ring is an
+   * `outline` with a 2px offset, so it is drawn outside the row's box: on
+   * the first and last rows of a group that offset falls exactly on the
+   * group's own edge and a permanent clip would shave it off.
+   *
+   * It used to be off for a second reason — a neighbour's card opened
+   * downwards out of its row and a row near the bottom would have had it cut
+   * in half. That reason is gone: the card is rendered through a portal now
+   * and no longer has anything to escape from.
    *
    * Closing needs no state of its own: `acik` is already false on the frame
    * the animation starts, so the clip is back on before anything moves.
@@ -218,26 +224,34 @@ function Fold({
  */
 function Row({ komsu }: { komsu: Neighbour }) {
   return (
-    <li className="flex h-12 items-center gap-3 border-t border-border px-6 first:border-t-0 sm:gap-4">
-      <span className="w-12 shrink-0 font-mono text-label text-accent">
-        {komsu.fund.code}
-      </span>
+    // The padding and the row height moved onto the link inside, so the
+    // whole 48px strip is the press target rather than a word in the middle
+    // of it. The `li` keeps only the rule between rows.
+    <li className="border-t border-border first:border-t-0">
+      <NeighbourRow komsu={komsu}>
+        <span className="w-12 shrink-0 font-mono text-label text-accent">
+          {komsu.fund.code}
+        </span>
 
-      <span className="min-w-0 flex-1 truncate">
-        <NeighbourPopover komsu={komsu}>{kisalt(komsu.fund.name, 64)}</NeighbourPopover>
-      </span>
+        {/* Still truncating, and it still clips — but the preview it used to
+            clip is in a portal now, so all this clips is the text it was
+            written for. */}
+        <span className="min-w-0 flex-1 truncate text-body text-ink">
+          {kisalt(komsu.fund.name, 64)}
+        </span>
 
-      {/* Hidden below `sm` rather than shortened. The group heading already
-          names the bucket every row in it belongs to, so on a phone the
-          badge is the same word repeated down the column, and the space is
-          better spent on the fund's name. */}
-      <span className="hidden shrink-0 rounded-control border border-border bg-canvas-sunken px-2.5 py-1 text-label text-ink sm:inline">
-        {KOVA_ETIKETLERI[komsu.bucket]}
-      </span>
+        {/* Hidden below `sm` rather than shortened. The group heading already
+            names the bucket every row in it belongs to, so on a phone the
+            badge is the same word repeated down the column, and the space is
+            better spent on the fund's name. */}
+        <span className="hidden shrink-0 rounded-control border border-border bg-canvas-sunken px-2.5 py-1 text-label text-ink sm:inline">
+          {KOVA_ETIKETLERI[komsu.bucket]}
+        </span>
 
-      <span className="w-11 shrink-0 text-right text-caption tabular-nums text-ink-subtle">
-        {oran(komsu.correlation)}
-      </span>
+        <span className="w-11 shrink-0 text-right text-caption tabular-nums text-ink-subtle">
+          {oran(komsu.correlation)}
+        </span>
+      </NeighbourRow>
     </li>
   );
 }

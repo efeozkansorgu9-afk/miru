@@ -1,219 +1,222 @@
 "use client";
 
 /**
- * What a neighbour is, one press away from its name.
+ * A neighbour row: a link to that fund, and a preview of it under the cursor.
  *
- * The same three ways in as `InfoTip`, for the same reason: hover for a
- * mouse, focus for a keyboard, and a press for everything, which is the one
- * that makes it work under a thumb. A hover-only card would leave every
- * touch reader with a fund name that does nothing, and a `title` attribute
- * never appears on a phone at all.
+ * The row *is* the link. That is the whole shape of this component, and the
+ * two things that used to be wrong here both come from it not having been.
  *
- * Hover is bound to a mouse pointer specifically. A touch on the name fires
- * `pointerenter` too, and left ungated the card would open on touch down and
- * close again on the press it was already opening for.
+ * Before, the name was a `<button>` that opened a card, and the only way to
+ * reach the fund was a "Sayfasına git" link *inside* that card. So when the
+ * card stopped painting, the section lost both its preview and its
+ * navigation at once — twenty funds listed and no way to open any of them.
+ * A row that is a link cannot fail that way: the press works whether or not
+ * the preview does, and the 20 links per page that tie 1372 fund pages
+ * together are now in the markup rather than inside a `visibility: hidden`
+ * card.
  *
- * Four lines, then the way out of them. No chart: this opens over a list
- * someone is scanning, and it exists to answer "what is that one" — the size
- * of the fund, what it returned, and how much measurement is behind the
- * coefficient in the row. The link at the foot is the answer to the question
- * those four lines provoke, and it is also what ties the fund pages to each
- * other: without it every one of them is an island a crawler reaches only
- * from the outside.
+ * It also removes the reason the old wiring was so delicate. There is no
+ * button inside a link (which is invalid, and which a keyboard reaches
+ * twice), the card no longer has to be enterable by a mouse — so it takes
+ * `pointer-events: none` and can never eat the click it sits on top of —
+ * and the hover bridge, the containment test on blur and the focus/click
+ * cancellation are all gone with it.
  *
- * Unlike `InfoTip`, this card takes pointer events, and that one difference
- * is what the rest of the wiring below is for. A card the mouse cannot enter
- * is a card whose link cannot be clicked.
+ * **The card is rendered through a portal, and it has to be.** Measured on
+ * 2026-09-09: the card was in the DOM, `visibility: visible`, `opacity: 1`,
+ * with a real 320x246 box, and still invisible, because the row's own
+ * `min-w-0 flex-1 truncate` span clips it — `overflow: hidden` on a box
+ * 715x26. That span is there to shorten long fund titles and it clipped the
+ * absolutely positioned card along with the text.
  *
- * Only one is ever open: a press anywhere outside closes this one, and a
- * press on another name is outside this one.
+ * Note what that is *not*: it is not the stacking-context trap in
+ * `CLAUDE.md`. The `.scroll-rise` ancestor does hold a permanent stacking
+ * context, and it would have bitten next, but here `z-40` was never the
+ * problem — `overflow: hidden` clips regardless of z-index, so no number
+ * would have fixed it. The portal is the fix for both, which is why the rule
+ * is "put it in a portal" and not "raise the z-index".
+ *
+ * Touch gets the better half of the deal: a tap navigates instead of opening
+ * a card it then has to dismiss, and everything the card says is on the page
+ * it opens.
  */
 
+import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  useFloating,
+} from "@floating-ui/react-dom";
 import Link from "next/link";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { Neighbour } from "@/lib/api";
 import { korelasyon, paraKisa, sayi, yuzdeIsaretli } from "@/lib/format";
 import { gosterilecekGetiriler } from "@/lib/fund";
 import { fundHref } from "@/lib/site";
 
-/** Keep this much of the viewport clear on either side of the card. */
-const EDGE = 12;
-
-export function NeighbourPopover({
+export function NeighbourRow({
   komsu,
   children,
 }: {
   komsu: Neighbour;
-  /** The trigger's contents — the fund name as the row draws it. */
+  /** The row's contents — code, name, bucket and coefficient. */
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const wrap = useRef<HTMLSpanElement>(null);
-  const card = useRef<HTMLSpanElement>(null);
   const id = useId();
 
   /**
-   * Slide the card back on screen when centring would hang it off an edge.
+   * Anchored by floating-ui rather than by `position: absolute`, because in
+   * the body the card has no clipping ancestor to escape from and nothing to
+   * be painted behind. `autoUpdate` keeps it under the row while the page
+   * scrolls, which absolute positioning gave for free and a portal does not.
    *
-   * Measured rather than guessed, and written straight onto the node rather
-   * than held in state: the translate owns both the centring and the
-   * correction, because composing the two with a utility class would put the
-   * card half its own width to the left on exactly the screens where the
-   * correction fires. Same mechanism as `InfoTip`.
+   * `transform: false` for the same reason the search list uses it: the card
+   * animates its own opacity and a transform here would be one more writer
+   * of the same property. Positioning through `top`/`left` keeps them apart.
    */
-  useLayoutEffect(() => {
-    const el = card.current;
-    if (!el) return;
-    el.style.translate = "-50%";
-    if (!open) return;
+  const { refs, floatingStyles } = useFloating<HTMLAnchorElement>({
+    open,
+    placement: "bottom-start",
+    whileElementsMounted: autoUpdate,
+    transform: false,
+    middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
+  });
 
-    const box = el.getBoundingClientRect();
-    const over = box.right - (window.innerWidth - EDGE);
-    const under = EDGE - box.left;
-    const delta = over > 0 ? -over : under > 0 ? under : 0;
-    if (delta !== 0) el.style.translate = `calc(-50% + ${delta}px)`;
-  }, [open]);
-
-  // Escape closes, and so does a press anywhere else. Without the second one
-  // a card opened by touch has no way of being dismissed by touch. A press
-  // inside the card is not outside it, which is what lets the link be
-  // clicked rather than dismissing the thing it sits in.
+  // Escape closes it. There is no outside-press handler and no need for one:
+  // the card cannot be pressed, and anything that takes the pointer or the
+  // focus away from the row closes it already.
   useEffect(() => {
     if (!open) return;
-
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
     }
-    function onPointerDown(event: PointerEvent) {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
-    }
-
     document.addEventListener("keydown", onKey);
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("pointerdown", onPointerDown);
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
   return (
-    <span
-      ref={wrap}
-      className="relative inline-flex max-w-full"
-      // Hover lives on the wrapper, not on the name. The card is a
-      // descendant, so `pointerleave` does not fire when the mouse moves
-      // from the name into it — which is the only reason a mouse can reach
-      // the link. On the button these two would close the card the instant
-      // the pointer set off towards it.
-      onPointerEnter={(event) => event.pointerType === "mouse" && setOpen(true)}
-      onPointerLeave={(event) => event.pointerType === "mouse" && setOpen(false)}
-      // Focus moving from the name to the link inside the card is focus
-      // staying put, as far as this is concerned. Without the containment
-      // test the card would close on the very Tab that reaches its link.
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          setOpen(false);
+    <>
+      <Link
+        ref={refs.setReference}
+        href={fundHref(komsu.fund.code)}
+        aria-describedby={open ? id : undefined}
+        className="flex h-12 items-center gap-3 px-6 transition-colors hover:bg-canvas-sunken focus-visible:bg-canvas-sunken sm:gap-4"
+        // Hover is bound to a mouse. A touch fires `pointerenter` too, and
+        // opening a card on the way to a navigation nobody cancelled is a
+        // flash of something the reader did not ask for.
+        onPointerEnter={(event) =>
+          event.pointerType === "mouse" && setOpen(true)
         }
-      }}
-    >
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => setOpen((it) => !it)}
-        // A focus that arrived from a press must not open it: focus fires
-        // first, then the click toggles what focus just set, and the two
-        // cancel out. On a touch screen, where there is no hover to fall back
-        // on, that would mean the first tap on any row does nothing.
+        onPointerLeave={(event) =>
+          event.pointerType === "mouse" && setOpen(false)
+        }
+        // `:focus-visible` so a press does not also open it. A mouse press
+        // focuses the link, and a card appearing under a pointer that is
+        // already leaving for another page is noise.
         onFocus={(event) => {
           if (event.currentTarget.matches(":focus-visible")) setOpen(true);
         }}
-        className="max-w-full truncate text-left text-body text-ink underline decoration-border decoration-dotted underline-offset-4 transition-colors hover:text-accent hover:decoration-accent"
+        onBlur={() => setOpen(false)}
       >
         {children}
-      </button>
+      </Link>
 
-      {/* Always in the DOM and only made invisible, so it can be measured for
-          the clamp above. `invisible` rather than `opacity-0` alone is what
-          keeps the link out of the tab order and out of a screen reader
-          while the card is shut.
-
-          The padding is on this element and the box is on the one inside:
-          that is what puts the gap between the name and the card *inside*
-          the hover target, so a mouse crossing it never leaves the wrapper.
-          A margin here would reopen the hole. */}
-      <span
-        ref={card}
+      <Preview
         id={id}
-        className={`absolute left-1/2 top-full z-40 w-80 max-w-[min(20rem,calc(100vw-1.5rem))] pt-2 text-left font-sans text-caption font-normal normal-case tracking-normal transition-opacity duration-150 ease-out-soft motion-reduce:transition-none ${
-          open ? "opacity-100" : "invisible opacity-0"
-        }`}
-      >
-        <span className="block rounded-control border border-border bg-surface-raised px-4 py-3 shadow-lg">
-          {/* The full title, because the row truncates it and nothing a
-              reader might need should exist only in the shortened form. */}
-          <span className="block text-label text-ink text-pretty">
-            {komsu.fund.code} · {komsu.fund.name}
-          </span>
+        komsu={komsu}
+        open={open}
+        setFloating={refs.setFloating}
+        floatingStyles={floatingStyles}
+      />
+    </>
+  );
+}
 
-          {/* The house. It used to be the second line of every row in the
-              list; it belongs here, with the size and returns it is read
-              alongside, because two funds that overlap are usually two
-              houses selling the same thing and which houses is the part a
-              reader acts on. Not tabular, unlike the figures below it. */}
-          <span
-            className={`mt-1.5 block text-caption ${
-              komsu.fund.founder ? "text-ink-muted" : "text-ink-subtle"
-            }`}
-          >
-            {komsu.fund.founder ?? "Kurucusu belirtilmemiş"}
-          </span>
+function Preview({
+  id,
+  komsu,
+  open,
+  setFloating,
+  floatingStyles,
+}: {
+  id: string;
+  komsu: Neighbour;
+  open: boolean;
+  setFloating: (node: HTMLElement | null) => void;
+  floatingStyles: React.CSSProperties;
+}) {
+  // `createPortal` needs a real `document`, which the server render has not
+  // got. Tested directly rather than through a mounted flag: the closed card
+  // renders nothing on either side, so there is no hydration mismatch to
+  // avoid. The card is not in the server HTML at all now — it never carried
+  // anything a crawler needed, and what it used to carry (the link) is the
+  // row itself.
+  if (typeof document === "undefined" || !open) return null;
 
-          <span className="mt-2 block space-y-1 text-caption text-ink-muted tabular-nums">
-            <GetiriSatirlari komsu={komsu} />
-            <span className="block">
-              Yatırımcı:{" "}
-              {komsu.fund.investor_count === null
-                ? "—"
-                : sayi(komsu.fund.investor_count)}{" "}
-              · Büyüklük:{" "}
-              {komsu.fund.total_assets === null
-                ? "—"
-                : paraKisa(komsu.fund.total_assets)}
-            </span>
-            <span className="block">
-              Güven aralığı: {aralik(komsu)} · {komsu.n_weeks} hafta
-            </span>
-          </span>
+  return createPortal(
+    <div
+      id={id}
+      role="tooltip"
+      ref={setFloating}
+      style={floatingStyles}
+      // `pointer-events: none` is what makes the rest of this simple. The
+      // card sits over a link and has nothing to press, so it must not be
+      // able to take a press, block one, or trigger a hover of its own.
+      className="pointer-events-none z-50 w-80 max-w-[calc(100vw-1.5rem)] text-left font-sans text-caption font-normal normal-case tracking-normal"
+    >
+      <div className="rounded-control border border-border bg-surface-raised px-4 py-3 shadow-lg">
+        {/* The full title, because the row truncates it and nothing a reader
+            might need should exist only in the shortened form. */}
+        <p className="text-label text-ink text-pretty">
+          {komsu.fund.code} · {komsu.fund.name}
+        </p>
 
-          {/* A real client-side navigation, so moving between two funds does
-              not reload the app. It also gives the 1372 pages links to each
-              other, which is the difference between a section a crawler can
-              walk and 1372 pages it has to be told about one at a time. */}
-          <Link
-            href={fundHref(komsu.fund.code)}
-            className="mt-3 block border-t border-border pt-2.5 text-label text-accent underline-offset-4 hover:underline"
-          >
-            Sayfasına git →
-          </Link>
-        </span>
-      </span>
-    </span>
+        {/* The house. Two funds that overlap are usually two houses selling
+            the same thing, and which houses is the part a reader acts on. */}
+        <p
+          className={`mt-1.5 text-caption ${
+            komsu.fund.founder ? "text-ink-muted" : "text-ink-subtle"
+          }`}
+        >
+          {komsu.fund.founder ?? "Kurucusu belirtilmemiş"}
+        </p>
+
+        <div className="mt-2 space-y-1 text-caption text-ink-muted tabular-nums">
+          <GetiriSatirlari komsu={komsu} />
+          <p>
+            Yatırımcı:{" "}
+            {komsu.fund.investor_count === null
+              ? "—"
+              : sayi(komsu.fund.investor_count)}{" "}
+            · Büyüklük:{" "}
+            {komsu.fund.total_assets === null
+              ? "—"
+              : paraKisa(komsu.fund.total_assets)}
+          </p>
+          <p>
+            Güven aralığı: {aralik(komsu)} · {komsu.n_weeks} hafta
+          </p>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
 /**
  * Two return windows, and one line when there are none.
  *
- * Two, not all of them. There are four periods now and this is a hover card
- * beside a name, so it takes the shortest and the longest the neighbour
- * actually has — the recent picture and the long one, which is the pair that
- * answers "is this fund like the one I am reading about". The rest are one
- * click away on that fund's own page, where the selector is.
+ * Two, not all of them. There are four periods now and this is a card beside
+ * a name, so it takes the shortest and the longest the neighbour actually
+ * has — the recent picture and the long one, which is the pair that answers
+ * "is this fund like the one I am reading about". The rest are one press
+ * away on that fund's own page, where the selector is.
  *
- * A window with neither figure is dropped rather than printed as two dashes;
- * a fund with no window at all still gets a line, because a card that
+ * A fund with no window at all still gets a line, because a card that
  * silently loses lines reads as though it failed to load.
  */
 function GetiriSatirlari({ komsu }: { komsu: Neighbour }) {
@@ -222,13 +225,13 @@ function GetiriSatirlari({ komsu }: { komsu: Neighbour }) {
     usable.length > 2 ? [usable[0], usable[usable.length - 1]] : usable;
 
   if (rows.length === 0) {
-    return <span className="block">Getirisi hesaplanamadı.</span>;
+    return <p>Getirisi hesaplanamadı.</p>;
   }
 
   return (
     <>
       {rows.map((row) => (
-        <span key={row.months} className="block">
+        <p key={row.months}>
           {/* No window on these lines. Every fund's is the same one — it is
               anchored to the last published CPI month, not to the fund — so
               printing it here would repeat the returns section above four
@@ -237,7 +240,7 @@ function GetiriSatirlari({ komsu }: { komsu: Neighbour }) {
           {row.months} ay:{" "}
           {row.nominal === null ? "—" : yuzdeIsaretli(row.nominal)} nominal ·{" "}
           {row.real === null ? "—" : yuzdeIsaretli(row.real)} reel
-        </span>
+        </p>
       ))}
     </>
   );

@@ -49,7 +49,7 @@ from src import precompute as pc
 from src import scenarios as scen
 from src import windows as win
 from src import universe as uni
-from src.data import _fetch_all
+from src.data import FAILURE_REQUEST_FAILED, _fetch_all
 from src.tefas_client import TEFASClient
 
 logger = logging.getLogger("jobs.weekly")
@@ -61,6 +61,113 @@ FETCH_DELAY = 0.5
 #: re-running the write path without spending twenty minutes on TEFAS again;
 #: a real scheduled run fetches fresh and never touches this.
 PRICE_CACHE = Path("data/cache/weekly_prices.parquet")
+
+#: How long to let a blip pass before the straggler round goes back out.
+#:
+#: **The wait has to outlast the outage it is trying to survive.** That is
+#: the whole rule, and it is the only thing to check if this number is ever
+#: revisited. The failures this round exists for arrive in bursts: on
+#: 2026-09-09 one run lost eight funds inside **78 seconds**, and the next
+#: lost four in a shorter window. A wait shorter than that is fine for codes
+#: in the middle of the alphabet — the loop takes minutes to reach the end,
+#: so the outage is long over by the time the round starts — and useless for
+#: the case that matters, a burst that hits the *last* codes of the run.
+#: There the round begins seconds after the failure and retries inside the
+#: same outage, so it fails precisely when it is the only thing that could
+#: have helped.
+#:
+#: 90 seconds clears the longest burst actually measured, with margin. It
+#: costs about 5% of a 31-minute run, once, and only on runs that had
+#: failures at all — a clean run never sleeps here.
+STRAGGLER_SETTLE_SECONDS = 90.0
+
+
+def _retry_stragglers(
+    long_df: pd.DataFrame,
+    failures: dict[str, dict],
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    client: TEFASClient,
+) -> tuple[pd.DataFrame, dict[str, dict]]:
+    """One more pass over the codes whose requests never completed.
+
+    The main loop fetches the universe once, and whatever failed stays
+    failed. That is fine when a failure means something about the fund, and
+    wrong when it does not: `request_failed` is the absence of a measurement,
+    the one failure kind whose own advice is "try again shortly". Left alone
+    it becomes an exclusion, and an excluded fund has no page for a week.
+
+    Observed twice on 2026-09-09 against the live universe. One run lost
+    NFF, NHA, NHP, NJR, NJY, NKT, NOI and NRG — every one to
+    `RemoteDisconnected`, all eight inside 78 seconds. The next run recovered
+    all eight and lost KDL, KDO, KEB and KED instead. Nothing was wrong with
+    any of the twelve: the endpoint dropped connections for a minute and the
+    alphabet decided who was under the cursor. `KEB` has 344,731 investors.
+
+    So the round is bounded by the failures rather than by the universe —
+    twelve funds is about twelve seconds against a half-hour fetch — and it
+    only ever retries the kind of failure that says nothing about the fund.
+    `no_rows` and `no_valid_prices` are findings and are left exactly alone.
+
+    A code that fails again here is excluded honestly: it has now been asked
+    for twice, in two different minutes, and did not answer either time.
+    """
+    stragglers = sorted(
+        code
+        for code, failure in failures.items()
+        if failure.get("observed") == FAILURE_REQUEST_FAILED
+    )
+
+    # Logged even when there is nothing to do. A round that announces itself
+    # only when it has work is a round nobody can prove ran on the runs that
+    # matter most — the clean ones.
+    if not stragglers:
+        logger.info("Straggler round: no unmeasured codes, nothing to retry")
+        return long_df, failures
+
+    logger.info(
+        "Straggler round: retrying %d code(s) whose requests did not complete: %s",
+        len(stragglers),
+        ", ".join(stragglers),
+    )
+    time.sleep(STRAGGLER_SETTLE_SECONDS)
+
+    retry_df, retry_raw = _fetch_all(stragglers, start, end, client, FETCH_DELAY)
+
+    merged = dict(failures)
+    recovered, still_unmeasured, now_answered = [], [], []
+    for code in stragglers:
+        observed = retry_raw.get(code, {}).get("observed")
+        if observed is None:
+            # Prices came back. The code is not a failure of any kind now,
+            # so the entry goes rather than being downgraded.
+            merged.pop(code, None)
+            recovered.append(code)
+            continue
+        merged[code] = retry_raw[code]
+        if observed == FAILURE_REQUEST_FAILED:
+            still_unmeasured.append(code)
+        else:
+            # It answered this time and had nothing usable. That is a
+            # finding about the fund, which is strictly better than the
+            # nothing we had before, even though it still excludes it.
+            now_answered.append(code)
+
+    logger.info(
+        "Straggler round: %d/%d recovered%s; %d still unmeasured%s; %d answered but empty%s",
+        len(recovered),
+        len(stragglers),
+        f" ({', '.join(recovered)})" if recovered else "",
+        len(still_unmeasured),
+        f" ({', '.join(still_unmeasured)})" if still_unmeasured else "",
+        len(now_answered),
+        f" ({', '.join(now_answered)})" if now_answered else "",
+    )
+
+    if not retry_df.empty:
+        long_df = pd.concat([long_df, retry_df], ignore_index=True)
+
+    return long_df, merged
 
 
 def _fetch_prices(
@@ -96,6 +203,11 @@ def _fetch_prices(
         "Fetching %d funds, %s to %s", len(codes), start.date(), end.date()
     )
     long_df, failures = _fetch_all(codes, start, end, client, FETCH_DELAY)
+
+    # After the main loop and before anything computes on the result: a code
+    # that never answered is not evidence about a fund, and this is the last
+    # point at which asking again is still cheap.
+    long_df, failures = _retry_stragglers(long_df, failures, start, end, client)
 
     if reuse:
         PRICE_CACHE.parent.mkdir(parents=True, exist_ok=True)

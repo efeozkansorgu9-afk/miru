@@ -57,11 +57,28 @@ because the schema arriving and the data arriving are two events — see
 `DEPLOY.md`.
 
 **Never run the full weekly job on a development machine.** It is ~1374 live
-TEFAS requests and TEFAS throttles hard: one attempt took eight and a half
-hours and never finished, with individual requests stalling for up to 53
-minutes (`tefas-crawler` has no effective overall timeout, so the retry in
-`fetch_history` cannot bound it — it only fires once a request actually
-fails). It belongs on Railway, where it already runs on a cron.
+TEFAS requests. It belongs on Railway, where it already runs on a cron.
+
+The reason is **the laptop, not TEFAS**. A run measured at eight and a half
+hours "and never finishing", with requests stalling up to 53 minutes, was a
+machine that went to sleep mid-fetch: a suspended process makes no progress,
+and the long stalls and read timeouts on waking are suspended connections
+dropping, not an endpoint refusing. The "two hours for 30 funds" that came
+out of it is not a measurement of anything — the job was not running for
+most of those two hours. Before it slept, that same run had reached 1213
+funds in about an hour.
+
+The real figure, measured on Railway across three full-universe runs
+(`job_runs` 1-3, 2026-09-07 and 2026-09-09): **29 to 31 minutes**, about
+1.05 funds a second, steady from first fund to last. The 2026-09-09 run was
+1874.7s for 1375 funds — 1825.7s of fetch, 23.3s of compute — with a peak of
+369 MiB.
+
+So do not add backoff, shrink the universe, or abandon a long run on the
+theory that TEFAS is throttling. It throttles far less than this file used
+to claim. If a run really does slow down, measure it before concluding
+anything. Locally, wrap it in `caffeinate -i` and the problem does not
+arise.
 
 For local work, use a slice:
 
@@ -269,7 +286,11 @@ The rule generalises what `DateInput`'s calendar already did for its own reasons
 - Nothing in `api/` imports it and it registers no startup hook. A web process running this on boot would spend twenty minutes against TEFAS before serving a request, and do it again per worker and per restart.
 - `database_url()` is called on the first line, before TEFAS is touched, so a misconfigured job dies in a second rather than after the fetch.
 - Reuses `data._fetch_all` for the price loop — it already paces requests, logs per fund and records a failure per code instead of raising. What the job does differently is downstream: it never inner-joins.
-- A fund whose prices fail is written to `funds` with `included = false` and a closed-set `exclusion`, and never enters the matrix. Excluded funds are absent from the neighbour table, not filtered out of it afterwards.
+- `_retry_stragglers(...)` - One more pass over the codes whose requests never completed, **after the fetch loop and before anything computes**. `request_failed` is the absence of a measurement, not a claim about a fund, and left alone it becomes an exclusion — which costs that fund its page until the next Monday. Only that kind is re-asked: `no_rows` and `no_valid_prices` are findings and are never touched. Recovered codes leave `failures` entirely and their prices are concatenated in; a code that fails twice, minutes apart, is excluded honestly. Bounded by the failures rather than the universe, so it is seconds against a half-hour fetch.
+- `STRAGGLER_SETTLE_SECONDS` = 90, and the rule behind it is that **the wait must outlast the outage it is trying to survive**. The bursts measured ran to 78 seconds. Anything shorter works only for codes in the middle of the alphabet, where the loop takes minutes to reach the end anyway; it does nothing for a burst that hits the *last* codes of a run, where the round starts seconds later and retries inside the same outage — failing exactly when it is the only thing that could have helped. 90 clears the longest measured burst with margin, costs ~5% of a 31-minute run, and is paid only by runs that actually had failures: the round returns before the sleep when there is nothing to retry, which `tests/straggler_test.py` asserts by timing it.
+- The round **logs on every run, including the clean ones** ("no unmeasured codes, nothing to retry"). A round that speaks only when it has work cannot be shown to have run on the runs where it matters, and the line is how a reader tells "the retry worked" from "the retry never fired".
+- Measured, not assumed: three full-universe runs on 2026-09-09 each lost a *different* set to short `RemoteDisconnected` bursts — eight funds in 78 seconds, then four, then a third set — and the second run recovered all eight of the first's. Nothing was wrong with any of them; the endpoint drops connections for a minute and the alphabet picks the victims. This is why re-running never converged and why the round, not another run, is the fix. `tests/straggler_test.py` covers it against a stub client.
+- A fund whose prices fail is written to `funds` with `included = false` and a closed-set `exclusion`, and never enters the matrix. Excluded funds are absent from the neighbour table, not filtered out of it afterwards. **Known wrong for one case**: a code that survives the straggler round still unmeasured is written as `no_weekly_returns`, which is a claim about the fund rather than the absence of one. Phase 3.
 - The CPI is loaded **first, before any price is fetched**, because the fetch window is derived from the CPI cap. `--months` defaults to None, meaning "work it out"; passing the longest return period alone is exactly what used to blank every 36-month return. `STORED_PERIODS` = (12, 36) is the subset of `pc.RETURN_PERIODS` the flat-column `funds` schema has room for — the other two are computed and dropped deliberately rather than vanishing into `executemany`, which ignores dict keys it has no placeholder for. It disappears when the `fund_returns` table lands.
 - `_check_scenarios()` runs **after** the snapshot is written, because it is about the frontend rather than about this snapshot and must never be the reason a good snapshot fails to land. Drift goes to the log, to stdout inside a ruled block (a warning that scrolls past 1374 fetch lines is the same as no check), and into `job_runs.detail` when the run has nothing else to put there. It never touches `status`: `fetch_last_run` reads the last row with status `ok`, and an example basket drifting must not make a good snapshot look unpublished. A check that itself throws is recorded as a note, not a failed run. `--skip-scenarios` turns it off for repeated runs against a slice.
 - `--limit`, `--reuse-prices` and `--dry-run` are development aids. `--reuse-prices` caches the fetched frame *and its failures* so a re-run's exclusion reasons match the run that actually fetched.

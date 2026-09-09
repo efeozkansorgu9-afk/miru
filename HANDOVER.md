@@ -16,6 +16,32 @@ Delete a section from this file when its work is done.
 | 2.1, 2.2, 2.4 | Finding lifted into the fund page hero; neighbours as 48px rows; weekly scenario-drift check | `776a980` |
 | 1.5b | Fetch window derived from the return periods + the CPI lag; four `HISTORY_MONTHS` untangled; `get_fund_history` deleted; stale result desaturated | `eeaaa28` |
 | 2.3 | `fund_returns` / `fund_prices` / `cpi_index`; period selector and chart on the fund page | `081c174` |
+| 2.5 | Straggler round in `jobs.weekly`: one retry pass over the `request_failed` codes, after the fetch loop and before compute | this round |
+
+**The straggler round is the deploy's own finding, fixed.** Three
+full-universe runs on 2026-09-09 each lost a different set of funds to
+short bursts of `RemoteDisconnected` — eight (NFF, NHA, NHP, NJR, NJY, NKT,
+NOI, NRG, all inside 78 seconds), then four (KDL, KDO, KEB, KED), then a
+third set. The second run recovered all eight of the first run's casualties,
+which is the proof that nothing was wrong with any of them: the endpoint
+drops connections for a minute and the alphabet decides who is under the
+cursor. `KEB` has 344,731 investors and ₺5.45bn; `KDL` has ₺25.4bn.
+
+`_retry_stragglers` re-asks only the `request_failed` codes, which is the one
+failure kind that is the *absence* of a finding rather than a claim about a
+fund. It is bounded by the failures rather than the universe — twelve funds
+is about twelve seconds against a half-hour fetch — and `no_rows` /
+`no_valid_prices` are never re-asked. It logs a line on **every** run,
+including the clean ones ("no unmeasured codes, nothing to retry"), because
+a round that only speaks when it has work cannot be shown to have run on the
+runs where it matters. `tests/straggler_test.py` covers all six cases
+against a stub client and touches nothing live.
+
+Re-running the job was never going to fix this. Each run is a fresh lottery
+over whoever is being fetched during the next blip, not noise around a mean,
+so the counts do not converge — which is also why the acceptance criterion
+for this deploy stopped being a number and became "are the excluded funds
+exactly VPD, VPE and ICM?".
 
 The period list is **settled**: `6 ay | 1 yıl | 3 yıl | 4 yıl`, in
 `web/lib/windows.json`. There is no five-year option and this is not an open
@@ -41,10 +67,15 @@ Verified against a real 19-fund slice, whole path, both themes, 390px and
 
 **Not verified:**
 
-- **The full 1374-fund universe has never been run against this schema.**
-  The attempt was abandoned after eight and a half hours. The local database
-  holds only the 19-fund slice, so `generateStaticParams` produces 19 pages
-  locally, not 1372. First real run belongs on Railway — see `DEPLOY.md`.
+- ~~The full 1374-fund universe has never been run against this schema.~~
+  **Done on 2026-09-09, on Railway, against production.** Three runs, each
+  31 minutes for 1375 funds (~1.05 funds/sec, peak 369 MiB). The schema
+  holds at full scale: `fund_prices` lands exactly 214.0 rows per fund on a
+  complete W-FRI grid, `cpi_index` 72 months, `fund_returns` four rows per
+  fund with 845-847 of them carrying a 36-month figure — the number
+  `DEPLOY.md` says must not be zero. All four example baskets still produce
+  their tiers. The eight-and-a-half-hour figure that made this look
+  impossible was a sleeping laptop, not TEFAS; see `CLAUDE.md`.
 - **"The inflation line stops at the last published CPI month" is satisfied
   by construction, not observably.** The chart is capped at the selected
   period's return window, and that window already ends at the last CPI
@@ -62,6 +93,37 @@ Verified against a real 19-fund slice, whole path, both themes, 390px and
   `lib/fund-chart.ts`; mentioned here so nobody "fixes" it as a bug.
 
 ## Phase 3 queue
+
+These came out of the 2026-09-09 production deploy. The straggler round that
+answers most of it is already written (see Done); what is left below is the
+half of the bug it does not cover.
+
+**A fund that was never measured is written as `no_weekly_returns`.** The
+fetch layer gets this right and says so in the log — `recorded as
+unmeasured, not as an empty fund` — and then the job layer throws the
+distinction away: all eight of the funds above landed in `funds` with
+`included = false` and `exclusion = 'no_weekly_returns'`. That is a claim
+about the fund ("it has no weekly returns") standing in for the absence of
+any claim at all ("the request did not complete").
+
+**This is the same class of bug as the P0 fixed in `dd474b8`** — passing a
+failed request off as a finding about a fund — surviving in a second place
+because that fix stopped at the cache and the exclusion mapping was never
+looked at. `request_failed` needs its own `exclusion` value, distinct from
+every kind that describes the fund.
+
+The straggler round takes most of the sting out of this: a code only reaches
+the exclusion mapping after failing twice, minutes apart, so the label is
+wrong far less often. It is still wrong when it happens, and the fix is
+small. It stays near the top for that reason and not because it is urgent.
+
+**`_return_rows` does not filter by `included`; `_price_rows` does.** So
+`fund_returns` carries rows for excluded funds: after the 2026-09-09 run it
+held 5464 rows against 1364 included funds, the extra eight being VPD and
+VPE, which were fetched fine but produced no weekly returns. Harmless —
+those funds have no page, so nothing reads the rows — but the two writers
+should agree on what a snapshot contains. Pick one rule and apply it in
+both.
 
 **Move `InfoTip` and `NeighbourPopover` into portals.** Both are still
 `absolute … z-40` inside their sections, which violates the rule now written

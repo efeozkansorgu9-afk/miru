@@ -164,6 +164,7 @@ def load_universe(
     with_profiles: bool = True,
     profile_delay: float = PROFILE_DELAY,
     limit: Optional[int] = None,
+    only: Optional[Iterable[str]] = None,
 ) -> list[FundProfile]:
     """Every fund tradeable on TEFAS, with what TEFAS says about it.
 
@@ -178,6 +179,14 @@ def load_universe(
     after, so a development run costs a handful of requests instead of
     fourteen hundred. It is not a filter — the codes it keeps are simply
     the first ones alphabetically.
+
+    `only` *is* a filter, and it is a development aid for the same reason:
+    `limit` cannot produce a slice that contains a named fund, so verifying
+    behaviour that needs specific funds — one too young for the longest
+    window, one whose prices stop near the CPI cap — meant fetching the
+    whole universe. Applied before the profile calls, like `limit`. Codes not
+    in the registry are dropped silently: this is a development flag, and the
+    registry is the authority on what exists.
     """
     client = client or TEFASClient()
     crawler = client._crawler
@@ -208,6 +217,20 @@ def load_universe(
 
     if not funds:
         raise RuntimeError("TEFAS listed no tradeable funds at all")
+
+    # Both narrow the universe before the profile calls, so a development
+    # run costs a handful of requests rather than fourteen hundred.
+    if only is not None:
+        wanted = {str(c).strip().upper() for c in only}
+        missing = wanted - set(funds)
+        if missing:
+            logger.warning(
+                "--codes: not in the registry, skipped: %s",
+                ", ".join(sorted(missing)),
+            )
+        funds = {code: funds[code] for code in sorted(wanted & set(funds))}
+        if not funds:
+            raise RuntimeError("None of the requested codes is a tradeable fund")
 
     if limit is not None:
         keep = sorted(funds)[:limit]

@@ -436,6 +436,50 @@ def _load(request: sc.AnalyzeRequest) -> dl.FundDataset:
     return ds
 
 
+def _weekly_series(rows: list[dict]) -> Optional[sc.WeeklySeriesOut]:
+    """The stored weekly grid as a base-100 index, or None.
+
+    Based at the first week that has a price, not at the first row: a fund
+    whose series opens with a blank week would otherwise divide by null and
+    lose the whole series. The blanks stay blank — nothing is filled in, and
+    nothing is dropped either, because the payload's dates are implied from
+    the start plus a weekly step and a dropped week would shift every later
+    point.
+    """
+    if not rows:
+        return None
+
+    base = next((r["price"] for r in rows if r["price"]), None)
+    if not base:
+        return None
+
+    return sc.WeeklySeriesOut(
+        start=rows[0]["week_end"],
+        values=[
+            None if r["price"] is None else round(100.0 * r["price"] / base, 4)
+            for r in rows
+        ],
+    )
+
+
+def _cpi_series(rows: list[dict]) -> Optional[sc.CPISeriesOut]:
+    """The stored CPI index, or None when the table is empty.
+
+    Index levels as published, not rebased: the page rebases to whichever
+    period the reader picked, and only ratios inside one series are ever
+    used. `latest_month` travels with it because that is where the inflation
+    line has to stop — the index is a level for a whole month and is never
+    carried into the weeks after the last published one.
+    """
+    if not rows:
+        return None
+    return sc.CPISeriesOut(
+        start_month=rows[0]["month"],
+        latest_month=rows[-1]["month"],
+        values=[float(r["index_value"]) for r in rows],
+    )
+
+
 def _analyse_matrix(
     prices: pd.DataFrame,
     request: sc.AnalyzeRequest,
@@ -751,6 +795,8 @@ def fund_page(code: str) -> sc.FundPageResponse:
                 detail=f"No fund {code!r} in the last run",
             )
         neighbours = db.fetch_neighbours(conn, code)
+        weekly = db.fetch_weekly_prices(conn, code)
+        cpi_rows = db.fetch_cpi(conn)
         last_run = db.fetch_last_run(conn)
 
     high = [
@@ -797,6 +843,8 @@ def fund_page(code: str) -> sc.FundPageResponse:
     )
 
     return sc.FundPageResponse(
+        series=_weekly_series(weekly),
+        cpi=_cpi_series(cpi_rows),
         fund=sc.FundIdentity.from_row(row),
         high=high,
         low=low,

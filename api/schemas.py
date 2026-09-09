@@ -896,18 +896,12 @@ class FundIdentity(BaseModel):
 
     @classmethod
     def from_row(cls, row: dict) -> "FundIdentity":
-        returns = [
-            FundReturnOut(
-                months=m,
-                nominal=row.get(f"return_{m}m_nominal"),
-                real=row.get(f"return_{m}m_real"),
-                nominal_unavailable=row.get(f"return_{m}m_nominal_unavailable"),
-                real_unavailable=row.get(f"return_{m}m_real_unavailable"),
-                window_start=row.get(f"return_{m}m_window_start"),
-                window_end=row.get(f"return_{m}m_window_end"),
-            )
-            for m in (12, 36)
-        ]
+        # `row["returns"]` is what `db._FUND_COLUMNS` aggregated out of
+        # `fund_returns`, already ordered by window. There is no list of
+        # periods written here on purpose: which windows exist is decided in
+        # `src.windows.RETURN_PERIODS` and carried in the data, so adding one
+        # does not need an edit in this file.
+        returns = [FundReturnOut(**r) for r in row.get("returns") or []]
         return cls(
             code=row["code"],
             name=row["name"],
@@ -949,6 +943,57 @@ class DataFreshness(BaseModel):
     cpi_latest_month: Optional[_date] = None
 
 
+class WeeklySeriesOut(BaseModel):
+    """One fund's weekly value line, as an index rather than as lira.
+
+    ## Why an index and not prices
+
+    A chart re-bases to whichever period the reader picked, so the absolute
+    price is never drawn. Sending it would mean shipping the same information
+    with four more significant figures per point.
+
+    ## Why the dates are implied
+
+    `values[i]` is the week ending `start + 7*i` days. Sending 214 ISO dates
+    beside 214 numbers would roughly triple the payload of every one of the
+    1372 pages to say something the reader can count.
+
+    That is only safe because the grid is **complete**: `precompute.
+    weekly_price_grid` reindexes onto every W-FRI between the first and last
+    week, so a week the fund did not price is a `null` in `values`, not a
+    missing entry. A dropped week would shift every later point by seven days
+    and misdate the series. A null is also not filled in — a gap reads as a
+    gap, which is the rule the rest of this codebase follows.
+    """
+
+    #: The week the series starts on: the Friday `values[0]` belongs to.
+    start: _date
+    #: Always 7. Stated rather than assumed, so a reader of the payload does
+    #: not have to know the resampling convention to plot it.
+    step_days: int = 7
+    #: Base 100 at the first non-null week. Nulls are weeks with no price.
+    values: list[Optional[float]] = Field(default_factory=list)
+
+
+class CPISeriesOut(BaseModel):
+    """The published CPI, for the inflation line.
+
+    Monthly, because that is how it exists. The index is a level for the
+    whole month and is **never** interpolated to a day or carried past the
+    last published month, so the line a page draws from this is a step that
+    stops — not a curve, and not a flat continuation into the weeks TÜİK has
+    not priced yet.
+
+    `values[i]` is the month starting `start_month` plus `i` months.
+    """
+
+    start_month: _date
+    #: The last month with a published index. The inflation line ends here.
+    latest_month: _date
+    #: Index levels as published, in the order the months run.
+    values: list[float] = Field(default_factory=list)
+
+
 class FundPageResponse(BaseModel):
     """Everything one fund page draws, in one payload.
 
@@ -964,6 +1009,11 @@ class FundPageResponse(BaseModel):
     neighbours_unavailable: Optional[
         Literal["no_measurable_pairs", "fund_not_priced"]
     ] = None
+    #: The chart's two lines, precomputed by the weekly job and embedded into
+    #: the page at build time. Null when the run stored no series for this
+    #: fund, which is a fund with no chart rather than a page with an error.
+    series: Optional[WeeklySeriesOut] = None
+    cpi: Optional[CPISeriesOut] = None
     freshness: DataFreshness
 
 

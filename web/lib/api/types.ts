@@ -494,11 +494,49 @@ export interface DataFreshness {
   cpi_latest_month: string | null;
 }
 
+/**
+ * One fund's weekly value line, as an index rather than as lira.
+ *
+ * `values[i]` is the week ending `start` plus `step_days * i`. The dates are
+ * implied because sending 214 ISO strings beside 214 numbers would roughly
+ * triple the payload of all 1372 pages to say something countable.
+ *
+ * That is only safe because the grid is complete: a week the fund did not
+ * price is `null` in `values`, never a missing entry. A dropped week would
+ * shift every later point by seven days and misdate the series. A null is
+ * not filled in either — a gap reads as a gap.
+ */
+export interface WeeklySeries {
+  /** The Friday `values[0]` belongs to. */
+  start: string;
+  /** Always 7, stated rather than assumed. */
+  step_days: number;
+  /** Base 100 at the first priced week. */
+  values: (number | null)[];
+}
+
+/**
+ * The published CPI, for the inflation line.
+ *
+ * Monthly, because that is how it exists. `values[i]` is the month starting
+ * `start_month` plus `i` months, as published and not rebased. The index is
+ * a level for a whole month: it is never interpolated to a day, and never
+ * carried past `latest_month`, which is where the inflation line stops.
+ */
+export interface CPISeries {
+  start_month: string;
+  latest_month: string;
+  values: number[];
+}
+
 export interface FundPageResponse {
   fund: FundIdentity;
   high: Neighbour[];
   low: Neighbour[];
   neighbours_unavailable: NeighboursUnavailable | null;
+  /** The chart's two lines. Null when the run stored no series for the fund. */
+  series: WeeklySeries | null;
+  cpi: CPISeries | null;
   freshness: DataFreshness;
 }
 

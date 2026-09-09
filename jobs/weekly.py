@@ -57,10 +57,6 @@ logger = logging.getLogger("jobs.weekly")
 #: Seconds between price requests. `src.data` uses the same pacing.
 FETCH_DELAY = 0.5
 
-#: The return periods the current `funds` schema has columns for. A subset of
-#: `pc.RETURN_PERIODS` until the `fund_returns` table lands; see `_fund_rows`.
-STORED_PERIODS = (12, 36)
-
 #: Where `--reuse-prices` parks the fetched frame. A development aid for
 #: re-running the write path without spending twenty minutes on TEFAS again;
 #: a real scheduled run fetches fresh and never touches this.
@@ -132,7 +128,6 @@ def _fund_rows(
     stats: dict[str, pc.FundSeriesStats],
     included: set[str],
     failures: dict[str, dict],
-    returns: Optional[dict[str, dict[int, pc.FundReturn]]] = None,
 ) -> list[dict]:
     """One row per fund in the universe, included or not.
 
@@ -141,11 +136,9 @@ def _fund_rows(
     snapshot of, and there would be no way to tell a fund that vanished
     from a fund nobody asked about.
     """
-    returns = returns or {}
     rows = []
     for profile in profiles:
         stat = stats.get(profile.code)
-        fund_returns = returns.get(profile.code, {})
         row = {
             "code": profile.code,
             "name": profile.name,
@@ -163,31 +156,96 @@ def _fund_rows(
             if profile.code in included
             else _why_excluded(profile.code, stats, failures),
         }
-        # Only the periods the `funds` table actually has columns for. The
-        # return periods are now (6, 12, 36, 48) and the flat-column schema
-        # holds two of them, so the other two are computed and dropped here
-        # rather than silently vanishing into `executemany`, which ignores
-        # dict keys it has no placeholder for. Phase 2.3 replaces this with a
-        # `fund_returns` table keyed on the period, at which point this loop
-        # goes back to `pc.RETURN_PERIODS` and this constant disappears.
-        for months in STORED_PERIODS:
-            r = fund_returns.get(months)
-            row[f"return_{months}m_nominal"] = r.nominal if r else None
-            row[f"return_{months}m_real"] = r.real if r else None
-            row[f"return_{months}m_nominal_unavailable"] = (
-                r.nominal_unavailable if r else pc.RETURN_NO_HISTORY
-            )
-            row[f"return_{months}m_real_unavailable"] = (
-                r.real_unavailable if r else pc.RETURN_NO_HISTORY
-            )
-            row[f"return_{months}m_window_start"] = (
-                r.window_start.date() if r and r.window_start is not None else None
-            )
-            row[f"return_{months}m_window_end"] = (
-                r.window_end.date() if r and r.window_end is not None else None
-            )
         rows.append(row)
     return rows
+
+
+def _return_rows(returns: dict[str, dict[int, pc.FundReturn]]) -> list[dict]:
+    """One row per fund per period, for `fund_returns`.
+
+    Every period in `pc.RETURN_PERIODS` gets a row for every fund, including
+    the ones with no figure: the row carries the code saying why instead. A
+    missing row and a row saying `insufficient_history` are different
+    answers, and only the second one distinguishes "this fund is too young"
+    from "the job never got to this fund".
+
+    This replaces twelve columns per period on `funds`. Two periods were
+    twelve columns hardcoded in four places while this loop already ran over
+    `RETURN_PERIODS`; four would have been twenty-four.
+    """
+    rows = []
+    for code, per_period in returns.items():
+        for months in pc.RETURN_PERIODS:
+            r = per_period.get(months)
+            rows.append(
+                {
+                    "fund_code": code,
+                    "months": months,
+                    "nominal": r.nominal if r else None,
+                    "real": r.real if r else None,
+                    "nominal_unavailable": (
+                        r.nominal_unavailable if r else pc.RETURN_NO_HISTORY
+                    ),
+                    "real_unavailable": (
+                        r.real_unavailable if r else pc.RETURN_NO_HISTORY
+                    ),
+                    "window_start": (
+                        r.window_start.date()
+                        if r and r.window_start is not None
+                        else None
+                    ),
+                    "window_end": (
+                        r.window_end.date()
+                        if r and r.window_end is not None
+                        else None
+                    ),
+                }
+            )
+    return rows
+
+
+def _price_rows(grid: pd.DataFrame, included: set[str]) -> list[dict]:
+    """The weekly price grid as rows, blanks included.
+
+    A NaN becomes an explicit NULL rather than a skipped row. The grid is
+    uniform by construction and the page implies its dates from the first
+    week plus a weekly step, so a dropped week would shift every later point
+    and misdate the series. Only `included` funds are written: an excluded
+    fund has no page to draw a chart on.
+    """
+    rows = []
+    for code in grid.columns:
+        if code not in included:
+            continue
+        column = grid[code]
+        for week, price in column.items():
+            rows.append(
+                {
+                    "fund_code": code,
+                    "week_end": week.date(),
+                    "price": None if pd.isna(price) else float(price),
+                }
+            )
+    return rows
+
+
+def _cpi_rows(cpi) -> list[dict]:
+    """The CPI index as rows for `cpi_index`, or nothing when there is none.
+
+    `month` is the first day of the month, matching how the index is
+    published and stored: a level for the whole month, never interpolated to
+    a day.
+    """
+    if cpi is None:
+        return []
+    return [
+        {
+            "month": pd.Timestamp(month).date(),
+            "index_value": float(value),
+            "series": cpi.series_code,
+        }
+        for month, value in cpi.monthly.items()
+    ]
 
 
 def _why_excluded(
@@ -252,6 +310,7 @@ def run(
     reuse_prices: bool = False,
     dry_run: bool = False,
     skip_scenarios: bool = False,
+    only: Optional[list[str]] = None,
 ) -> int:
     """One end-to-end run. Returns a process exit code.
 
@@ -305,7 +364,12 @@ def run(
         logger.info("Loading universe...")
         if limit:
             logger.warning("--limit %d: development run, not a full universe", limit)
-        profiles = uni.load_universe(client=client, limit=limit)
+        if only:
+            logger.warning(
+                "--codes %s: development run, not a full universe",
+                ",".join(only),
+            )
+        profiles = uni.load_universe(client=client, limit=limit, only=only)
         universe_size = len(profiles)
         codes = [p.code for p in profiles]
         logger.info("Universe: %d tradeable funds", universe_size)
@@ -355,8 +419,11 @@ def run(
             compute_seconds,
         )
 
-        fund_rows = _fund_rows(profiles, stats, included, failures, returns)
+        fund_rows = _fund_rows(profiles, stats, included, failures)
         correlation_rows = [vars(row) for row in neighbours]
+        return_rows = _return_rows(returns)
+        price_rows = _price_rows(pc.weekly_price_grid(long_df), included)
+        cpi_rows = _cpi_rows(cpi)
 
         if dry_run:
             logger.warning("--dry-run: computed everything, wrote nothing")
@@ -364,7 +431,13 @@ def run(
         else:
             with db.connect(url) as conn:
                 db.ensure_schema(conn)
-                db.replace_snapshot(conn, fund_rows, correlation_rows)
+                db.replace_snapshot(
+                    conn, fund_rows, correlation_rows, return_rows, price_rows
+                )
+                # Same transaction, but not part of the swap: the index is a
+                # fact about the country, so it is merged in rather than
+                # truncated with the fund universe.
+                db.upsert_cpi(conn, cpi_rows)
             status = "ok"
 
         # After the write, because it is about the frontend rather than about
@@ -445,6 +518,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Compute everything, write nothing but the job_runs row.",
     )
     parser.add_argument(
+        "--codes",
+        help=(
+            "Development only: run just these fund codes, comma separated. "
+            "Unlike --limit, which can only take the first N alphabetically, "
+            "this can produce a slice containing named funds — which is what "
+            "verifying period behaviour needs (a fund too young for the "
+            "longest window, a fund whose prices stop near the CPI cap)."
+        ),
+    )
+    parser.add_argument(
         "--skip-scenarios",
         action="store_true",
         help=(
@@ -466,6 +549,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             limit=args.limit,
             reuse_prices=args.reuse_prices,
             skip_scenarios=args.skip_scenarios,
+            only=(
+                [c.strip().upper() for c in args.codes.split(",") if c.strip()]
+                if args.codes
+                else None
+            ),
             dry_run=args.dry_run,
         )
     except db.DatabaseNotConfigured as exc:

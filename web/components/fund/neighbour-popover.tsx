@@ -204,15 +204,22 @@ export function NeighbourPopover({
 }
 
 /**
- * One line per return window, and one line when there are none.
+ * Two return windows, and one line when there are none.
  *
- * A window with neither figure is dropped rather than printed as two
- * dashes; a fund with no window at all still gets a line, because a card
- * that silently loses two of its four lines reads as though it failed to
- * load.
+ * Two, not all of them. There are four periods now and this is a hover card
+ * beside a name, so it takes the shortest and the longest the neighbour
+ * actually has — the recent picture and the long one, which is the pair that
+ * answers "is this fund like the one I am reading about". The rest are one
+ * click away on that fund's own page, where the selector is.
+ *
+ * A window with neither figure is dropped rather than printed as two dashes;
+ * a fund with no window at all still gets a line, because a card that
+ * silently loses lines reads as though it failed to load.
  */
 function GetiriSatirlari({ komsu }: { komsu: Neighbour }) {
-  const rows = gosterilecekGetiriler(komsu.fund.returns);
+  const usable = gosterilecekGetiriler(komsu.fund.returns);
+  const rows =
+    usable.length > 2 ? [usable[0], usable[usable.length - 1]] : usable;
 
   if (rows.length === 0) {
     return <span className="block">Getirisi hesaplanamadı.</span>;

@@ -565,6 +565,52 @@ def _cpi_cap(cpi) -> Optional[pd.Timestamp]:
     return pd.Period(cpi.latest_month, freq="M").end_time
 
 
+def weekly_price_grid(long_df: pd.DataFrame) -> pd.DataFrame:
+    """A week × fund matrix of **prices** on a complete W-FRI grid.
+
+    The chart's counterpart to `weekly_return_matrix`, and it shares that
+    function's conventions deliberately: W-FRI, the last observed price in
+    each week, never forward filled. A figure quoted under a chart and the
+    line above it have to come off the same resampling or they disagree by a
+    few days at the ends.
+
+    Two differences from the return matrix, both because this is drawn rather
+    than correlated.
+
+    Prices, not returns: a line has to be re-based to whichever period the
+    reader picked, and that needs levels.
+
+    A **complete** grid over the union of weeks, so a week no fund priced is
+    still a row and a week one fund missed is an explicit NaN in that fund's
+    column. The page implies its dates from the first week plus a weekly
+    step, which is only safe if the step never varies; a dropped week would
+    shift every later point and misdate the whole series. It is not forward
+    filled either — a gap has to read as a gap, the same rule
+    `rolling_correlation` follows.
+    """
+    if long_df.empty:
+        return pd.DataFrame(index=pd.DatetimeIndex([], name="date"))
+
+    columns: dict[str, pd.Series] = {}
+    for code, group in long_df.groupby("fund_code", sort=True):
+        prices = group.set_index("date")["price"].sort_index().astype("float64")
+        prices = prices[~prices.index.duplicated(keep="last")]
+        weekly = prices.resample("W-FRI").last()
+        if not weekly.empty:
+            columns[code] = weekly
+
+    if not columns:
+        return pd.DataFrame(index=pd.DatetimeIndex([], name="date"))
+
+    matrix = pd.DataFrame(columns)
+    # Reindex onto every W-FRI between the earliest and latest week any fund
+    # priced, so the step really is uniform for every column.
+    full = pd.date_range(matrix.index.min(), matrix.index.max(), freq="W-FRI")
+    matrix = matrix.reindex(full)
+    matrix.index.name = "date"
+    return matrix
+
+
 def fund_returns(
     prices: pd.Series,
     cpi=None,

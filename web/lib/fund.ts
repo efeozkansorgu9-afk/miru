@@ -302,7 +302,11 @@ function olcumSebebi(
   const kod = returns.find((r) => r.nominal_unavailable)?.nominal_unavailable;
   if (!kod) return bas;
 
-  return `${bas} 12 ve 36 aylık getirisi de hesaplanamadı: ${GETIRI_YOK[kod]}.`;
+  // No period list written into the sentence. There are four of them now and
+  // which ones exist is `RETURN_PERIODS`' business; naming them here would be
+  // a second place to update and, when a fund has none at all, the count is
+  // not the useful part anyway.
+  return `${bas} Getirisi de hesaplanamadı: ${GETIRI_YOK[kod]}.`;
 }
 
 /**

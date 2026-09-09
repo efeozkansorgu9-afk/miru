@@ -155,7 +155,11 @@ export default async function FonSayfasi({ params }: PageProps<"/fon/[kod]">) {
           </Reveal>
 
           <ScrollRise>
-            <Returns returns={page.fund.returns} />
+            <Returns
+              returns={page.fund.returns}
+              series={page.series}
+              cpi={page.cpi}
+            />
           </ScrollRise>
         </div>
       </Column>

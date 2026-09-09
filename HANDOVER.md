@@ -1,5 +1,20 @@
 # Handover — UI/UX round, as of 2026-09-09
 
+## Phase 2.3 is deployed
+
+Shipped to production on 2026-09-09. The database holds the snapshot from
+`job_runs` id 6: 1375 funds in the universe, **1372 included**, 24,320
+correlation pairs, 5,496 return rows, 293,608 weekly prices on a complete
+W-FRI grid at exactly 214.0 rows per fund, and 72 months of CPI. 850 funds
+carry a 36-month nominal figure — the number `DEPLOY.md` says must not be
+zero. All four example baskets still produce their tiers.
+
+Deploy order used, and why it is not the obvious one, is in `DEPLOY.md`,
+which was rewritten afterwards to match what the deploy actually needed.
+The short version: Vercel's Ignored Build Step held the frontend still while
+the schema, the code and the data landed in that order, and the frontend
+built last, once, against a complete database.
+
 Where the UI/UX pass got to, what is verified, and what is queued. Written
 into the repo rather than left in a conversation, because the next session
 starts cold.
@@ -42,6 +57,18 @@ over whoever is being fetched during the next blip, not noise around a mean,
 so the counts do not converge — which is also why the acceptance criterion
 for this deploy stopped being a number and became "are the excluded funds
 exactly VPD, VPE and ICM?".
+
+**It won on its first real run.** `job_runs` id 6, 2026-09-09, with the
+round deployed: NBZ failed all three attempts at 13:30:31, the main loop
+ended at 13:38:20, the round slept its 90 seconds and re-asked at 13:39:50,
+and logged `1/1 recovered (NBZ); 0 still unmeasured; 0 answered but empty`.
+`included` came out at **1372** — better than any of the three runs before
+it (1364, 1368, 1345) and, more to the point, better than the best of them
+*could* have been. The excluded set was exactly VPD, VPE and ICM.
+
+The failure count is still a lottery — 8, then 4, then 27, then 1 — but the
+**result** no longer is. That is the whole value of the round: it decouples
+what the snapshot contains from how TEFAS happened to be feeling.
 
 The period list is **settled**: `6 ay | 1 yıl | 3 yıl | 4 yıl`, in
 `web/lib/windows.json`. There is no five-year option and this is not an open

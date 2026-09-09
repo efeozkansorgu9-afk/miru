@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Where things stand
+
+`HANDOVER.md` carries what the current round of work has and has not
+verified, and the phase 3 queue. `DEPLOY.md` carries the ordered steps for
+shipping the phase 2.3 schema without a week-long visible regression.
+
 ## Project Overview
 
 miru is the brand; **Sepet Analizi** is the tool in this repository. It tells someone which of the funds in their basket are really one holding. It fetches historical prices from the TEFAS (Turkey Electronic Fund Trading Platform) API, analyses a basket in Python (`src/`), serves that over HTTP (`api/`), and presents it in a Next.js frontend (`web/`), which is the only user interface. The notebooks in `notebooks/` are for exploration, not part of the product.
@@ -46,7 +52,36 @@ python -m jobs.weekly --dry-run           # compute everything, write nothing
 ```
 
 There is no migration step: `jobs.weekly` creates its own schema on every
-run and is safe to run twice.
+run and is safe to run twice. **Deploying a schema change is still ordered**,
+because the schema arriving and the data arriving are two events — see
+`DEPLOY.md`.
+
+**Never run the full weekly job on a development machine.** It is ~1374 live
+TEFAS requests and TEFAS throttles hard: one attempt took eight and a half
+hours and never finished, with individual requests stalling for up to 53
+minutes (`tefas-crawler` has no effective overall timeout, so the retry in
+`fetch_history` cannot bound it — it only fires once a request actually
+fails). It belongs on Railway, where it already runs on a cron.
+
+For local work, use a slice:
+
+```bash
+# Named funds — the only way to get a slice containing specific codes.
+python -m jobs.weekly --codes AFO,HBF,TI2,YAY,AKU,TIE,APT,AP5 --skip-scenarios
+# Or the first N of the universe alphabetically.
+python -m jobs.weekly --limit 70 --skip-scenarios
+```
+
+A slice of 60-80 is enough to verify the fund page. Include: the scenario
+funds, at least one fund with under four years of history (so a disabled
+period is on screen), and enough funds that neighbour lists are not empty.
+Wrap anything long in `caffeinate -i` so the machine does not sleep
+mid-fetch. Note that a slice **replaces** the snapshot: `replace_snapshot`
+truncates, so after a slice run the local database holds only those funds.
+
+`GAL` is not in the tradeable registry (`islem=1`) and so is never in the
+universe — see the note under `src/universe.py`. `--codes GAL` warns and
+skips rather than failing.
 
 There is no linter or build system configured. The only test is `tests/smoke_test.py`.
 

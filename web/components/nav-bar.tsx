@@ -4,23 +4,33 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Column } from "@/components/column";
-import { SITE, TOOL, sectionLabel } from "@/lib/site";
+import { FUND_BASE, SITE, TOOL, sectionLabel } from "@/lib/site";
 import { ThemeToggle } from "./theme-toggle";
 
 /**
  * One entry of the top navigation.
  *
- * The list is empty for now. The structure is here so that adding a page is
- * one line in `NAV_ITEMS` rather than a rewrite of this component, and so the
- * bar is already laid out for the day it holds something.
+ * The two areas of the site. The fund pages had no way in from inside it —
+ * they were reached from a search engine or from each other, and someone on
+ * the basket tool could not get to one at all — so the bar now names both.
  */
 export interface NavItem {
   /** Turkish. Every visible string in this product is written on this side. */
   label: string;
+  /** What a phone shows, where the full label and the lockup do not both fit. */
+  short: string;
   href: string;
 }
 
-export const NAV_ITEMS: NavItem[] = [];
+export const NAV_ITEMS: NavItem[] = [
+  { label: TOOL.name, short: "Sepet", href: TOOL.href },
+  { label: "Fonlar", short: "Fonlar", href: FUND_BASE },
+];
+
+/** The item whose area the reader is in: its own path or anything under it. */
+function isCurrent(item: NavItem, pathname: string): boolean {
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+}
 
 export function NavBar() {
   // Prerendered into the HTML of every page and re-read on navigation
@@ -53,32 +63,39 @@ export function NavBar() {
           <span className="shrink-0 font-display text-lead font-bold tracking-[-0.04em]">
             {SITE.brand}
           </span>
+          {/* Below `sm` the rule and the section give way to the menu,
+              whose current item already says where the reader is. */}
           <span
             aria-hidden
-            className="h-4 w-px shrink-0 bg-border-strong"
+            className="hidden h-4 w-px shrink-0 bg-border-strong sm:block"
           />
           {/* The section, not the tool. A fund page is under the brand but
               not inside the basket tool, and `lib/site` owns which word goes
               here so it cannot drift from the paths it describes. */}
-          <span className="truncate text-body font-medium tracking-tight text-ink-muted">
+          <span className="hidden truncate text-body font-medium tracking-tight text-ink-muted sm:inline">
             {sectionLabel(pathname)}
           </span>
         </Link>
 
-        <div className="flex items-center gap-2">
-          {NAV_ITEMS.length > 0 && (
-            <nav aria-label="Ana menü" className="mr-2 hidden items-center gap-1 sm:flex">
-              {NAV_ITEMS.map((item) => (
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <nav aria-label="Ana menü" className="flex items-center gap-0.5 sm:mr-2 sm:gap-1">
+            {NAV_ITEMS.map((item) => {
+              const current = isCurrent(item, pathname);
+              return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="rounded-control px-3 py-2 text-label text-ink-muted transition-colors hover:bg-canvas-sunken hover:text-ink"
+                  aria-current={current ? "page" : undefined}
+                  className={`rounded-control px-2.5 py-2 text-label transition-colors hover:bg-canvas-sunken hover:text-ink sm:px-3 ${
+                    current ? "font-medium text-ink" : "text-ink-muted"
+                  }`}
                 >
-                  {item.label}
+                  <span className="sm:hidden">{item.short}</span>
+                  <span className="hidden sm:inline">{item.label}</span>
                 </Link>
-              ))}
-            </nav>
-          )}
+              );
+            })}
+          </nav>
           <ThemeToggle />
         </div>
       </Column>

@@ -36,7 +36,7 @@ let inflight: Promise<SearchableFund[]> | null = null;
  * locale maps the dotted capital to a plain "i", which is what a person
  * typing on a Turkish keyboard produces.
  */
-function fold(text: string): string {
+export function fold(text: string): string {
   return text.toLocaleLowerCase("tr");
 }
 

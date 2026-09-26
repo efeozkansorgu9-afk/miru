@@ -931,6 +931,10 @@ class NeighbourOut(BaseModel):
     n_weeks: int
     bucket: Bucket
     fund: FundIdentity
+    #: The neighbour's last `NEIGHBOUR_RECENT_WEEKS` weeks, base 100, for the
+    #: small chart in its card. Optional so a page built against an API that
+    #: predates it still renders — the card simply draws no chart.
+    recent: Optional["WeeklySeriesOut"] = None
 
 
 class DataFreshness(BaseModel):

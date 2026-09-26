@@ -470,6 +470,38 @@ def fetch_weekly_prices(conn: psycopg.Connection, code: str) -> list[dict]:
         return [{"week_end": r[0], "price": r[1]} for r in cur.fetchall()]
 
 
+def fetch_recent_prices(
+    conn: psycopg.Connection, codes: list[str], weeks: int
+) -> dict[str, list[dict]]:
+    """The last `weeks` weeks of several funds' series, gaps included.
+
+    For the neighbour cards: twenty funds in one query rather than twenty.
+    The window ends at the latest week any of them has, which is the run's
+    last week for every fund still pricing, so the series share an end and
+    the card can lay them against the subject fund's own line by date.
+    Blank weeks come back as NULL rows for the same reason as
+    `fetch_weekly_prices`: the dates are implied from a start and a step.
+    """
+    if not codes or weeks <= 0:
+        return {}
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT fund_code, week_end, price FROM fund_prices
+            WHERE fund_code = ANY(%s)
+              AND week_end > (
+                  SELECT max(week_end) FROM fund_prices WHERE fund_code = ANY(%s)
+              ) - make_interval(weeks => %s)
+            ORDER BY fund_code, week_end
+            """,
+            (codes, codes, weeks),
+        )
+        out: dict[str, list[dict]] = {}
+        for code, week_end, price in cur.fetchall():
+            out.setdefault(code, []).append({"week_end": week_end, "price": price})
+        return out
+
+
 def fetch_cpi(conn: psycopg.Connection) -> list[dict]:
     """The stored CPI index, oldest month first.
 

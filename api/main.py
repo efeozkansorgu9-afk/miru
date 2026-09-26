@@ -436,7 +436,16 @@ def _load(request: sc.AnalyzeRequest) -> dl.FundDataset:
     return ds
 
 
-def _weekly_series(rows: list[dict]) -> Optional[sc.WeeklySeriesOut]:
+#: How much of each neighbour's history its card draws. A year: long enough
+#: that the two lines have weeks to agree or disagree over, short enough that
+#: twenty of them add a few kilobytes to a page rather than tens. Not the
+#: window the correlation was measured on, and the card says which it is.
+NEIGHBOUR_RECENT_WEEKS = 52
+
+
+def _weekly_series(
+    rows: list[dict], digits: int = 4
+) -> Optional[sc.WeeklySeriesOut]:
     """The stored weekly grid as a base-100 index, or None.
 
     Based at the first week that has a price, not at the first row: a fund
@@ -456,7 +465,7 @@ def _weekly_series(rows: list[dict]) -> Optional[sc.WeeklySeriesOut]:
     return sc.WeeklySeriesOut(
         start=rows[0]["week_end"],
         values=[
-            None if r["price"] is None else round(100.0 * r["price"] / base, 4)
+            None if r["price"] is None else round(100.0 * r["price"] / base, digits)
             for r in rows
         ],
     )
@@ -796,6 +805,11 @@ def fund_page(code: str) -> sc.FundPageResponse:
             )
         neighbours = db.fetch_neighbours(conn, code)
         weekly = db.fetch_weekly_prices(conn, code)
+        recent = db.fetch_recent_prices(
+            conn,
+            [n["fund"]["code"] for n in neighbours],
+            NEIGHBOUR_RECENT_WEEKS,
+        )
         cpi_rows = db.fetch_cpi(conn)
         last_run = db.fetch_last_run(conn)
 
@@ -807,6 +821,7 @@ def fund_page(code: str) -> sc.FundPageResponse:
             n_weeks=n["n_weeks"],
             bucket=n["bucket"],
             fund=sc.FundIdentity.from_row(n["fund"]),
+            recent=_weekly_series(recent.get(n["fund"]["code"], []), digits=2),
         )
         for n in neighbours
         if n["direction"] == "high"
@@ -819,6 +834,7 @@ def fund_page(code: str) -> sc.FundPageResponse:
             n_weeks=n["n_weeks"],
             bucket=n["bucket"],
             fund=sc.FundIdentity.from_row(n["fund"]),
+            recent=_weekly_series(recent.get(n["fund"]["code"], []), digits=2),
         )
         for n in neighbours
         if n["direction"] == "low"

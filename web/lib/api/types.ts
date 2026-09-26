@@ -483,6 +483,11 @@ export interface Neighbour {
   n_weeks: number;
   bucket: Bucket;
   fund: FundIdentity;
+  /**
+   * The neighbour's last year of weeks, base 100, for the chart in its card.
+   * Optional: a page built against an API that predates it draws no chart.
+   */
+  recent?: WeeklySeries | null;
 }
 
 /** When the numbers on the page were computed. */

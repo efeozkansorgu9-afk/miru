@@ -10,6 +10,7 @@ import { ScrollRise } from "@/components/scroll-rise";
 import { BasketBridge, Footnote } from "@/components/fund/footer";
 import { Identity } from "@/components/fund/identity";
 import { NeighbourList } from "@/components/fund/neighbour-list";
+import { SubjectProvider } from "@/components/fund/neighbour-popover";
 import { Returns } from "@/components/fund/returns";
 import {
   bulgu,
@@ -176,7 +177,9 @@ export default async function FonSayfasi({ params }: PageProps<"/fon/[kod]">) {
                 leads the page. What is left is only the list the verdict
                 was read off. */}
             <ScrollRise>
-              <NeighbourList komsular={komsular} />
+              <SubjectProvider code={page.fund.code} series={page.series}>
+                <NeighbourList komsular={komsular} />
+              </SubjectProvider>
             </ScrollRise>
 
             <ScrollRise>

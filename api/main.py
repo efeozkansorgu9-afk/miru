@@ -52,6 +52,7 @@ from src import market as mk
 from src import style as sty
 from src import fx as fxm
 from src import risk as rk
+from src import fees as fz
 from src import precompute as pc
 from src.tefas_client import TEFASClient
 
@@ -398,6 +399,7 @@ def analyze(request: sc.AnalyzeRequest) -> sc.AnalyzeResponse:
         real_return=real,
         rolling_status=rolling_status,
         rolling_correlation=rolling,
+        fees={c: f for c in request.codes if (f := _fee_out(c, _fees())) is not None},
     )
 
 
@@ -845,6 +847,14 @@ def _market(conn) -> sc.MarketResponse:
     def risk_of(codes: list[str]) -> Optional[float]:
         return round(sum(shares.get(x, 0.0) for x in codes), 4) if shares else None
 
+    fees = _fees()
+
+    def fee_range(codes: list[str]) -> tuple[Optional[float], Optional[float]]:
+        # Over the members with a reported non-zero fee: a zero may be a gap
+        # in TEFAS's data, and a range starting at it would say "free".
+        rates = [fees[x].rate for x in codes if x in fees and fees[x].rate > 0]
+        return (round(min(rates), 6), round(max(rates), 6)) if rates else (None, None)
+
     clusters = []
     for i, c in enumerate(g.clusters):
         cats = [meta.get(x, {}).get("category") for x in c.codes]
@@ -865,6 +875,8 @@ def _market(conn) -> sc.MarketResponse:
                 top_category_share=round(share, 4) if share is not None else None,
                 total_assets=size_of(c.codes),
                 risk_share=risk_of(c.codes),
+                fee_low=fee_range(c.codes)[0],
+                fee_high=fee_range(c.codes)[1],
                 style=style_out(group_styles.get(i)),
             )
         )
@@ -943,6 +955,44 @@ def _usdtry() -> Optional[pd.Series]:
     return rate
 
 
+_FEE_CACHE: dict[str, dict[str, fz.Fee]] = {}
+_FEE_FAILED_AT: list[float] = []
+
+
+def _fees() -> dict[str, fz.Fee]:
+    """Every fund's applied fee from TEFAS, fetched once a day.
+
+    Two requests cover the universe. A failure returns an empty dict — the
+    fee is an extra, and every page works without it — and is retried after
+    `_FX_RETRY_SECONDS` rather than tomorrow, for the same reason the rate
+    is: a static build asks for every fund at once.
+    """
+    key = pd.Timestamp.today().strftime("%Y-%m-%d")
+    if key in _FEE_CACHE:
+        return _FEE_CACHE[key]
+    if _FEE_FAILED_AT and time.monotonic() - _FEE_FAILED_AT[-1] < _FX_RETRY_SECONDS:
+        return {}
+    try:
+        fees = fz.load_fees(TEFASClient()._crawler)
+    except Exception as exc:  # noqa: BLE001 - display data, never fatal
+        logger.warning("Fees unavailable: %s", exc)
+        _FEE_FAILED_AT[:] = [time.monotonic()]
+        return {}
+    _FEE_CACHE.clear()
+    _FEE_CACHE[key] = fees
+    return fees
+
+
+def _fee_out(code: str, fees: dict[str, fz.Fee]) -> Optional[sc.FeeOut]:
+    fee = fees.get(code.upper())
+    return sc.FeeOut(rate=round(fee.rate, 6), kind=fee.kind) if fee else None
+
+
+def _with_fee(identity: sc.FundIdentity, fees: dict[str, fz.Fee]) -> sc.FundIdentity:
+    identity.fee = _fee_out(identity.code, fees)
+    return identity
+
+
 def _with_risk(identity: sc.FundIdentity, weekly: list[dict]) -> sc.FundIdentity:
     """Add volatility, drawdown and the dollar return to each return window."""
     if not weekly:
@@ -1002,6 +1052,7 @@ def fund_page(code: str) -> sc.FundPageResponse:
         cpi_rows = db.fetch_cpi(conn)
         last_run = db.fetch_last_run(conn)
 
+    fees = _fees()
     high = [
         sc.NeighbourOut(
             correlation=n["correlation"],
@@ -1009,7 +1060,7 @@ def fund_page(code: str) -> sc.FundPageResponse:
             ci_high=n["ci_high"],
             n_weeks=n["n_weeks"],
             bucket=n["bucket"],
-            fund=sc.FundIdentity.from_row(n["fund"]),
+            fund=_with_fee(sc.FundIdentity.from_row(n["fund"]), fees),
             recent=_weekly_series(recent.get(n["fund"]["code"], []), digits=2),
         )
         for n in neighbours
@@ -1022,7 +1073,7 @@ def fund_page(code: str) -> sc.FundPageResponse:
             ci_high=n["ci_high"],
             n_weeks=n["n_weeks"],
             bucket=n["bucket"],
-            fund=sc.FundIdentity.from_row(n["fund"]),
+            fund=_with_fee(sc.FundIdentity.from_row(n["fund"]), fees),
             recent=_weekly_series(recent.get(n["fund"]["code"], []), digits=2),
         )
         for n in neighbours
@@ -1050,7 +1101,7 @@ def fund_page(code: str) -> sc.FundPageResponse:
     return sc.FundPageResponse(
         series=_weekly_series(weekly),
         cpi=_cpi_series(cpi_rows),
-        fund=_with_risk(sc.FundIdentity.from_row(row), weekly),
+        fund=_with_fee(_with_risk(sc.FundIdentity.from_row(row), weekly), fees),
         high=high,
         low=low,
         neighbours_unavailable=unavailable,

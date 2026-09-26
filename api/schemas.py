@@ -831,6 +831,11 @@ class AnalyzeResponse(BaseModel):
     rolling_status: RollingStatus
     rolling_correlation: Optional[RollingCorrelation]
 
+    #: The applied fee of every requested code TEFAS's fee list carries.
+    #: Empty when the list could not be fetched; a missing code is unknown,
+    #: not free.
+    fees: dict[str, "FeeOut"] = Field(default_factory=dict)
+
 
 # ----------------------------------------------------------------------
 # Fund pages
@@ -888,6 +893,19 @@ class FundReturnOut(BaseModel):
     usd: Optional[float] = None
 
 
+class FeeOut(BaseModel):
+    """The fee a fund applies, as TEFAS publishes it (`src.fees`).
+
+    `rate` is annual, as a fraction. `kind` is `management` for securities
+    funds and `operating` for pension funds, whose field is the fund
+    operating expense; the page names the two differently. A rate of 0 is
+    passed on as reported, and may be a gap in TEFAS's data.
+    """
+
+    rate: float
+    kind: Literal["management", "operating"]
+
+
 class FundIdentity(BaseModel):
     """What a fund is. Every field but the code and name may be absent.
 
@@ -904,6 +922,8 @@ class FundIdentity(BaseModel):
     total_assets: Optional[float] = None
     investor_count: Optional[int] = None
     risk_value: Optional[int] = None
+    #: Null when TEFAS's fee list was unreachable or did not carry the code.
+    fee: Optional[FeeOut] = None
     returns: list[FundReturnOut] = Field(default_factory=list)
 
     @classmethod
@@ -1091,6 +1111,9 @@ class MarketClusterOut(BaseModel):
     #: variance (Euler decomposition, all shares summing to 1). Null when
     #: no fund sizes were known.
     risk_share: Optional[float] = None
+    #: Lowest and highest applied fee among members with a non-zero one.
+    fee_low: Optional[float] = None
+    fee_high: Optional[float] = None
     #: The style of the group's equal-weight weekly return.
     style: Optional[StyleOut] = None
 

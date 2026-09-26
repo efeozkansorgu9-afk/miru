@@ -1111,7 +1111,8 @@ class MarketClusterOut(BaseModel):
     #: variance (Euler decomposition, all shares summing to 1). Null when
     #: no fund sizes were known.
     risk_share: Optional[float] = None
-    #: Lowest and highest applied fee among members with a non-zero one.
+    #: Lowest and highest applied fee among members with a non-zero one,
+    #: over management fees when the group has any, else operating expenses.
     fee_low: Optional[float] = None
     fee_high: Optional[float] = None
     #: The style of the group's equal-weight weekly return.

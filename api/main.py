@@ -852,7 +852,13 @@ def _market(conn) -> sc.MarketResponse:
     def fee_range(codes: list[str]) -> tuple[Optional[float], Optional[float]]:
         # Over the members with a reported non-zero fee: a zero may be a gap
         # in TEFAS's data, and a range starting at it would say "free".
-        rates = [fees[x].rate for x in codes if x in fees and fees[x].rate > 0]
+        # One kind of charge per range: a securities fund's management fee
+        # and a pension fund's operating expense are different charges, and
+        # a range spanning both would compare them. Management fees when the
+        # group has any, else operating expenses.
+        known = [fees[x] for x in codes if x in fees and fees[x].rate > 0]
+        kind = "management" if any(f.kind == "management" for f in known) else "operating"
+        rates = [f.rate for f in known if f.kind == kind]
         return (round(min(rates), 6), round(max(rates), 6)) if rates else (None, None)
 
     clusters = []

@@ -10,42 +10,111 @@
     "is display text and the backend never handles display text.",
     "`expect` is the mainFinding tier this basket last produced, and the",
     "weekly job's scenario check is what keeps it honest. When it stops",
-    "holding, change the funds and re-measure. Never reword to fit."
+    "holding, change the funds and re-measure. Never reword to fit.",
+    "Twenty baskets, measured through the live /analyze on 2026-09-26 over",
+    "the full five years: six notable, six dominant, six none, one minor,",
+    "one single. None had a fund excluded, and grouped weights sit clear of",
+    "the 0,25 and 0,50 tier lines so a rounding step cannot flip a tier."
   ],
-  "measured_on": "2026-09-09",
+  "measured_on": "2026-09-26",
   "scenarios": [
     {
       "id": "iki-altin",
       "expect": "notable",
-      "evidence": "AFO/HBF r=0,986 over 261 weeks; grouped weight 0,46",
+      "evidence": "AFO/HBF weakest r=0,986 over 260 weeks; grouped weight 0,46",
       "holdings": [
-        { "code": "AFO", "title": "AK PORTFÖY ALTIN FONU", "amount": "45000", "years": 4 },
-        { "code": "HBF", "title": "HSBC PORTFÖY ALTIN FONU", "amount": "35000", "years": 3 },
-        { "code": "TI2", "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)", "amount": "40000", "years": 3 },
-        { "code": "YAY", "title": "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU", "amount": "30000", "years": 2 },
-        { "code": "GAL", "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU", "amount": "25000", "years": 2 }
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "45000",
+          "years": 4
+        },
+        {
+          "code": "HBF",
+          "title": "HSBC PORTFÖY ALTIN FONU",
+          "amount": "35000",
+          "years": 3
+        },
+        {
+          "code": "TI2",
+          "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "40000",
+          "years": 3
+        },
+        {
+          "code": "YAY",
+          "title": "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU",
+          "amount": "30000",
+          "years": 2
+        },
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "25000",
+          "years": 2
+        }
       ]
     },
     {
       "id": "ayni-endeks",
       "expect": "dominant",
-      "evidence": "AKU/TIE r=0,998 over 261 weeks; grouped weight 0,58",
+      "evidence": "AKU/TIE weakest r=0,997 over 260 weeks; grouped weight 0,58",
       "holdings": [
-        { "code": "AKU", "title": "AK PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)", "amount": "40000", "years": 3 },
-        { "code": "TIE", "title": "İŞ PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)", "amount": "35000", "years": 3 },
-        { "code": "GAL", "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU", "amount": "30000", "years": 2 },
-        { "code": "AFO", "title": "AK PORTFÖY ALTIN FONU", "amount": "25000", "years": 2 }
+        {
+          "code": "AKU",
+          "title": "AK PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "40000",
+          "years": 3
+        },
+        {
+          "code": "TIE",
+          "title": "İŞ PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "35000",
+          "years": 3
+        },
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "30000",
+          "years": 2
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "25000",
+          "years": 2
+        }
       ]
     },
     {
       "id": "dagilmis",
       "expect": "none",
-      "evidence": "strongest pair AFO/YAY r=0,485 over 261 weeks; no group",
+      "evidence": "strongest pair AFO/YAY r=0,481 over 260 weeks; no group",
       "holdings": [
-        { "code": "GAL", "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU", "amount": "30000", "years": 3 },
-        { "code": "AFO", "title": "AK PORTFÖY ALTIN FONU", "amount": "25000", "years": 3 },
-        { "code": "YAY", "title": "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU", "amount": "30000", "years": 2 },
-        { "code": "APT", "title": "AK PORTFÖY ORTA VADELI BORÇLANMA ARAÇLARI FONU", "amount": "25000", "years": 2 }
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "YAY",
+          "title": "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU",
+          "amount": "30000",
+          "years": 2
+        },
+        {
+          "code": "APT",
+          "title": "AK PORTFÖY ORTA VADELI BORÇLANMA ARAÇLARI FONU",
+          "amount": "25000",
+          "years": 2
+        }
       ]
     },
     {
@@ -53,7 +122,508 @@
       "expect": "single",
       "evidence": "is_single_fund, so grouping never runs",
       "holdings": [
-        { "code": "TI2", "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)", "amount": "50000", "years": 3 }
+        {
+          "code": "TI2",
+          "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "50000",
+          "years": 3
+        }
+      ]
+    },
+    {
+      "id": "uc-altin",
+      "expect": "dominant",
+      "evidence": "AFO/GTA/OJK weakest r=0,984 over 260 weeks; grouped weight 0,75",
+      "holdings": [
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "30000",
+          "years": 4
+        },
+        {
+          "code": "GTA",
+          "title": "GARANTİ PORTFÖY ALTIN FONU",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "OJK",
+          "title": "QNB PORTFÖY ALTIN FONU",
+          "amount": "20000",
+          "years": 2
+        },
+        {
+          "code": "YAY",
+          "title": "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU",
+          "amount": "25000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "kucuk-grup",
+      "expect": "minor",
+      "evidence": "AKU/TIE weakest r=0,997 over 260 weeks; grouped weight 0,17",
+      "holdings": [
+        {
+          "code": "AKU",
+          "title": "AK PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "10000",
+          "years": 3
+        },
+        {
+          "code": "TIE",
+          "title": "İŞ PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "8000",
+          "years": 3
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "YAY",
+          "title": "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU",
+          "amount": "25000",
+          "years": 2
+        },
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "30000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "eurobond-cift",
+      "expect": "notable",
+      "evidence": "AKE/IPV weakest r=0,981 over 260 weeks; grouped weight 0,48",
+      "holdings": [
+        {
+          "code": "AKE",
+          "title": "AK PORTFÖY EUROBOND (AMERİKAN DOLARI) BORÇLANMA ARAÇLARI FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "IPV",
+          "title": "İŞ PORTFÖY EUROBOND BORÇLANMA ARAÇLARI (DÖVİZ) FONU",
+          "amount": "20000",
+          "years": 3
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "25000",
+          "years": 2
+        },
+        {
+          "code": "TI2",
+          "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "30000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "gumus-altin",
+      "expect": "none",
+      "evidence": "strongest pair GUM/AFO r=0,742 over 260 weeks; no group",
+      "holdings": [
+        {
+          "code": "GUM",
+          "title": "AK PORTFÖY GÜMÜŞ FON SEPETI FONU",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "25000",
+          "years": 2
+        },
+        {
+          "code": "TI2",
+          "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "25000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "bist30-uclu",
+      "expect": "dominant",
+      "evidence": "AKU/YEF/HBU weakest r=0,994 over 260 weeks; grouped weight 0,79",
+      "holdings": [
+        {
+          "code": "AKU",
+          "title": "AK PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "30000",
+          "years": 4
+        },
+        {
+          "code": "YEF",
+          "title": "YAPI KREDİ PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "HBU",
+          "title": "HSBC PORTFÖY BİST 30 ENDEKSİ HİSSE SENEDİ FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "20000",
+          "years": 2
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "20000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "banka",
+      "expect": "notable",
+      "evidence": "ADP/TAU weakest r=0,999 over 260 weeks; grouped weight 0,48",
+      "holdings": [
+        {
+          "code": "ADP",
+          "title": "AK PORTFÖY BIST BANKA ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "TAU",
+          "title": "İŞ PORTFÖY BIST BANKA ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "AKU",
+          "title": "AK PORTFÖY BIST 30 ENDEKSİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "35000",
+          "years": 2
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "20000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "dengeli-bes",
+      "expect": "none",
+      "evidence": "strongest pair AFO/AKE r=0,660 over 260 weeks; no group",
+      "holdings": [
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "20000",
+          "years": 4
+        },
+        {
+          "code": "AKE",
+          "title": "AK PORTFÖY EUROBOND (AMERİKAN DOLARI) BORÇLANMA ARAÇLARI FONU",
+          "amount": "20000",
+          "years": 3
+        },
+        {
+          "code": "TI2",
+          "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "20000",
+          "years": 3
+        },
+        {
+          "code": "APT",
+          "title": "AK PORTFÖY ORTA VADELI BORÇLANMA ARAÇLARI FONU",
+          "amount": "20000",
+          "years": 2
+        },
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "20000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "yabanci-teknoloji",
+      "expect": "dominant",
+      "evidence": "AFT/GUH/YAY weakest r=0,958 over 260 weeks; grouped weight 0,80",
+      "holdings": [
+        {
+          "code": "AFT",
+          "title": "AK PORTFÖY YENİ TEKNOLOJİLER YABANCI HİSSE SENEDİ FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "GUH",
+          "title": "GARANTİ PORTFÖY YABANCI TEKNOLOJİ HİSSE SENEDİ FONU",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "YAY",
+          "title": "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU",
+          "amount": "25000",
+          "years": 2
+        },
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "20000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "altin-katilim",
+      "expect": "notable",
+      "evidence": "KZL/AFO weakest r=0,989 over 260 weeks; grouped weight 0,48",
+      "holdings": [
+        {
+          "code": "KZL",
+          "title": "KUVEYT TÜRK PORTFÖY ALTIN KATILIM FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "20000",
+          "years": 3
+        },
+        {
+          "code": "AIS",
+          "title": "AK PORTFÖY PARA PİYASASI KATILIM FONU",
+          "amount": "35000",
+          "years": 2
+        },
+        {
+          "code": "IAT",
+          "title": "İŞ PORTFÖY KİRA SERTİFİKALARI KATILIM (TL) FONU",
+          "amount": "20000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "fon-sepeti",
+      "expect": "none",
+      "evidence": "strongest pair APJ/TI2 r=0,697 over 260 weeks; no group",
+      "holdings": [
+        {
+          "code": "ARL",
+          "title": "AK PORTFÖY BİRİNCİ FON SEPETİ FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "APJ",
+          "title": "AK PORTFÖY BIST ŞİRKETLERİ FON SEPETİ FONU",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "TI2",
+          "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "25000",
+          "years": 2
+        },
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "20000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "para-piyasasi",
+      "expect": "dominant",
+      "evidence": "GAL/DLY/HSL weakest r=0,977 over 260 weeks; grouped weight 0,86",
+      "holdings": [
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "40000",
+          "years": 3
+        },
+        {
+          "code": "DLY",
+          "title": "DENİZ PORTFÖY PARA PİYASASI (TL) FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "HSL",
+          "title": "HSBC PORTFÖY PARA PİYASASI (TL) FONU",
+          "amount": "25000",
+          "years": 2
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "15000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "yabanci-karma",
+      "expect": "notable",
+      "evidence": "AFA/YAY weakest r=0,917 over 260 weeks; grouped weight 0,48",
+      "holdings": [
+        {
+          "code": "AFA",
+          "title": "AK PORTFÖY AMERİKA YABANCI HİSSE SENEDİ FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "AFV",
+          "title": "AK PORTFÖY AVRUPA YABANCI HİSSE SENEDİ FONU",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "YAY",
+          "title": "YAPI KREDİ PORTFÖY YABANCI TEKNOLOJİ SEKTÖRÜ HİSSE SENEDİ FONU",
+          "amount": "20000",
+          "years": 2
+        },
+        {
+          "code": "AKE",
+          "title": "AK PORTFÖY EUROBOND (AMERİKAN DOLARI) BORÇLANMA ARAÇLARI FONU",
+          "amount": "30000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "altin-eurobond",
+      "expect": "none",
+      "evidence": "strongest pair HBF/IPV r=0,689 over 260 weeks; no group",
+      "holdings": [
+        {
+          "code": "HBF",
+          "title": "HSBC PORTFÖY ALTIN FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "IPV",
+          "title": "İŞ PORTFÖY EUROBOND BORÇLANMA ARAÇLARI (DÖVİZ) FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "25000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "gumus-cift",
+      "expect": "dominant",
+      "evidence": "GUM/GTZ weakest r=0,997 over 260 weeks; grouped weight 0,63",
+      "holdings": [
+        {
+          "code": "GUM",
+          "title": "AK PORTFÖY GÜMÜŞ FON SEPETI FONU",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "GTZ",
+          "title": "GARANTİ PORTFÖY GÜMÜŞ FON SEPETİ FONU",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "30000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "bist100-disi",
+      "expect": "notable",
+      "evidence": "IDH/GOH weakest r=0,928 over 260 weeks; grouped weight 0,48",
+      "holdings": [
+        {
+          "code": "IDH",
+          "title": "İŞ PORTFÖY BIST 100 DIŞI ŞİRKETLER HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "GOH",
+          "title": "GARANTİ PORTFÖY BIST 100 DIŞI ŞİRKETLER HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "25000",
+          "years": 3
+        },
+        {
+          "code": "TI2",
+          "title": "İŞ PORTFÖY HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+          "amount": "35000",
+          "years": 2
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "20000",
+          "years": 2
+        }
+      ]
+    },
+    {
+      "id": "amerika-avrupa",
+      "expect": "none",
+      "evidence": "strongest pair AFA/AFV r=0,828 over 260 weeks; no group",
+      "holdings": [
+        {
+          "code": "AFA",
+          "title": "AK PORTFÖY AMERİKA YABANCI HİSSE SENEDİ FONU",
+          "amount": "35000",
+          "years": 3
+        },
+        {
+          "code": "AFV",
+          "title": "AK PORTFÖY AVRUPA YABANCI HİSSE SENEDİ FONU",
+          "amount": "30000",
+          "years": 3
+        },
+        {
+          "code": "AFO",
+          "title": "AK PORTFÖY ALTIN FONU",
+          "amount": "20000",
+          "years": 2
+        },
+        {
+          "code": "GAL",
+          "title": "GARANTİ PORTFÖY İKİNCİ PARA PİYASASI (TL) FONU",
+          "amount": "15000",
+          "years": 2
+        }
       ]
     }
   ]

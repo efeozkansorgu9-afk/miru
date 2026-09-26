@@ -7,23 +7,23 @@
  * before that. So the empty state carries baskets that are already filled in
  * and run themselves.
  *
- * ## Why a pool, and why it is walked in order
+ * ## Why a pool of twenty, drawn at random
  *
- * One example taught one lesson. Whoever pressed the button saw two gold
- * funds flagged and had no way to find out what the page says about a basket
- * with nothing wrong with it, or about a single holding, without going and
- * finding fund codes by hand — which is the work the example exists to avoid.
+ * One example taught one lesson, and four were not many more: they were
+ * handed out in order, so everyone who pressed the button first saw the
+ * same gold basket, and everyone who reloaded saw it again. The page looked
+ * like it had one example.
  *
- * So there are four, and each is here because it produces a *different*
- * verdict: a group holding about half the money, a group holding most of it,
- * no group at all, and a basket too small to group. Between them they show
- * every shape `mainFinding` can return except the failures.
+ * So there are twenty, across the verdicts `mainFinding` can return — six
+ * where a group holds a notable share, six where one dominates, six with no
+ * group, one with a small group and one single fund — and across the kinds
+ * of fund a reader is likely to hold: gold, silver, BIST 30 and bank index
+ * funds, eurobonds, participation funds, money markets, foreign equity.
  *
- * They are handed out in order rather than at random. Random with four items
- * repeats about a quarter of the time, and a reader who presses "another
- * example" and gets the basket they are already looking at reads it as a
- * broken button. `next()` walks the list and wraps, so four presses give
- * four different baskets.
+ * Each press draws one **at random, from all twenty but the basket already
+ * on screen.** That exclusion is the only thing standing between "random"
+ * and a button that sometimes appears to do nothing, which is what a
+ * reader sees when the draw lands on what they are looking at.
  *
  * ## These are not recommendations
  *
@@ -33,9 +33,11 @@
  *
  * ## Verified, not assumed
  *
- * Every basket below was run through the live `/analyze` on 2026-09-09, over
- * the full five years, and produced the verdict named in its `expect` field.
- * The measured pair that carries each one is in the comment beside it. If a
+ * Every basket was run through the live `/analyze` on 2026-09-26, over the
+ * full five years, and produced the verdict named in its `expect` field; the
+ * measured pair that carries each one is in its `evidence`. None had a fund
+ * excluded from the window, and grouped weights were kept off the 0,25 and
+ * 0,50 tier lines, so a rounding step cannot flip a verdict. If a
  * scenario stops producing its verdict — funds drift, and a pair that
  * correlated at 0,99 for five years may not for the next five — the fix is
  * to change the funds and re-measure, never to reword the note so it matches
@@ -62,7 +64,7 @@ interface Holding {
 }
 
 /** The tiers `mainFinding` can return for an example basket. */
-type ExpectedTier = "notable" | "dominant" | "none" | "single";
+type ExpectedTier = "notable" | "dominant" | "none" | "minor" | "single";
 
 interface RawScenario {
   id: string;
@@ -108,6 +110,38 @@ const NOTLAR: Record<string, string> = {
     "Dört fon: para piyasası, altın, yabancı hisse ve borçlanma araçları.",
   "tek-fon":
     "Tek fon: karşılaştıracak ikinci fon olmadığında ne olduğunu gösterir.",
+  "uc-altin":
+    "Dört fon: üçü üç ayrı şirketin altın fonu, biri yabancı teknoloji hissesi.",
+  "kucuk-grup":
+    "Beş fon: ikisi aynı endeksi izleyen küçük tutarlı fonlar, kalanı altın, yabancı hisse ve para piyasası.",
+  "eurobond-cift":
+    "Dört fon: ikisi ayrı şirketlerin eurobond fonu, yanında altın ve Türk hisseleri.",
+  "gumus-altin":
+    "Dört fon: gümüş, altın, para piyasası ve Türk hisseleri.",
+  "bist30-uclu":
+    "Dört fon: üçü üç ayrı şirketin BIST 30 endeks fonu, biri altın.",
+  banka:
+    "Dört fon: ikisi banka endeksi fonu, biri BIST 30 endeks fonu, biri altın.",
+  "dengeli-bes":
+    "Beş fon, eşit tutarlarla: altın, eurobond, Türk hisseleri, borçlanma araçları ve para piyasası.",
+  "yabanci-teknoloji":
+    "Dört fon: üçü ayrı şirketlerin yabancı teknoloji hissesi fonu, biri para piyasası.",
+  "altin-katilim":
+    "Dört fon: biri katılım, biri klasik altın fonu; yanında katılım para piyasası ve kira sertifikası.",
+  "fon-sepeti":
+    "Dört fon: ikisi fon sepeti fonu, biri Türk hisseleri, biri para piyasası.",
+  "para-piyasasi":
+    "Dört fon: üçü ayrı şirketlerin para piyasası fonu, biri altın.",
+  "yabanci-karma":
+    "Dört fon: Amerika, Avrupa ve yabancı teknoloji hisseleri, yanında dolar eurobond.",
+  "altin-eurobond":
+    "Üç fon: altın, eurobond ve para piyasası.",
+  "gumus-cift":
+    "Üç fon: ikisi ayrı şirketlerin gümüş fonu, biri altın.",
+  "bist100-disi":
+    "Dört fon: ikisi ayrı şirketlerin BIST 100 dışı şirketlere yatıran fonu, yanında Türk hisseleri ve altın.",
+  "amerika-avrupa":
+    "Dört fon: Amerika ve Avrupa hisseleri, altın ve para piyasası.",
 };
 
 const SCENARIOS: readonly SampleScenario[] = (
@@ -134,25 +168,25 @@ const SCENARIOS: readonly SampleScenario[] = (
 export const SAMPLE_COUNT = SCENARIOS.length;
 
 /**
- * Where the walk has got to.
+ * A random example basket, and the line that describes it.
  *
- * Module scope, so it survives the form unmounting and remounting but not a
- * reload. A reader who comes back tomorrow starting from the first example
- * again is fine; one who presses the button twice in a row and sees the same
- * basket is not.
- */
-let cursor = 0;
-
-/**
- * The next example basket, and the line that describes it.
+ * Drawn uniformly from every scenario except `current` — the one on screen,
+ * if any — so a press always changes the basket. `Math.random` runs only on
+ * a press, in the browser, so there is nothing for the server render to
+ * disagree with.
  *
  * Fresh objects with fresh ids on every call, because what comes back is
  * mutable form state: the reader is meant to change the amounts, remove a
  * fund and press analyse again.
  */
-export function nextSample(): { funds: BasketFund[]; scenario: SampleScenario } {
-  const scenario = SCENARIOS[cursor % SCENARIOS.length];
-  cursor += 1;
+export function randomSample(
+  current?: string,
+): { funds: BasketFund[]; scenario: SampleScenario } {
+  const pool =
+    SCENARIOS.length > 1
+      ? SCENARIOS.filter((s) => s.id !== current)
+      : SCENARIOS;
+  const scenario = pool[Math.floor(Math.random() * pool.length)];
 
   return {
     scenario,

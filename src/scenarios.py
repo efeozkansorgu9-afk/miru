@@ -108,11 +108,9 @@ def load_scenarios(path: Path | str = SCENARIO_FILE) -> list[dict]:
 def tier(analysis, grouping) -> str:
     """The `mainFinding` tier for one analysed basket.
 
-    The same four-way split `web/lib/result.ts` makes, in the same order.
-    Kept to the tiers a *pool* basket can produce: the frontend also has a
-    `minor` tier for a group under a quarter of the money, and a scenario
-    landing there would be reported as drift, correctly, because none of the
-    four is meant to.
+    The same split `web/lib/result.ts` makes, in the same order, including
+    `minor` (a group under a quarter of the money): the pool has one basket
+    meant to land there, and any other that does is reported as drift.
     """
     if analysis.is_single_fund:
         return "single"

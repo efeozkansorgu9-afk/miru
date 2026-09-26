@@ -14,7 +14,7 @@ import {
 import type { BasketFund, PurchaseRow } from "@/lib/basket";
 import { useFundRegistry } from "@/lib/funds";
 import type { SearchableFund } from "@/lib/funds";
-import { SAMPLE_COUNT, nextSample } from "@/lib/sample";
+import { SAMPLE_COUNT, randomSample } from "@/lib/sample";
 import type { SampleScenario } from "@/lib/sample";
 import { Reveal } from "@/components/reveal";
 import { FundSearch } from "./fund-search";
@@ -164,7 +164,7 @@ export function BasketForm({
    * to staged mode produce a basket nobody typed.
    */
   function loadSample() {
-    const { funds: example, scenario: loaded } = nextSample();
+    const { funds: example, scenario: loaded } = randomSample(scenario?.id);
     setFunds(example);
     setPurchases([]);
     setStaged(false);
@@ -394,9 +394,9 @@ function EmptyBasket({ onSample, busy }: { onSample: () => void; busy: boolean }
       </button>
 
       <p className="mx-auto mt-4 max-w-prose text-caption text-ink-subtle text-pretty">
-        Hazır bir sepet yüklenir ve hemen incelenir. {SAMPLE_COUNT} farklı örnek
-        var; her biri başka bir sonuç gösteriyor. Yükledikten sonra sepeti
-        değiştirebilir, sıradaki örneğe geçebilirsiniz.
+        {SAMPLE_COUNT} hazır sepetten biri rastgele yüklenir ve hemen incelenir.
+        Kimisinde birbirinin kopyası fonlar var, kimisinde yok. Yükledikten
+        sonra sepeti değiştirebilir ya da başka bir örnek deneyebilirsiniz.
       </p>
     </div>
   );

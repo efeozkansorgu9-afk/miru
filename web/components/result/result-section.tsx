@@ -14,6 +14,7 @@
  */
 
 import type { AnalyzeRequest, AnalyzeResponse } from "@/lib/api";
+import { riskBirimleri } from "@/lib/risk-share";
 import { Column } from "@/components/column";
 import { Reveal } from "@/components/reveal";
 import { ScrollRise } from "@/components/scroll-rise";
@@ -30,6 +31,7 @@ import { ExcludedFunds } from "./excluded-funds";
 import { FailedCodes } from "./failed-codes";
 import { MainFinding } from "./main-finding";
 import { Returns } from "./returns";
+import { RiskShare } from "./risk-share";
 import { RollingCorrelation } from "./rolling-correlation";
 import { TechnicalDetails } from "./technical-details";
 import { ValueChart } from "./value-chart";
@@ -199,6 +201,7 @@ function Result({
   const figures = returnFigures(response, request);
   const chart = chartData(response, request);
   const excluded = Object.keys(coverage.excluded_codes).length > 0;
+  const risk = riskBirimleri(analysis, grouping, coverage.fund_names);
 
   return (
     <div className="flex flex-col gap-section">
@@ -225,6 +228,15 @@ function Result({
       {response.rolling_correlation && (
         <ScrollRise>
           <RollingCorrelation rolling={response.rolling_correlation} />
+        </ScrollRise>
+      )}
+
+      {/* After the similarity history: the finding says which funds are one
+          holding, this says how much of the basket's swing each of them
+          carries, which is the same question asked in money. */}
+      {risk && (
+        <ScrollRise>
+          <RiskShare birimler={risk} />
         </ScrollRise>
       )}
 

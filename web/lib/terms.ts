@@ -66,6 +66,26 @@ export const TERIMLER = {
       "Dikey eksende eşit yüzde değişimin eşit mesafeye karşılık geldiği ölçek. " +
       "Küçük ve büyük değerler aynı grafikte okunabilir kalır.",
   },
+  dolar: {
+    ad: "Dolar bazında getiri",
+    aciklama:
+      "TL getirinin, dönemin ilk ve son iş günündeki TCMB dolar alış kuruyla " +
+      "dolara çevrilmiş hali. Doların TL karşısındaki değişimi ayıklanmış olur.",
+  },
+  riskPayi: {
+    ad: "Dalgalanmadaki pay",
+    aciklama:
+      "Sepetin haftalık dalgalanmasının (varyansının) ne kadarının bu fondan " +
+      "ya da gruptan geldiği; paylar toplamda %100 eder. Diğerlerine ters " +
+      "hareket eden bir fon dalgalanmayı azaltır ve payı eksi çıkar.",
+  },
+  piyasaRiski: {
+    ad: "Piyasanın dalgalanması",
+    aciklama:
+      "Bütün ölçülen fonları büyüklükleri oranında tutan bir sepet düşünün: " +
+      "bu çubuk, o sepetin haftalık dalgalanmasının ne kadarının hangi " +
+      "gruptan geldiğini gösterir.",
+  },
   reel: {
     ad: "Enflasyondan arındırılmış getiri",
     aciklama:

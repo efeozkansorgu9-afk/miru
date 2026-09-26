@@ -31,7 +31,7 @@ import {
   riskSegmentleri,
 } from "@/lib/fund";
 import type { HeroBulgusu } from "@/lib/fund";
-import { kisalt } from "@/lib/format";
+import { kisalt, paraKisa, sayi } from "@/lib/format";
 import { fundHref } from "@/lib/site";
 
 export function Identity({
@@ -69,12 +69,28 @@ export function Identity({
             <Ayirac />
           </span>
         ))}
-        <span className="flex items-center gap-2">
-          <span className={segmentler ? "" : "text-ink-subtle"}>
-            Risk {riskDegeri(fund.risk_value)}
+        <span className="flex items-center gap-2.5">
+          <span className="flex items-center gap-2">
+            <span className={segmentler ? "" : "text-ink-subtle"}>
+              Risk {riskDegeri(fund.risk_value)}
+            </span>
+            {segmentler && <RiskBar segmentler={segmentler} risk={fund.risk_value} />}
           </span>
-          {segmentler && <RiskBar segmentler={segmentler} risk={fund.risk_value} />}
+          <Ayirac />
         </span>
+        {/* Size and investors, TEFAS's latest published figures. Same rule
+            as the rest of the line: a missing value says so. Separators
+            trail, as above, so a wrapped line never starts with a dot. */}
+        <span className="flex items-center gap-2.5">
+          <span className={fund.total_assets === null ? "text-ink-subtle" : "tabular-nums"}>
+            Büyüklük{" "}
+            {fund.total_assets === null ? BELIRTILMEMIS : paraKisa(fund.total_assets)}
+          </span>
+          {fund.investor_count !== null && <Ayirac />}
+        </span>
+        {fund.investor_count !== null && (
+          <span className="tabular-nums">{sayi(fund.investor_count)} yatırımcı</span>
+        )}
       </div>
 
       {/* The verdict, on the same screen as the name for the first time. The

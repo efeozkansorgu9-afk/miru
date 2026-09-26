@@ -56,7 +56,8 @@ import {
 } from "recharts";
 
 import type { CPISeries, FundReturn, WeeklySeries } from "@/lib/api";
-import { ayYilKisa, tarih, yuzdeIsaretli } from "@/lib/format";
+import { ayYilKisa, tarih, yuzde, yuzdeIsaretli } from "@/lib/format";
+import type { TerimAdi } from "@/lib/terms";
 import {
   defaultPeriod,
   fundChartData,
@@ -140,20 +141,50 @@ export function Returns({
       {chart && <Chart points={chart.points} withInflation={chart.withInflation} />}
 
       {active?.available && (
-        <div className="mt-6 grid gap-4 rounded-card border border-border bg-surface px-5 py-4 sm:grid-cols-2 sm:px-6 sm:py-5">
-          <Figure label="Nominal" value={active.ret?.nominal ?? null} />
-          <Figure
-            label="Enflasyondan arındırılmış"
-            value={active.ret?.real ?? null}
-            term
-          />
+        <div className="mt-6 rounded-card border border-border bg-surface px-5 py-4 sm:px-6 sm:py-5">
+          <div
+            className={`grid gap-4 ${
+              active.ret?.usd != null ? "sm:grid-cols-3" : "sm:grid-cols-2"
+            }`}
+          >
+            <Figure label="Nominal" value={active.ret?.nominal ?? null} />
+            <Figure
+              label="Enflasyondan arındırılmış"
+              value={active.ret?.real ?? null}
+              term="reel"
+            />
+            {/* Only when there was a rate for both ends of the window; a
+                missing dollar figure is left out rather than shown as "—",
+                which would read as a result of zero. */}
+            {active.ret?.usd != null && (
+              <Figure label="Dolar bazında" value={active.ret.usd} term="dolar" />
+            )}
+          </div>
+          {(active.ret?.volatility != null || active.ret?.max_drawdown != null) && (
+            <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4">
+              <Olcu
+                label="Yıllık oynaklık"
+                term="oynaklik"
+                value={active.ret?.volatility != null ? yuzde(active.ret.volatility) : "—"}
+              />
+              <Olcu
+                label="En büyük düşüş"
+                term="dusus"
+                value={
+                  active.ret?.max_drawdown != null ? yuzdeIsaretli(active.ret.max_drawdown) : "—"
+                }
+              />
+            </dl>
+          )}
         </div>
       )}
 
       <p className="mt-5 max-w-prose text-caption text-ink-subtle text-pretty">
-        Toplam getiri, yıllığa çevrilmemiş. Her iki rakam da aynı dönem
+        Toplam getiri, yıllığa çevrilmemiş. Bütün rakamlar aynı dönem
         üzerinden ölçülüyor: dönem, TÜİK&apos;in endeks açıkladığı son ayda
-        biter, bugünde değil. Aradaki fark enflasyondur. Fon giderleri fiyata
+        biter, bugünde değil. Nominal ile reel arasındaki fark enflasyondur.
+        Oynaklık ve en büyük düşüş haftalık fiyatlardan hesaplanıyor; hafta
+        içindeki bir dip bu yüzden görünmeyebilir. Fon giderleri fiyata
         yansımış durumda, vergi hesaba katılmamıştır.
       </p>
     </section>
@@ -304,9 +335,16 @@ function Chart({
   points: { date: string; value: number | null; inflation: number | null }[];
   withInflation: boolean;
 }) {
+  // As many date labels as fit: "10.22" is about 36px at 12px, so one per
+  // 60px keeps them apart. A fixed eight ran together on a phone.
+  const [genislik, setGenislik] = useState(0);
   const ticks = useMemo(
-    () => monthTicks(points.map((p) => p.date), 8),
-    [points],
+    () =>
+      monthTicks(
+        points.map((p) => p.date),
+        genislik > 0 ? Math.max(3, Math.min(8, Math.floor(genislik / 60))) : 8,
+      ),
+    [points, genislik],
   );
   const lines = withInflation ? [LINES.value, LINES.inflation] : [LINES.value];
 
@@ -329,7 +367,11 @@ function Chart({
       </ul>
 
       <div className="mt-3 h-64 w-full sm:h-80">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+          onResize={(w) => setGenislik((eski) => (Math.abs(eski - w) < 1 ? eski : w))}
+        >
           <LineChart
             data={points}
             // Room on the right for the last date label, which centres on a
@@ -442,6 +484,23 @@ function ChartTooltip({
  * on screen because the other half of it could be measured, and an empty
  * space there would read as a zero.
  */
+/**
+ * A risk figure: set smaller than the returns and in plain ink. Volatility
+ * is not good or bad news, and a drawdown, though always a fall, is a
+ * measurement of the past rather than a warning; neither is painted red.
+ */
+function Olcu({ label, value, term }: { label: string; value: string; term: TerimAdi }) {
+  return (
+    <div>
+      <dt className="text-label text-ink-muted">
+        {label}
+        <InfoTip term={term} />
+      </dt>
+      <dd className="mt-1 text-lead font-semibold tabular-nums text-ink">{value}</dd>
+    </div>
+  );
+}
+
 function Figure({
   label,
   value,
@@ -449,13 +508,13 @@ function Figure({
 }: {
   label: string;
   value: number | null;
-  term?: boolean;
+  term?: TerimAdi;
 }) {
   return (
     <div>
       <p className="text-label text-ink-muted">
         {label}
-        {term && <InfoTip term="reel" />}
+        {term && <InfoTip term={term} />}
       </p>
       <p
         className={`mt-1.5 text-display-sm tabular-nums ${

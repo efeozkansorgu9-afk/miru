@@ -21,6 +21,8 @@ export interface Dilim {
   renk: string;
   fon: number;
   para: number;
+  /** Share of the market's movement, or null when the API did not send it. */
+  risk: number | null;
 }
 
 /** The factors, in Turkish. Keys are the API's; a new key shows as itself. */
@@ -89,6 +91,11 @@ export function kategoriSatiri(c: MarketCluster): string | null {
 }
 
 export function dilimler(m: MarketResponse): Dilim[] {
+  // The movement shares are drawn only when every group has one: a bar
+  // missing a slice would put the rest at the wrong widths.
+  const riskVar = m.clusters.length > 0 && m.clusters.every((c) => typeof c.risk_share === "number");
+  const risk = (cs: typeof m.clusters) =>
+    riskVar ? cs.reduce((a, c) => a + (c.risk_share ?? 0), 0) : null;
   const renkli = m.clusters.slice(0, RENKLI_GRUP);
   const kalan = m.clusters.slice(RENKLI_GRUP);
   const out: Dilim[] = renkli.map((c, i) => ({
@@ -98,6 +105,7 @@ export function dilimler(m: MarketResponse): Dilim[] {
     renk: `var(--group-${i + 1})`,
     fon: c.size,
     para: c.total_assets ?? 0,
+    risk: risk([c]),
   }));
   if (kalan.length > 0) {
     out.push({
@@ -106,6 +114,7 @@ export function dilimler(m: MarketResponse): Dilim[] {
       renk: "var(--ink-subtle)",
       fon: kalan.reduce((a, c) => a + c.size, 0),
       para: kalan.reduce((a, c) => a + (c.total_assets ?? 0), 0),
+      risk: risk(kalan),
     });
   }
   const gruptakiPara = m.clusters.reduce((a, c) => a + (c.total_assets ?? 0), 0);
@@ -117,6 +126,11 @@ export function dilimler(m: MarketResponse): Dilim[] {
     // What is not in a group, by difference: the API sizes the measured
     // funds as a whole and each group, not the singletons one by one.
     para: Math.max((m.total_assets_measured ?? 0) - gruptakiPara, 0),
+    // By difference too: the shares sum to 1 over every sized fund, and
+    // what the groups do not carry, the funds with no twin do. It can come
+    // out slightly negative on a pairwise covariance; floored for drawing,
+    // since a sliver below zero is not a slice.
+    risk: riskVar ? Math.max(1 - (risk(m.clusters) ?? 0), 0) : null,
   });
   return out;
 }

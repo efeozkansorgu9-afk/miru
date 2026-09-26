@@ -458,3 +458,15 @@
     }
   }
 }
+
+/* InfoTip's bubble: opacity only. It is placed with `top`/`left`, so a
+   transform here would not fight the positioning, but a definition does not
+   need to travel to be read. */
+@keyframes tip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

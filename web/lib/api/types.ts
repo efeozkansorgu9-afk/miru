@@ -255,6 +255,12 @@ export interface BasketAnalysis {
   basket_volatility: number;
   fund_volatility: Record<string, number>;
   weighted_fund_volatility: number;
+  /**
+   * Each fund's share of the basket's weekly variance, summing to 1. A fund
+   * moving against the rest comes out negative. Empty when the basket has
+   * no variance; absent from a response made before the field existed.
+   */
+  risk_contribution?: Record<string, number>;
   max_drawdown: Drawdown;
   weekly_observations: number;
   start: string;
@@ -452,6 +458,12 @@ export interface FundReturn {
   /** Month starts. Null together, when there was no window to measure. */
   window_start: string | null;
   window_end: string | null;
+  /** Annualised weekly volatility over the same window; own fund only. */
+  volatility?: number | null;
+  /** Largest peak-to-trough fall inside the window, ≤ 0; own fund only. */
+  max_drawdown?: number | null;
+  /** The TL return in dollars at TCMB's rate; null without a rate. */
+  usd?: number | null;
 }
 
 /** What a fund is. Every field but the code and the name may be absent. */
@@ -572,6 +584,11 @@ export interface MarketCluster {
   top_category: string | null;
   top_category_share: number | null;
   total_assets: number | null;
+  /**
+   * Share of the asset-weighted market's weekly variance, all shares summing
+   * to 1. Null when no sizes were known; absent before the field existed.
+   */
+  risk_share?: number | null;
   /** What the group's equal-weight return is made of. */
   style: Style | null;
 }

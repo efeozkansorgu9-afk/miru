@@ -144,9 +144,16 @@ export const SECTIONS: readonly Section[] = [
   },
 ];
 
+/** The brand's own home page. */
+export const HOME_HREF = "/";
+
 /**
- * The label for a path. Falls back to the tool, which is where `/` goes.
+ * The label for a path, or null on the home page.
+ *
+ * The home page is the brand itself, not an area inside it, so the header
+ * shows the wordmark alone there. Anything unmatched falls back to the tool.
  */
-export function sectionLabel(pathname: string): string {
+export function sectionLabel(pathname: string): string | null {
+  if (pathname === HOME_HREF) return null;
   return SECTIONS.find((section) => section.owns(pathname))?.label ?? TOOL.name;
 }

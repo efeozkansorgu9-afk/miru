@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Column } from "@/components/column";
-import { FUND_BASE, METHOD_HREF, SITE, TOOL, sectionLabel } from "@/lib/site";
+import { FUND_BASE, HOME_HREF, METHOD_HREF, SITE, TOOL, sectionLabel } from "@/lib/site";
 import { ThemeToggle } from "./theme-toggle";
 
 /**
@@ -39,6 +39,7 @@ export function NavBar() {
   // rather than after hydration. `usePathname` does not opt a page out of
   // static rendering the way `useSearchParams` does.
   const pathname = usePathname();
+  const section = sectionLabel(pathname);
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-canvas/80 backdrop-blur-md">
@@ -48,8 +49,10 @@ export function NavBar() {
             reads as a hierarchy without the tool name shrinking into a
             caption. The rule between them does the separating, so neither
             needs a bracket or a slash. */}
+        {/* The mark goes home. It used to go to the tool, while the tool was
+            all there was. */}
         <Link
-          href={TOOL.href}
+          href={HOME_HREF}
           // `min-w-0` here and `truncate` on the tool name are what keep the
           // lockup from pushing the theme toggle off a 320px screen: the tool
           // name gives up characters before the row gives up its layout.
@@ -69,16 +72,20 @@ export function NavBar() {
           </span>
           {/* Below `sm` the rule and the section give way to the menu,
               whose current item already says where the reader is. */}
-          <span
-            aria-hidden
-            className="hidden h-4 w-px shrink-0 bg-border-strong sm:block"
-          />
+          {section && (
+            <span
+              aria-hidden
+              className="hidden h-4 w-px shrink-0 bg-border-strong sm:block"
+            />
+          )}
           {/* The section, not the tool. A fund page is under the brand but
               not inside the basket tool, and `lib/site` owns which word goes
               here so it cannot drift from the paths it describes. */}
-          <span className="hidden truncate text-body font-medium tracking-tight text-ink-muted sm:inline">
-            {sectionLabel(pathname)}
-          </span>
+          {section && (
+            <span className="hidden truncate text-body font-medium tracking-tight text-ink-muted sm:inline">
+              {section}
+            </span>
+          )}
         </Link>
 
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">

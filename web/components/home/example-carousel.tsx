@@ -39,7 +39,10 @@ export function OrnekCarousel({ ornekler }: { ornekler: OrnekVeri[] }) {
     const guncelle = () => setAzHareket(mq.matches);
     guncelle();
     mq.addEventListener("change", guncelle);
+    // Read once on mount too: a page opened in a background tab never fires
+    // a change event until it is shown, and would otherwise rotate unseen.
     const gorunurluk = () => setGorunur(document.visibilityState === "visible");
+    gorunurluk();
     document.addEventListener("visibilitychange", gorunurluk);
     return () => {
       mq.removeEventListener("change", guncelle);

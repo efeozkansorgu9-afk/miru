@@ -1,27 +1,25 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { getFundList, getFundPage } from "@/lib/api";
-import type { FundPageResponse, Neighbour } from "@/lib/api";
+import { getFundList } from "@/lib/api";
 import { Column } from "@/components/column";
+import { OrnekCarousel } from "@/components/home/example-carousel";
 import { Reveal } from "@/components/reveal";
-import { korelasyon, sayi, tarih } from "@/lib/format";
-import { sparkLines } from "@/lib/neighbour-chart";
-import { FUND_BASE, METHOD_HREF, SITE, TOOL, fundHref } from "@/lib/site";
+import { sayi, tarih } from "@/lib/format";
+import { ornekleriBul } from "@/lib/home-examples";
+import { FUND_BASE, METHOD_HREF, SITE, TOOL } from "@/lib/site";
 
 /**
  * The brand's home page: `/`.
  *
- * Says what miru is in one screen, shows one real finding from the last
- * weekly run, and points at the three places to go. Static, rebuilt daily.
+ * Says what miru is in one screen, shows real findings from the last weekly
+ * run, and points at the three places to go. Static, rebuilt daily.
  *
- * **The example is measured, never written down.** It is read at build time
- * from `/fund/{code}` for the first of `ORNEK_ADAYLARI` whose closest
- * neighbour is `overlapping`, so the pair, its coefficient and its chart are
- * whatever the last Monday measured. A hand-typed "AFO and HBF, 0,986" would
- * go on asserting that after the correlation drifted, which is the thing
- * this product does not do. When no candidate qualifies, or the API is
- * down, the hero renders without the card rather than failing the build.
+ * **The examples are measured, never written down.** `lib/home-examples`
+ * picks them at build time from `/fund/{code}`, so the pairs, coefficients
+ * and charts are whatever the last Monday measured, and `OrnekCarousel`
+ * shows them one at a time. When nothing qualifies, or the API is down, the
+ * hero renders without the card rather than failing the build.
  */
 export const dynamic = "force-static";
 export const revalidate = 86400;
@@ -31,30 +29,6 @@ export const metadata: Metadata = {
   description:
     "Türk yatırım fonlarından kurulmuş bir sepetin gerçekte kaç ayrı şeye yatırıldığını gösterir. Tavsiye vermez; elinizde ne olduğunu gösterir.",
 };
-
-/** Well-known funds whose closest neighbour is likely to make the point. */
-const ORNEK_ADAYLARI = ["AFO", "AKU", "TI2", "HBF"];
-
-interface Ornek {
-  page: FundPageResponse;
-  komsu: Neighbour;
-}
-
-async function ornekBul(): Promise<Ornek | null> {
-  for (const code of ORNEK_ADAYLARI) {
-    try {
-      const page = await getFundPage(code, { timeoutMs: 20_000 });
-      const komsu = page.high[0];
-      if (komsu && komsu.bucket === "overlapping" && komsu.recent && page.series) {
-        return { page, komsu };
-      }
-    } catch {
-      // Next candidate. A home page that cannot show an example is still a
-      // home page.
-    }
-  }
-  return null;
-}
 
 async function fonSayisi(): Promise<number | null> {
   try {
@@ -66,15 +40,18 @@ async function fonSayisi(): Promise<number | null> {
 }
 
 export default async function AnaSayfa() {
-  const [ornek, n] = await Promise.all([ornekBul(), fonSayisi()]);
-  const guncelleme = ornek?.page.freshness.last_run_at?.slice(0, 10) ?? null;
+  const [{ ornekler, sonOlcum: guncelleme }, n] = await Promise.all([
+    ornekleriBul(),
+    fonSayisi(),
+  ]);
+  const ornekVar = ornekler.length > 0;
 
   return (
     <div>
-      {/* Hero: what this is, and one real pair beside it. */}
+      {/* Hero: what this is, and real pairs beside it. */}
       <Column className="pt-section pb-section">
         <div
-          className={`grid items-center gap-12 ${ornek ? "lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-16" : ""}`}
+          className={`grid items-center gap-12 ${ornekVar ? "lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-16" : ""}`}
         >
           <Reveal className="max-w-prose">
             <p className="text-overline uppercase text-accent">
@@ -105,9 +82,9 @@ export default async function AnaSayfa() {
             </div>
           </Reveal>
 
-          {ornek && (
+          {ornekVar && (
             <Reveal delay={120}>
-              <OrnekKart ornek={ornek} />
+              <OrnekCarousel ornekler={ornekler} />
             </Reveal>
           )}
         </div>
@@ -211,133 +188,6 @@ export default async function AnaSayfa() {
 /* ------------------------------------------------------------------ */
 /* Pieces                                                              */
 /* ------------------------------------------------------------------ */
-
-/**
- * One real pair from the last run: this fund, its closest neighbour, and
- * their last year from 100. The same drawing as the neighbour card on a
- * fund page, larger, and with the same colours for the same roles.
- */
-function OrnekKart({ ornek }: { ornek: Ornek }) {
-  const { page, komsu } = ornek;
-  const W = 360;
-  const H = 150;
-  const lines = sparkLines(page.series, komsu.recent, W, H, 6);
-  // Unknown is not "different": a fund whose founder could not be read off
-  // its title gets the sentence that claims neither.
-  const kurumlar =
-    page.fund.founder === null || komsu.fund.founder === null
-      ? "bilinmiyor"
-      : page.fund.founder === komsu.fund.founder
-        ? "ayni"
-        : "ayri";
-
-  return (
-    <Link
-      href={fundHref(page.fund.code)}
-      className="group block overflow-hidden rounded-card border border-border bg-surface shadow-lg shadow-black/5 transition-colors hover:border-accent"
-    >
-      <div className="h-1 bg-accent" />
-      <div className="px-5 pt-4 pb-5">
-        <p className="text-overline uppercase text-ink-subtle">
-          Son ölçümden bir örnek
-        </p>
-        <p className="mt-3 text-display-sm">
-          <span className="text-accent">{page.fund.code}</span>
-          <span className="text-ink-subtle"> ile </span>
-          <span className="text-series-alt">{komsu.fund.code}</span>
-        </p>
-        <p className="mt-1 text-caption text-ink-muted text-pretty">
-          {kurumlar === "ayni"
-            ? "Aynı kurumun iki fonu, haftalık getirileri neredeyse aynı."
-            : kurumlar === "ayri"
-              ? "İki ayrı kurumun iki fonu, ama haftalık getirileri neredeyse aynı."
-              : "İki fonun haftalık getirileri neredeyse aynı."}{" "}
-          İkisini birden tutmak, aynı şeyi iki kez almak demek.
-        </p>
-
-        {lines && (
-          <figure className="mt-4 rounded-control bg-canvas-sunken px-2 pt-2 pb-2">
-            <svg
-              viewBox={`0 0 ${W} ${H}`}
-              className="block h-36 w-full"
-              preserveAspectRatio="none"
-              aria-hidden="true"
-            >
-              <line
-                x1={0}
-                x2={W}
-                y1={lines.baseY}
-                y2={lines.baseY}
-                stroke="var(--border-strong)"
-                strokeDasharray="2 3"
-                vectorEffect="non-scaling-stroke"
-              />
-              {lines.subject && (
-                <path
-                  d={lines.subject}
-                  fill="none"
-                  stroke="var(--accent)"
-                  strokeWidth={2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              )}
-              <path
-                d={lines.neighbour}
-                fill="none"
-                stroke="var(--series-alt)"
-                strokeWidth={2}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
-              />
-            </svg>
-            <figcaption className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-label text-ink-muted">
-              <Anahtar renk="bg-accent" etiket={page.fund.code} />
-              <Anahtar renk="bg-series-alt" etiket={komsu.fund.code} />
-              <span className="ml-auto text-ink-subtle">
-                Son {lines.weeks} hafta · 100&apos;den
-              </span>
-            </figcaption>
-          </figure>
-        )}
-
-        <dl className="mt-4 grid grid-cols-2 gap-3 text-caption tabular-nums">
-          <div>
-            <dt className="text-label text-ink-subtle">Korelasyon</dt>
-            <dd className="mt-0.5 text-body font-semibold text-ink">
-              {korelasyon(komsu.correlation)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-label text-ink-subtle">%95 güven aralığı</dt>
-            <dd className="mt-0.5 text-body font-semibold text-ink">
-              {komsu.ci_low !== null && komsu.ci_high !== null
-                ? `${korelasyon(komsu.ci_low)} – ${korelasyon(komsu.ci_high)}`
-                : "—"}
-            </dd>
-          </div>
-        </dl>
-        <p className="mt-3 text-caption text-ink-subtle">
-          {komsu.n_weeks} haftalık ortak geçmiş üzerinden.{" "}
-          <span className="text-accent group-hover:underline">
-            {page.fund.code} sayfasına git
-          </span>
-        </p>
-      </div>
-    </Link>
-  );
-}
-
-function Anahtar({ renk, etiket }: { renk: string; etiket: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span aria-hidden className={`h-0.5 w-3 rounded-full ${renk}`} />
-      {etiket}
-    </span>
-  );
-}
 
 function Sayac({ deger, etiket }: { deger: string; etiket: string }) {
   return (

@@ -50,6 +50,8 @@ from src import data as dl
 from src import inflation as inf
 from src import market as mk
 from src import style as sty
+from src import fx as fxm
+from src import risk as rk
 from src import precompute as pc
 from src.tefas_client import TEFASClient
 
@@ -901,6 +903,45 @@ def market_clusters() -> sc.MarketResponse:
         return _market(conn)
 
 
+#: USD/TRY, fetched once a day per process. A static build asks for 1,372
+#: fund pages; this makes that one EVDS request, not 1,372.
+_FX_CACHE: dict[str, Optional[pd.Series]] = {}
+
+
+def _usdtry() -> Optional[pd.Series]:
+    today = pd.Timestamp.today().normalize()
+    key = today.strftime("%Y-%m-%d")
+    if key not in _FX_CACHE:
+        _FX_CACHE.clear()
+        _FX_CACHE[key] = fxm.load_usdtry(
+            (today - pd.DateOffset(years=6)).date(), today.date()
+        )
+    return _FX_CACHE[key]
+
+
+def _with_risk(identity: sc.FundIdentity, weekly: list[dict]) -> sc.FundIdentity:
+    """Add volatility, drawdown and the dollar return to each return window."""
+    if not weekly:
+        return identity
+    series = pd.Series(
+        [r["price"] for r in weekly],
+        index=pd.to_datetime([r["week_end"] for r in weekly]),
+        dtype="float64",
+    )
+    fx = None
+    for ret in identity.returns:
+        if ret.window_end is None:
+            continue
+        w = rk.window_risk(series, ret.months, ret.window_end)
+        ret.volatility = round(w.volatility, 4) if w.volatility is not None else None
+        ret.max_drawdown = round(w.max_drawdown, 4) if w.max_drawdown is not None else None
+        if ret.nominal is not None:
+            fx = fx if fx is not None else _usdtry()
+            usd = rk.usd_return(ret.nominal, fx, ret.months, ret.window_end)
+            ret.usd = round(usd, 4) if usd is not None else None
+    return identity
+
+
 @app.get(
     "/fund/{code}",
     response_model=sc.FundPageResponse,
@@ -985,7 +1026,7 @@ def fund_page(code: str) -> sc.FundPageResponse:
     return sc.FundPageResponse(
         series=_weekly_series(weekly),
         cpi=_cpi_series(cpi_rows),
-        fund=sc.FundIdentity.from_row(row),
+        fund=_with_risk(sc.FundIdentity.from_row(row), weekly),
         high=high,
         low=low,
         neighbours_unavailable=unavailable,

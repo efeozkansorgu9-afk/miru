@@ -874,6 +874,13 @@ class FundReturnOut(BaseModel):
     #: Month starts. Null together, when there was no window to measure.
     window_start: Optional[_date] = None
     window_end: Optional[_date] = None
+    #: Risk over the same window, off the weekly series. Only on the page's
+    #: own fund; a neighbour's returns carry none of these.
+    volatility: Optional[float] = None
+    max_drawdown: Optional[float] = None
+    #: The TL return restated in dollars at TCMB's rate on the window's
+    #: first and last business days; null when no rate was available.
+    usd: Optional[float] = None
 
 
 class FundIdentity(BaseModel):

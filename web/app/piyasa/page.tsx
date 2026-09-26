@@ -45,11 +45,34 @@ const KART_SAYISI = 12;
 /** Members shown on a card before "tümünü göster". */
 const ONIZLEME = 10;
 
+/**
+ * A few tries, spaced out, before a build gives up.
+ *
+ * Every push redeploys the API on Railway at the same time as the frontend
+ * on Vercel, so a build can ask while the API is restarting, or before the
+ * new process has computed the grouping once (about ten seconds cold). A
+ * build that failed on that race on 2026-09-27 compiled cleanly on retry.
+ * Waiting out a restart is not the same as tolerating a broken API: after
+ * the last try it still throws.
+ */
+async function tekrarla<T>(is: () => Promise<T>, deneme = 4, beklemeMs = 15_000): Promise<T> {
+  let son: unknown;
+  for (let i = 0; i < deneme; i++) {
+    try {
+      return await is();
+    } catch (error) {
+      son = error;
+      if (i < deneme - 1) await new Promise((r) => setTimeout(r, beklemeMs));
+    }
+  }
+  throw son;
+}
+
 async function yukle(): Promise<{ m: MarketResponse; adlar: Record<string, string> }> {
   try {
     const [m, list] = await Promise.all([
-      getMarket({ timeoutMs: 90_000 }),
-      getFundList({ timeoutMs: 30_000 }),
+      tekrarla(() => getMarket({ timeoutMs: 90_000 })),
+      tekrarla(() => getFundList({ timeoutMs: 30_000 })),
     ]);
     return { m, adlar: Object.fromEntries(list.funds.map((f) => [f.code, f.name])) };
   } catch (error) {

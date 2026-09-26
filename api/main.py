@@ -48,6 +48,8 @@ from src import db
 from src import analysis as an
 from src import data as dl
 from src import inflation as inf
+from src import market as mk
+from src import precompute as pc
 from src.tefas_client import TEFASClient
 
 logger = logging.getLogger(__name__)
@@ -775,6 +777,102 @@ def funds_list() -> sc.FundListResponse:
     return sc.FundListResponse(
         count=len(rows), funds=[sc.FundListItem(**r) for r in rows]
     )
+
+
+#: The market grouping, computed once per weekly snapshot. Keyed on the
+#: last run's finish time, so a new snapshot is picked up on the next call
+#: and a process restart costs one recomputation (about a second or two).
+_MARKET_CACHE: dict[str, sc.MarketResponse] = {}
+
+
+def _market(conn) -> sc.MarketResponse:
+    last = db.fetch_last_run(conn)
+    key = str(last["finished_at"]) if last else "none"
+    if key in _MARKET_CACHE:
+        return _MARKET_CACHE[key]
+
+    rows = db.fetch_market_prices(conn)
+    meta = db.fetch_market_meta(conn)
+    if rows:
+        long = pd.DataFrame(rows, columns=["code", "week_end", "price"])
+        long["week_end"] = pd.to_datetime(long["week_end"])
+        long["price"] = pd.to_numeric(long["price"], errors="coerce")
+        grid = long.pivot(index="week_end", columns="code", values="price").sort_index()
+    else:
+        grid = pd.DataFrame()
+
+    thresholds = pc.Thresholds.from_env()
+    g = mk.group_market(mk.returns_from_grid(grid), thresholds)
+
+    def size_of(codes: list[str]) -> Optional[float]:
+        values = [meta.get(c, {}).get("total_assets") for c in codes]
+        known = [v for v in values if v is not None]
+        return float(sum(known)) if known else None
+
+    clusters = []
+    for c in g.clusters:
+        cats = [meta.get(x, {}).get("category") for x in c.codes]
+        cats = [x for x in cats if x]
+        top, share = None, None
+        if cats:
+            counts = pd.Series(cats).value_counts()
+            top, share = str(counts.index[0]), float(counts.iloc[0] / len(c.codes))
+        founders = {meta.get(x, {}).get("founder") for x in c.codes} - {None}
+        clusters.append(
+            sc.MarketClusterOut(
+                codes=c.codes,
+                size=len(c.codes),
+                weakest_ci_low=round(c.weakest_ci_low, 4),
+                median_correlation=round(c.median_correlation, 4),
+                founders=len(founders),
+                top_category=top,
+                top_category_share=round(share, 4) if share is not None else None,
+                total_assets=size_of(c.codes),
+            )
+        )
+
+    unmeasured: dict[str, list[str]] = {}
+    for code, reason in sorted(g.unmeasured.items()):
+        unmeasured.setdefault(reason, []).append(code)
+    # A fund with a page but no stored grid at all was never measured either.
+    without_prices = sorted(set(meta) - set(grid.columns))
+    if without_prices:
+        unmeasured.setdefault(mk.UNMEASURED_SHORT, []).extend(without_prices)
+
+    measured_codes = [x for c in g.clusters for x in c.codes] + g.singletons
+    out = sc.MarketResponse(
+        listed=len(meta),
+        measured=g.measured,
+        groups_total=g.groups_total,
+        clusters=clusters,
+        singletons=g.singletons,
+        unmeasured=unmeasured,
+        overlapping_threshold=thresholds.overlapping,
+        min_weeks=thresholds.min_weeks,
+        window_start=g.window_start.date() if g.window_start is not None else None,
+        window_end=g.window_end.date() if g.window_end is not None else None,
+        total_assets_measured=size_of(measured_codes),
+        last_run_at=last["finished_at"] if last else None,
+    )
+    _MARKET_CACHE.clear()
+    _MARKET_CACHE[key] = out
+    return out
+
+
+@app.get(
+    "/market/clusters",
+    response_model=sc.MarketResponse,
+    tags=["funds"],
+    summary="How many different things the fund universe holds.",
+)
+def market_clusters() -> sc.MarketResponse:
+    """Every included fund, partitioned into groups whose every pair overlaps.
+
+    Computed from the stored weekly grid with the fund pages' own functions
+    and thresholds, once per weekly snapshot, then served from memory.
+    """
+    with _db() as conn:
+        return _market(conn)
 
 
 @app.get(

@@ -502,6 +502,45 @@ def fetch_recent_prices(
         return out
 
 
+def fetch_market_prices(conn: psycopg.Connection) -> list[tuple]:
+    """Every included fund's weekly grid, as (code, week_end, price) rows.
+
+    For the market grouping, which needs the whole universe at once. About
+    300 thousand rows; read once per snapshot and cached by the caller.
+    NULL prices come back as they are — the grid's blanks are its data.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT p.fund_code, p.week_end, p.price
+            FROM fund_prices p JOIN funds f ON f.code = p.fund_code
+            WHERE f.included
+            ORDER BY p.fund_code, p.week_end
+            """
+        )
+        return cur.fetchall()
+
+
+def fetch_market_meta(conn: psycopg.Connection) -> dict[str, dict]:
+    """Name, founder, category and size for every included fund, by code."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT code, name, founder, category, total_assets
+            FROM funds WHERE included ORDER BY code
+            """
+        )
+        return {
+            r[0]: {
+                "name": r[1],
+                "founder": r[2],
+                "category": r[3],
+                "total_assets": float(r[4]) if r[4] is not None else None,
+            }
+            for r in cur.fetchall()
+        }
+
+
 def fetch_cpi(conn: psycopg.Connection) -> list[dict]:
     """The stored CPI index, oldest month first.
 

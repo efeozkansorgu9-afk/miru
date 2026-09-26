@@ -1032,3 +1032,48 @@ class FundListResponse(BaseModel):
 
     count: int
     funds: list[FundListItem]
+
+
+# ----------------------------------------------------------------------
+# The market grouping
+# ----------------------------------------------------------------------
+
+
+class MarketClusterOut(BaseModel):
+    """Funds of which every pair overlaps, with what they have in common.
+
+    `top_category` is TEFAS's own category string, passed through as data;
+    the API still writes no Turkish of its own.
+    """
+
+    codes: list[str]
+    size: int
+    weakest_ci_low: float
+    median_correlation: float
+    founders: int
+    top_category: Optional[str] = None
+    top_category_share: Optional[float] = None
+    total_assets: Optional[float] = None
+
+
+class MarketResponse(BaseModel):
+    """How many different things the fund universe holds.
+
+    `listed` is every fund with a page; `measured` those with enough clean
+    weekly history to be compared; the rest are in `unmeasured` by reason,
+    never silently dropped. `groups_total` counts each multi-fund group once
+    and each fund that joined none once.
+    """
+
+    listed: int
+    measured: int
+    groups_total: int
+    clusters: list[MarketClusterOut]
+    singletons: list[str]
+    unmeasured: dict[str, list[str]]
+    overlapping_threshold: float
+    min_weeks: int
+    window_start: Optional[_date] = None
+    window_end: Optional[_date] = None
+    total_assets_measured: Optional[float] = None
+    last_run_at: Optional[_date_time] = None

@@ -96,6 +96,9 @@ export function fundHref(code: string): string {
 /** How every number on the site is produced. Not a tool, a page. */
 export const METHOD_HREF = "/yontem";
 
+/** The whole market, grouped: how many different things the funds hold. */
+export const MARKET_HREF = "/piyasa";
+
 /* ------------------------------------------------------------------ */
 /* What the header calls where you are                                 */
 /* ------------------------------------------------------------------ */
@@ -141,6 +144,10 @@ export const SECTIONS: readonly Section[] = [
   {
     label: "Yöntem",
     owns: (path) => path === METHOD_HREF,
+  },
+  {
+    label: "Piyasa",
+    owns: (path) => path === MARKET_HREF,
   },
 ];
 

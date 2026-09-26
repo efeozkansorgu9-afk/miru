@@ -73,6 +73,9 @@ export function sayi(n: number): string {
 export function paraKisa(x: number): string {
   const sign = x < 0 ? "-" : "";
   const n = Math.abs(x);
+  // A whole market is sized in trillions; "6079 mr TL" is four digits and
+  // a unit nobody converts in their head.
+  if (n >= 1e12) return `${sign}${birBasamak(n / 1e12)} trn TL`;
   if (n >= 1e9) return `${sign}${birBasamak(n / 1e9)} mr TL`;
   if (n >= 1e6) return `${sign}${birBasamak(n / 1e6)} mn TL`;
   return para(x);

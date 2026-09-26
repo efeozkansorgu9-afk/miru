@@ -103,7 +103,7 @@ export function Returns({
   // empty chart with four dead buttons over it.
   if (options.every((o) => !o.available)) {
     return (
-      <section aria-labelledby="getiriler" className="scroll-mt-24">
+      <section aria-labelledby="getiriler" className="scroll-mt-28 sm:scroll-mt-24">
         <Heading />
         <p className="mt-6 max-w-prose text-lead text-ink-muted text-pretty">
           Bu fonun getirisi hesaplanamadı.{" "}
@@ -114,7 +114,7 @@ export function Returns({
   }
 
   return (
-    <section aria-labelledby="getiriler" className="scroll-mt-24">
+    <section aria-labelledby="getiriler" className="scroll-mt-28 sm:scroll-mt-24">
       <Heading />
 
       <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">

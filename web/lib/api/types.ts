@@ -556,3 +556,37 @@ export interface FundListResponse {
   count: number;
   funds: FundListItem[];
 }
+
+/* ------------------------------------------------------------------ */
+/* The market grouping                                                 */
+/* ------------------------------------------------------------------ */
+
+/** Funds of which every pair overlaps. */
+export interface MarketCluster {
+  codes: string[];
+  size: number;
+  weakest_ci_low: number;
+  median_correlation: number;
+  founders: number;
+  /** TEFAS's own category string, passed through as data. */
+  top_category: string | null;
+  top_category_share: number | null;
+  total_assets: number | null;
+}
+
+export type UnmeasuredReason = "short_history" | "stale_prices";
+
+export interface MarketResponse {
+  listed: number;
+  measured: number;
+  groups_total: number;
+  clusters: MarketCluster[];
+  singletons: string[];
+  unmeasured: Partial<Record<UnmeasuredReason, string[]>>;
+  overlapping_threshold: number;
+  min_weeks: number;
+  window_start: string | null;
+  window_end: string | null;
+  total_assets_measured: number | null;
+  last_run_at: string | null;
+}

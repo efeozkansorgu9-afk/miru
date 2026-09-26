@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Column } from "@/components/column";
-import { FUND_BASE, HOME_HREF, METHOD_HREF, SITE, TOOL, sectionLabel } from "@/lib/site";
+import { FUND_BASE, HOME_HREF, MARKET_HREF, METHOD_HREF, SITE, TOOL, sectionLabel } from "@/lib/site";
 import { ThemeToggle } from "./theme-toggle";
 
 /**
@@ -25,6 +25,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: TOOL.name, short: "Sepet", href: TOOL.href },
   { label: "Fonlar", short: "Fonlar", href: FUND_BASE },
+  { label: "Piyasa", short: "Piyasa", href: MARKET_HREF },
   { label: "Yöntem", short: "Yöntem", href: METHOD_HREF },
 ];
 
@@ -43,7 +44,7 @@ export function NavBar() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-canvas/80 backdrop-blur-md">
-      <Column className="flex h-16 items-center justify-between gap-3 sm:gap-6">
+      <Column className="flex h-14 items-center justify-between gap-3 sm:h-16 sm:gap-6">
         {/* Brand, then tool. Two weights rather than two sizes: the brand
             is the heavier of the pair at the same optical scale, which
             reads as a hierarchy without the tool name shrinking into a
@@ -64,10 +65,7 @@ export function NavBar() {
               tracking pulled in is what makes it look drawn rather than
               typed. `lowercase` is not a class here on purpose, the brand
               is lower case in `lib/site` where the title tag can see it. */}
-          {/* Under 360px the three menu items and the toggle leave no room for
-              the wordmark, and it gives way to the mark alone rather than
-              being overlapped. The link keeps its name for screen readers. */}
-          <span className="shrink-0 font-display text-lead font-bold tracking-[-0.04em] max-[359px]:sr-only">
+          <span className="shrink-0 font-display text-lead font-bold tracking-[-0.04em]">
             {SITE.brand}
           </span>
           {/* Below `sm` the rule and the section give way to the menu,
@@ -88,29 +86,60 @@ export function NavBar() {
           )}
         </Link>
 
-        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-          <nav aria-label="Ana menü" className="flex items-center gap-0.5 sm:mr-2 sm:gap-1">
-            {NAV_ITEMS.map((item) => {
-              const current = isCurrent(item, pathname);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={current ? "page" : undefined}
-                  className={`rounded-control px-2 py-2 text-label transition-colors hover:bg-canvas-sunken hover:text-ink min-[400px]:px-2.5 sm:px-3 ${
-                    current ? "font-medium text-ink" : "text-ink-muted"
-                  }`}
-                >
-                  <span className="sm:hidden">{item.short}</span>
-                  <span className="hidden sm:inline">{item.label}</span>
-                </Link>
-              );
-            })}
+        <div className="flex shrink-0 items-center gap-2">
+          {/* From `sm` up the menu sits in the bar. Below it, four items,
+              the lockup and the toggle do not fit on one row at 375px, so
+              the menu drops to a row of its own under the bar. */}
+          <nav aria-label="Ana menü" className="mr-2 hidden items-center gap-1 sm:flex">
+            {NAV_ITEMS.map((item) => (
+              <MenuLink key={item.href} item={item} current={isCurrent(item, pathname)}>
+                {item.label}
+              </MenuLink>
+            ))}
           </nav>
           <ThemeToggle />
         </div>
       </Column>
+
+      <nav aria-label="Ana menü" className="border-t border-border sm:hidden">
+        <Column className="grid grid-cols-4">
+          {NAV_ITEMS.map((item) => (
+            <MenuLink
+              key={item.href}
+              item={item}
+              current={isCurrent(item, pathname)}
+              className="justify-center py-2.5"
+            >
+              {item.short}
+            </MenuLink>
+          ))}
+        </Column>
+      </nav>
     </header>
+  );
+}
+
+function MenuLink({
+  item,
+  current,
+  className,
+  children,
+}: {
+  item: NavItem;
+  current: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={item.href}
+      aria-current={current ? "page" : undefined}
+      className={`flex items-center rounded-control px-3 py-2 text-label transition-colors hover:bg-canvas-sunken hover:text-ink ${
+        current ? "font-medium text-ink" : "text-ink-muted"
+      } ${className ?? ""}`}
+    >
+      {children}
+    </Link>
   );
 }
 

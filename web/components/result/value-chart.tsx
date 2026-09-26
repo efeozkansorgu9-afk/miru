@@ -137,7 +137,7 @@ export function ValueChart({
   );
 
   return (
-    <section aria-labelledby="deger-grafigi" className="scroll-mt-24">
+    <section aria-labelledby="deger-grafigi" className="scroll-mt-28 sm:scroll-mt-24">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-overline uppercase text-ink-subtle">Değer</p>

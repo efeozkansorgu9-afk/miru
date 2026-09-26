@@ -361,7 +361,7 @@ function Bolum({
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} aria-labelledby={`${id}-baslik`} className="scroll-mt-24">
+    <section id={id} aria-labelledby={`${id}-baslik`} className="scroll-mt-28 sm:scroll-mt-24">
       <div className="flex items-center gap-3">
         <Numara n={no} size="md" />
         <h2 id={`${id}-baslik`} className="text-display-sm text-balance">

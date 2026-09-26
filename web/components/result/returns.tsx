@@ -41,7 +41,7 @@ export function Returns({
   const staged = figures.kind === "staged";
 
   return (
-    <section aria-labelledby="getiri" className="scroll-mt-24">
+    <section aria-labelledby="getiri" className="scroll-mt-28 sm:scroll-mt-24">
       <p className="text-overline uppercase text-ink-subtle">Getiri</p>
       <h2 id="getiri" className="mt-4 text-display-sm text-balance">
         {staged ? "Elinizdeki fonların getirisi" : "Sepetin getirisi"}

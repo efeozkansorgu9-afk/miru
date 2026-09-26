@@ -305,6 +305,17 @@
   --negative: var(--color-loss);
   --caution: var(--color-attention);
   --series-alt: var(--color-series-alt-light);
+  /* The market map's six group colours, in slot order. The dataviz
+     reference palette without its red and green, which this site keeps for
+     money. Validated as a set, adjacent pairs: CVD ΔE 9.1 light / 8.4 dark,
+     normal-vision ΔE 19.6 / 19.3. Three light slots sit under 3:1 against
+     white, so the chart always ships labelled legend rows and a full list. */
+  --group-1: #2a78d6;
+  --group-2: #eb6834;
+  --group-3: #1baf7a;
+  --group-4: #eda100;
+  --group-5: #e87ba4;
+  --group-6: #4a3aa7;
 }
 
 .dark {
@@ -329,6 +340,12 @@
   --negative: var(--color-loss-strong);
   --caution: var(--color-attention-strong);
   --series-alt: var(--color-series-alt-dark);
+  --group-1: #3987e5;
+  --group-2: #d95926;
+  --group-3: #199e70;
+  --group-4: #c98500;
+  --group-5: #d55181;
+  --group-6: #9085e9;
 }
 
 @layer base {

@@ -30,7 +30,7 @@ export function MainFinding({
   const finding = mainFinding(analysis, grouping, partial);
 
   return (
-    <section aria-labelledby="ana-bulgu" className="scroll-mt-24">
+    <section aria-labelledby="ana-bulgu" className="scroll-mt-28 sm:scroll-mt-24">
       <p className="text-overline uppercase text-accent">İnceleme sonucu</p>
 
       <h2 id="ana-bulgu" className="mt-4 max-w-prose text-display-md text-balance">

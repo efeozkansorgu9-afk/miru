@@ -55,7 +55,7 @@ export function RollingCorrelation({ rolling }: { rolling: Rolling }) {
   const strongest = index === 0;
 
   return (
-    <section aria-labelledby="benzerlik" className="scroll-mt-24">
+    <section aria-labelledby="benzerlik" className="scroll-mt-28 sm:scroll-mt-24">
       <p className="text-overline uppercase text-ink-subtle">Benzerlik</p>
 
       {/* The pair and what it came to over the whole period, before the

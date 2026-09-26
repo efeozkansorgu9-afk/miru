@@ -42,7 +42,7 @@ export function NeighbourList({ komsular }: { komsular: Neighbour[] }) {
   if (gruplar.length === 0) return null;
 
   return (
-    <section aria-labelledby="komsular" className="scroll-mt-24">
+    <section aria-labelledby="komsular" className="scroll-mt-28 sm:scroll-mt-24">
       <p className="text-overline uppercase text-ink-subtle">Komşular</p>
       <h2 id="komsular" className="mt-4 text-display-sm text-balance">
         Bu fonla ölçülen {komsular.length} fon

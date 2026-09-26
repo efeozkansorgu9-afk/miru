@@ -7,7 +7,7 @@ import { OrnekCarousel } from "@/components/home/example-carousel";
 import { Reveal } from "@/components/reveal";
 import { sayi, tarih } from "@/lib/format";
 import { ornekleriBul } from "@/lib/home-examples";
-import { FUND_BASE, METHOD_HREF, SITE, TOOL } from "@/lib/site";
+import { FUND_BASE, MARKET_HREF, METHOD_HREF, SITE, TOOL } from "@/lib/site";
 
 /**
  * The brand's home page: `/`.
@@ -111,9 +111,9 @@ export default async function AnaSayfa() {
         <Column className="py-section">
           <p className="text-overline uppercase text-ink-subtle">Neler var</p>
           <h2 className="mt-4 max-w-prose text-display-sm text-balance">
-            Üç yerden başlayabilirsiniz.
+            Dört yerden başlayabilirsiniz.
           </h2>
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Arac
               href={TOOL.href}
               baslik={TOOL.name}
@@ -125,6 +125,12 @@ export default async function AnaSayfa() {
               baslik="Fon sayfaları"
               metin={`${n !== null ? sayi(n) : "Yüzlerce"} fonun her biri için getirisi, enflasyona göre getirisi ve hangi fonlarla birlikte hareket ettiği.`}
               eylem="Fonlara göz atın"
+            />
+            <Arac
+              href={MARKET_HREF}
+              baslik="Piyasa haritası"
+              metin={`TEFAS’taki ${n !== null ? sayi(n) + " fon" : "fonlar"} gerçekte kaç ayrı şey? Birbirinin kopyası olan fon grupları ve paranın dağılımı.`}
+              eylem="Haritaya bakın"
             />
             <Arac
               href={METHOD_HREF}

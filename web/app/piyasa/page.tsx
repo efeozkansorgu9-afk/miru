@@ -122,10 +122,12 @@ export default async function Piyasa() {
             <p>
               Fon sayısı ile para aynı yere düşmüyor. Paranın en büyük kısmı{" "}
               <strong className="text-ink">{grupAdi(enCokPara)}</strong>{" "}
-              grubunda: bu grup fonların {yuzde(enCokPara.size / m.measured)}
-              {yuzdeEki(enCokPara.size / m.measured)}, ama ölçülen fonlardaki
-              paranın {yuzde((enCokPara.total_assets ?? 0) / toplamPara)}
-              {yuzdeEki((enCokPara.total_assets ?? 0) / toplamPara)} tutuyor.
+              grubunda. Fonların yalnızca {yuzde(enCokPara.size / m.measured)}
+              {yuzdeEki(enCokPara.size / m.measured)} bu grupta, ama ölçülen
+              fonlardaki paranın{" "}
+              {yuzde((enCokPara.total_assets ?? 0) / toplamPara)}
+              {yuzdeEki((enCokPara.total_assets ?? 0) / toplamPara)} burada
+              duruyor.
             </p>
           )}
         </div>

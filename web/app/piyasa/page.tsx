@@ -4,6 +4,7 @@ import Link from "next/link";
 import { API_BASE_URL, getFundList, getMarket } from "@/lib/api";
 import type { MarketCluster, MarketResponse } from "@/lib/api";
 import { Column } from "@/components/column";
+import { PayCubugu } from "@/components/market/share-bars";
 import { Reveal } from "@/components/reveal";
 import { ayYil, korelasyon, oran, paraKisa, sayi, yuzde, yuzdeEki } from "@/lib/format";
 import {
@@ -17,7 +18,6 @@ import {
   gruptakiler,
   kategoriSatiri,
 } from "@/lib/market";
-import type { Dilim } from "@/lib/market";
 import { METHOD_HREF, SITE, TOOL, fundHref } from "@/lib/site";
 
 /**
@@ -341,93 +341,6 @@ function Sayac({
         </span>
       </dd>
     </div>
-  );
-}
-
-/**
- * Two 100% bars over the same segments: by fund count, and by money.
- *
- * Part-to-whole, so a stacked bar; the same segment keeps its colour in
- * both, so the eye can follow one group from "how many funds" to "how much
- * money". The legend below is a table with both shares written out, which
- * is also the relief the three light slots under 3:1 contrast need.
- */
-function PayCubugu({ dilimler: ds }: { dilimler: Dilim[] }) {
-  const fonToplam = ds.reduce((a, d) => a + d.fon, 0);
-  const paraToplam = ds.reduce((a, d) => a + d.para, 0);
-
-  const cubuk = (key: "fon" | "para", toplam: number) => (
-    <div className="flex h-9 w-full gap-[2px] overflow-hidden rounded-control">
-      {ds.map((d) => {
-        const pay = toplam > 0 ? d[key] / toplam : 0;
-        if (pay <= 0) return null;
-        return (
-          <div
-            key={d.anahtar}
-            className="h-full first:rounded-l-control last:rounded-r-control"
-            style={{ width: `${pay * 100}%`, background: d.renk }}
-            title={`${d.etiket}${d.alt ? ` (${d.alt})` : ""}: ${yuzde(pay)}`}
-          />
-        );
-      })}
-    </div>
-  );
-
-  return (
-    <figure className="mt-12 rounded-card border border-border bg-surface px-5 py-6 sm:px-7">
-      <figcaption className="text-lead font-semibold text-ink">
-        Fonlar ve para gruplara nasıl dağılıyor
-      </figcaption>
-      <div className="mt-6 grid gap-5">
-        <div>
-          <p className="mb-2 text-label text-ink-subtle">Fon sayısına göre</p>
-          {cubuk("fon", fonToplam)}
-        </div>
-        <div>
-          <p className="mb-2 text-label text-ink-subtle">Fon büyüklüğüne (paraya) göre</p>
-          {cubuk("para", paraToplam)}
-        </div>
-      </div>
-
-      <table className="mt-6 w-full table-fixed text-left">
-        <thead>
-          <tr className="border-b border-border text-label text-ink-subtle">
-            <th scope="col" className="py-2 font-normal">Grup</th>
-            <th scope="col" className="w-16 py-2 text-right font-normal sm:w-24">Fon payı</th>
-            <th scope="col" className="w-16 py-2 text-right font-normal sm:w-24">Para payı</th>
-          </tr>
-        </thead>
-        <tbody className="text-caption tabular-nums">
-          {ds.map((d) => (
-            <tr key={d.anahtar} className="border-b border-border last:border-b-0">
-              <th scope="row" className="py-2 pr-3 font-normal text-ink">
-                <span className="flex min-w-0 items-center gap-2.5">
-                  <span
-                    aria-hidden
-                    className="size-3 shrink-0 rounded-[3px]"
-                    style={{ background: d.renk }}
-                  />
-                  <span className="min-w-0 truncate" title={d.alt ? `${d.etiket} · ${d.alt}` : d.etiket}>
-                    {d.etiket}
-                    {d.alt && <span className="ml-2 text-ink-subtle">{d.alt}</span>}
-                  </span>
-                </span>
-              </th>
-              <td className="py-2 text-right text-ink-muted">
-                {fonToplam > 0 ? yuzde(d.fon / fonToplam) : "—"}
-              </td>
-              <td className="py-2 text-right text-ink-muted">
-                {paraToplam > 0 ? yuzde(d.para / paraToplam) : "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="mt-4 text-caption text-ink-subtle text-pretty">
-        Yalnızca ölçülebilen fonlar. İlk {RENKLI_GRUP} grup en kalabalık
-        olanlar; büyüklük TEFAS’ın son yayımladığı fon toplam değeri.
-      </p>
-    </figure>
   );
 }
 

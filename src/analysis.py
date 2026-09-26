@@ -246,6 +246,10 @@ class BasketAnalysis:
     basket_volatility: float  # annualised
     fund_volatility: dict[str, float]  # annualised, per fund
     weighted_fund_volatility: float  # the ratio's numerator, annualised
+    # Each fund's share of the basket's variance, Euler-decomposed: sums to
+    # 1, and a fund that moves against the rest can come out negative. See
+    # `risk_contributions`. Empty when the basket has no variance at all.
+    risk_contribution: dict[str, float]
     max_drawdown: Drawdown
     weekly_observations: int  # weekly returns the estimates rest on
     start: pd.Timestamp
@@ -441,6 +445,7 @@ def analyze_basket(
         basket_volatility=_annualize(basket_vol_weekly),
         fund_volatility={c: _annualize(v) for c, v in fund_vol_weekly.items()},
         weighted_fund_volatility=_annualize(weighted_vol),
+        risk_contribution=risk_contributions(returns, w),
         max_drawdown=max_drawdown(value),
         weekly_observations=int(len(returns)),
         start=prices.index[0],
@@ -449,6 +454,40 @@ def analyze_basket(
         basket_value=value,
         purchases=plan,
     )
+
+
+def risk_contributions(
+    returns: pd.DataFrame, weights: Mapping[str, float]
+) -> dict[str, float]:
+    """
+    Each fund's share of the basket's variance: w_i (Σw)_i / wᵀΣw.
+
+    The Euler decomposition of variance, on the same weekly returns every
+    other figure here uses, so the shares add up to exactly 1 and can be
+    set beside the money shares they are read against: a fund holding 20%
+    of the money and carrying 45% of the movement is the finding. A fund
+    that moves against the rest of the basket takes some variance *out*,
+    and its share is negative; that is reported as it is, not floored.
+
+    The weights are held fixed at `weights`: "at these proportions, where
+    does the movement come from". The buy-and-hold series drifts away from
+    them over the window, and the drawdown and volatility above describe
+    that series; this describes the basket as it is described to us.
+
+    Pairwise-complete covariance, like the correlation matrix beside it.
+    Returns an empty dict when the variance is zero or not finite, which
+    only a basket of flat prices produces.
+    """
+    codes = list(returns.columns)
+    w = np.array([float(weights.get(c, 0.0)) for c in codes])
+    cov = returns.cov().reindex(index=codes, columns=codes).to_numpy()
+    if not np.isfinite(cov).all():
+        return {}
+    marginal = cov @ w
+    total = float(w @ marginal)
+    if not np.isfinite(total) or total <= 0:
+        return {}
+    return {c: float(w[i] * marginal[i] / total) for i, c in enumerate(codes)}
 
 
 def to_weekly_returns(prices: pd.DataFrame) -> pd.DataFrame:

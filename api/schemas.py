@@ -605,6 +605,10 @@ class BasketAnalysis(BaseModel):
     basket_volatility: float
     fund_volatility: dict[str, float]
     weighted_fund_volatility: float
+    # Each fund's share of the basket's weekly variance, summing to 1; a
+    # fund moving against the rest comes out negative. Empty when the
+    # basket has no variance. Groups' shares are the sums of their members'.
+    risk_contribution: dict[str, float]
     max_drawdown: Drawdown
     weekly_observations: int
     start: str
@@ -639,6 +643,7 @@ class BasketAnalysis(BaseModel):
             basket_volatility=a.basket_volatility,
             fund_volatility=dict(a.fund_volatility),
             weighted_fund_volatility=a.weighted_fund_volatility,
+            risk_contribution={c: round(v, 4) for c, v in a.risk_contribution.items()},
             max_drawdown=Drawdown.from_dataclass(a.max_drawdown),
             weekly_observations=a.weekly_observations,
             start=a.start.strftime("%Y-%m-%d"),
@@ -1082,6 +1087,10 @@ class MarketClusterOut(BaseModel):
     top_category: Optional[str] = None
     top_category_share: Optional[float] = None
     total_assets: Optional[float] = None
+    #: The group's share of the asset-weighted market portfolio's weekly
+    #: variance (Euler decomposition, all shares summing to 1). Null when
+    #: no fund sizes were known.
+    risk_share: Optional[float] = None
     #: The style of the group's equal-weight weekly return.
     style: Optional[StyleOut] = None
 

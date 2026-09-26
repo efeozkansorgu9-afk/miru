@@ -202,3 +202,40 @@ def group_market(
     clusters.sort(key=lambda c: (-len(c.codes), c.codes[0]))
     singletons.sort()
     return MarketGrouping(clusters, singletons, unmeasured, start, end, t)
+
+
+def risk_shares(returns: pd.DataFrame, weights: dict[str, float]) -> dict[str, float]:
+    """Each fund's share of an asset-weighted market portfolio's variance.
+
+    The Euler decomposition the basket tool uses — w_i (Σw)_i / wᵀΣw, the
+    shares summing to exactly 1 — over every fund with a known size, weighted
+    by that size. It answers "of all the movement in the money held in TEFAS
+    funds, how much comes from each group", which the money bar alone does
+    not: a group holding a tenth of the money in equity funds can carry far
+    more than a tenth of the movement.
+
+    Σ is pairwise-complete, like every correlation here: each fund is
+    demeaned over its own weeks and each pair's covariance is taken over the
+    weeks both priced. Four matrix products rather than pandas' pairwise
+    loop, which over ~1,200 funds is ~700,000 pairs. A pairwise matrix need
+    not be positive semi-definite, so a total that comes out non-positive
+    returns an empty dict rather than shares nobody could read.
+    """
+    codes = [c for c in returns.columns if weights.get(c, 0) > 0]
+    if not codes:
+        return {}
+    R = returns[codes].to_numpy(dtype="float64")
+    M = np.isfinite(R)
+    means = np.nanmean(np.where(M, R, np.nan), axis=0)
+    Z = np.where(M, R - means, 0.0)
+    Mf = M.astype("float64")
+    n = Mf.T @ Mf
+    with np.errstate(invalid="ignore", divide="ignore"):
+        cov = np.where(n > 1, (Z.T @ Z) / (n - 1), 0.0)
+    w = np.array([weights[c] for c in codes], dtype="float64")
+    w = w / w.sum()
+    marginal = cov @ w
+    total = float(w @ marginal)
+    if not np.isfinite(total) or total <= 0:
+        return {}
+    return {c: float(w[i] * marginal[i] / total) for i, c in enumerate(codes)}

@@ -832,6 +832,19 @@ def _market(conn) -> sc.MarketResponse:
         known = [v for v in values if v is not None]
         return float(sum(known)) if known else None
 
+    # Share of the asset-weighted market's variance, per fund, summed per
+    # group below. Measured funds with a known size only.
+    measured_all = [x for c in g.clusters for x in c.codes] + list(g.singletons)
+    sizes = {
+        x: float(meta[x]["total_assets"])
+        for x in measured_all
+        if meta.get(x, {}).get("total_assets")
+    }
+    shares = mk.risk_shares(returns, sizes) if sizes else {}
+
+    def risk_of(codes: list[str]) -> Optional[float]:
+        return round(sum(shares.get(x, 0.0) for x in codes), 4) if shares else None
+
     clusters = []
     for i, c in enumerate(g.clusters):
         cats = [meta.get(x, {}).get("category") for x in c.codes]
@@ -851,6 +864,7 @@ def _market(conn) -> sc.MarketResponse:
                 top_category=top,
                 top_category_share=round(share, 4) if share is not None else None,
                 total_assets=size_of(c.codes),
+                risk_share=risk_of(c.codes),
                 style=style_out(group_styles.get(i)),
             )
         )

@@ -49,6 +49,7 @@ from src import analysis as an
 from src import data as dl
 from src import inflation as inf
 from src import market as mk
+from src import style as sty
 from src import precompute as pc
 from src.tefas_client import TEFASClient
 
@@ -802,7 +803,27 @@ def _market(conn) -> sc.MarketResponse:
         grid = pd.DataFrame()
 
     thresholds = pc.Thresholds.from_env()
-    g = mk.group_market(mk.returns_from_grid(grid), thresholds)
+    returns = mk.returns_from_grid(grid)
+    g = mk.group_market(returns, thresholds)
+
+    # What each group is made of: the style of its equal-weight return.
+    model = sty.choose_proxies(returns) if not returns.empty else None
+    group_styles: dict[int, sty.Style] = {}
+    if model is not None and g.clusters:
+        series = pd.DataFrame(
+            {i: sty.group_series(returns, c.codes) for i, c in enumerate(g.clusters)}
+        )
+        group_styles = sty.analyse(series, model)
+
+    def style_out(s: Optional[sty.Style]) -> Optional[sc.StyleOut]:
+        if s is None:
+            return None
+        return sc.StyleOut(
+            weights={k: round(v, 4) for k, v in s.weights.items()},
+            r2=round(s.r2, 4),
+            weeks=s.weeks,
+            reportable=sty.reportable(s),
+        )
 
     def size_of(codes: list[str]) -> Optional[float]:
         values = [meta.get(c, {}).get("total_assets") for c in codes]
@@ -810,7 +831,7 @@ def _market(conn) -> sc.MarketResponse:
         return float(sum(known)) if known else None
 
     clusters = []
-    for c in g.clusters:
+    for i, c in enumerate(g.clusters):
         cats = [meta.get(x, {}).get("category") for x in c.codes]
         cats = [x for x in cats if x]
         top, share = None, None
@@ -828,6 +849,7 @@ def _market(conn) -> sc.MarketResponse:
                 top_category=top,
                 top_category_share=round(share, 4) if share is not None else None,
                 total_assets=size_of(c.codes),
+                style=style_out(group_styles.get(i)),
             )
         )
 
@@ -853,6 +875,10 @@ def _market(conn) -> sc.MarketResponse:
         window_end=g.window_end.date() if g.window_end is not None else None,
         total_assets_measured=size_of(measured_codes),
         last_run_at=last["finished_at"] if last else None,
+        style_factors=[
+            sc.StyleFactorOut(key=k, proxy=v) for k, v in (model.proxies.items() if model else [])
+        ],
+        style_min_r2=sty.MIN_R2,
     )
     _MARKET_CACHE.clear()
     _MARKET_CACHE[key] = out

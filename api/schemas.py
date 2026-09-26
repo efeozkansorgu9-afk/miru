@@ -1039,6 +1039,27 @@ class FundListResponse(BaseModel):
 # ----------------------------------------------------------------------
 
 
+class StyleOut(BaseModel):
+    """What a series is made of, by returns-based style analysis.
+
+    `weights` has every factor key, non-negative, summing to 1. `reportable`
+    is false when the mix explains too little of the series (`r2` under the
+    model's `min_r2`); the frontend then prints no composition at all.
+    """
+
+    weights: dict[str, float]
+    r2: float
+    weeks: int
+    reportable: bool
+
+
+class StyleFactorOut(BaseModel):
+    """One factor, and the fund standing for it in this snapshot."""
+
+    key: str
+    proxy: str
+
+
 class MarketClusterOut(BaseModel):
     """Funds of which every pair overlaps, with what they have in common.
 
@@ -1054,6 +1075,8 @@ class MarketClusterOut(BaseModel):
     top_category: Optional[str] = None
     top_category_share: Optional[float] = None
     total_assets: Optional[float] = None
+    #: The style of the group's equal-weight weekly return.
+    style: Optional[StyleOut] = None
 
 
 class MarketResponse(BaseModel):
@@ -1077,3 +1100,5 @@ class MarketResponse(BaseModel):
     window_end: Optional[_date] = None
     total_assets_measured: Optional[float] = None
     last_run_at: Optional[_date_time] = None
+    style_factors: list[StyleFactorOut] = Field(default_factory=list)
+    style_min_r2: Optional[float] = None

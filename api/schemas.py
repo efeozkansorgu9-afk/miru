@@ -1142,3 +1142,42 @@ class MarketResponse(BaseModel):
     last_run_at: Optional[_date_time] = None
     style_factors: list[StyleFactorOut] = Field(default_factory=list)
     style_min_r2: Optional[float] = None
+
+
+class ShiftOut(BaseModel):
+    """A pair whose correlation in one year differs from the other years'."""
+
+    a: str
+    b: str
+    #: Inside the year.
+    corr: float
+    #: Over every week outside it.
+    rest: float
+    #: Fisher z difference over its standard error; sign follows corr - rest.
+    z: float
+
+
+class PeriodOut(BaseModel):
+    """The style factors over one calendar year, or over the whole window."""
+
+    key: str  # "2025", or "all" for the whole window
+    start: _date
+    end: _date
+    weeks: int
+    partial: bool
+    #: Factor keys as codes.
+    correlation: Correlation
+    #: Annualised weekly volatility per factor key.
+    volatility: dict[str, float]
+    shifts: list[ShiftOut] = Field(default_factory=list)
+
+
+class MarketPeriodsResponse(BaseModel):
+    """How the asset classes related to each other, year by year."""
+
+    factors: list[StyleFactorOut]
+    whole: Optional[PeriodOut]
+    periods: list[PeriodOut]
+    #: Family-wise error rate per year, and the |z| line it implies.
+    alpha: float
+    z_critical: Optional[float]

@@ -53,6 +53,7 @@ from src import style as sty
 from src import fx as fxm
 from src import risk as rk
 from src import fees as fz
+from src import periods as prd
 from src import precompute as pc
 from src.tefas_client import TEFASClient
 
@@ -788,14 +789,18 @@ def funds_list() -> sc.FundListResponse:
 #: last run's finish time, so a new snapshot is picked up on the next call
 #: and a process restart costs one recomputation (about a second or two).
 _MARKET_CACHE: dict[str, sc.MarketResponse] = {}
+_PERIODS_CACHE: dict[str, sc.MarketPeriodsResponse] = {}
+#: The stored grid, its weekly returns and the style model, per snapshot.
+#: Both market endpoints start from the same ~260,000 rows; this is read
+#: once per weekly run rather than once per endpoint.
+_INPUTS_CACHE: dict[str, tuple] = {}
 
 
-def _market(conn) -> sc.MarketResponse:
+def _market_inputs(conn):
     last = db.fetch_last_run(conn)
     key = str(last["finished_at"]) if last else "none"
-    if key in _MARKET_CACHE:
-        return _MARKET_CACHE[key]
-
+    if key in _INPUTS_CACHE:
+        return _INPUTS_CACHE[key]
     rows = db.fetch_market_prices(conn)
     meta = db.fetch_market_meta(conn)
     if rows:
@@ -805,13 +810,23 @@ def _market(conn) -> sc.MarketResponse:
         grid = long.pivot(index="week_end", columns="code", values="price").sort_index()
     else:
         grid = pd.DataFrame()
+    returns = mk.returns_from_grid(grid)
+    model = sty.choose_proxies(returns) if not returns.empty else None
+    out = (key, last, grid, returns, meta, model)
+    _INPUTS_CACHE.clear()
+    _INPUTS_CACHE[key] = out
+    return out
+
+
+def _market(conn) -> sc.MarketResponse:
+    key, last, grid, returns, meta, model = _market_inputs(conn)
+    if key in _MARKET_CACHE:
+        return _MARKET_CACHE[key]
 
     thresholds = pc.Thresholds.from_env()
-    returns = mk.returns_from_grid(grid)
     g = mk.group_market(returns, thresholds)
 
     # What each group is made of: the style of its equal-weight return.
-    model = sty.choose_proxies(returns) if not returns.empty else None
     group_styles: dict[int, sty.Style] = {}
     if model is not None and g.clusters:
         series = pd.DataFrame(
@@ -933,6 +948,57 @@ def market_clusters() -> sc.MarketResponse:
     """
     with _db() as conn:
         return _market(conn)
+
+
+def _period_out(p: prd.Period) -> sc.PeriodOut:
+    return sc.PeriodOut(
+        key=p.key,
+        start=p.start.date(),
+        end=p.end.date(),
+        weeks=p.weeks,
+        partial=p.partial,
+        correlation=sc.Correlation.from_frame(p.corr.round(4)),
+        volatility={k: round(v, 4) for k, v in p.volatility.items()},
+        shifts=[
+            sc.ShiftOut(a=x.a, b=x.b, corr=round(x.corr, 4), rest=round(x.rest, 4), z=round(x.z, 2))
+            for x in p.shifts
+        ],
+    )
+
+
+@app.get(
+    "/market/periods",
+    response_model=sc.MarketPeriodsResponse,
+    tags=["funds"],
+    summary="How the asset classes moved against each other, year by year.",
+)
+def market_periods() -> sc.MarketPeriodsResponse:
+    """Correlations and volatility of the style factors per calendar year.
+
+    `shifts` lists, per year, the pairs whose correlation that year differs
+    from the other years' by more than a Bonferroni-corrected two-sided
+    test at 5% across the year's pairs (`src.periods`). Keys only; the
+    frontend names them.
+    """
+    with _db() as conn:
+        key, last, grid, returns, meta, model = _market_inputs(conn)
+    if key in _PERIODS_CACHE:
+        return _PERIODS_CACHE[key]
+    if model is None or model.factors.empty:
+        out = sc.MarketPeriodsResponse(factors=[], whole=None, periods=[], alpha=prd.ALPHA, z_critical=None)
+    else:
+        whole, periods = prd.calendar_periods(model.factors)
+        pairs = len(model.factors.columns) * (len(model.factors.columns) - 1) // 2
+        out = sc.MarketPeriodsResponse(
+            factors=[sc.StyleFactorOut(key=k, proxy=v) for k, v in model.proxies.items()],
+            whole=_period_out(whole),
+            periods=[_period_out(p) for p in periods],
+            alpha=prd.ALPHA,
+            z_critical=round(prd.z_critical(pairs), 3),
+        )
+    _PERIODS_CACHE.clear()
+    _PERIODS_CACHE[key] = out
+    return out
 
 
 #: USD/TRY, fetched once a day per process. A static build asks for 1,372

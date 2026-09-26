@@ -65,6 +65,28 @@ def _fetch(code: str, start: date, end: date, key: str) -> pd.Series:
     return pd.Series(rows, dtype="float64").sort_index()
 
 
+#: One request per this many days. A single six-year request came back
+#: covering only the recent end (live, 2026-09-27: 6 and 12 month dollar
+#: returns present, 36 and 48 missing), so the span is asked for a year at
+#: a time and stitched; the pieces do not overlap.
+CHUNK_DAYS = 365
+
+
+def _fetch_chunked(code: str, start: date, end: date, key: str) -> pd.Series:
+    parts = []
+    lo = pd.Timestamp(start)
+    hi = pd.Timestamp(end)
+    while lo <= hi:
+        top = min(lo + pd.Timedelta(days=CHUNK_DAYS - 1), hi)
+        parts.append(_fetch(code, lo.date(), top.date(), key))
+        lo = top + pd.Timedelta(days=1)
+    parts = [p for p in parts if not p.empty]
+    if not parts:
+        return pd.Series(dtype="float64")
+    out = pd.concat(parts).sort_index()
+    return out[~out.index.duplicated(keep="last")]
+
+
 def load_usdtry(
     start: date,
     end: date,
@@ -79,7 +101,7 @@ def load_usdtry(
         return None
     for code in series:
         try:
-            s = _fetch(code, start, end, key)
+            s = _fetch_chunked(code, start, end, key)
         except (requests.RequestException, RuntimeError, ValueError) as exc:
             logger.warning("USD/TRY series %s failed: %s", code, exc)
             continue

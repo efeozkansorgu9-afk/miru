@@ -920,17 +920,27 @@ def market_clusters() -> sc.MarketResponse:
 #: USD/TRY, fetched once a day per process. A static build asks for 1,372
 #: fund pages; this makes that one EVDS request, not 1,372.
 _FX_CACHE: dict[str, Optional[pd.Series]] = {}
+_FX_FAILED_AT: list[float] = []
+#: A failed rate fetch is retried after this long rather than the next day:
+#: during a static build every fund page asks, and one transient EVDS error
+#: must not blank the dollar figure on all of them until tomorrow.
+_FX_RETRY_SECONDS = 600
 
 
 def _usdtry() -> Optional[pd.Series]:
     today = pd.Timestamp.today().normalize()
     key = today.strftime("%Y-%m-%d")
-    if key not in _FX_CACHE:
-        _FX_CACHE.clear()
-        _FX_CACHE[key] = fxm.load_usdtry(
-            (today - pd.DateOffset(years=6)).date(), today.date()
-        )
-    return _FX_CACHE[key]
+    if key in _FX_CACHE:
+        return _FX_CACHE[key]
+    if _FX_FAILED_AT and time.monotonic() - _FX_FAILED_AT[-1] < _FX_RETRY_SECONDS:
+        return None
+    rate = fxm.load_usdtry((today - pd.DateOffset(years=6)).date(), today.date())
+    if rate is None:
+        _FX_FAILED_AT[:] = [time.monotonic()]
+        return None
+    _FX_CACHE.clear()
+    _FX_CACHE[key] = rate
+    return rate
 
 
 def _with_risk(identity: sc.FundIdentity, weekly: list[dict]) -> sc.FundIdentity:

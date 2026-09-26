@@ -37,6 +37,7 @@ import time
 from contextlib import contextmanager
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import psycopg
 from fastapi import FastAPI, HTTPException, Request, status
@@ -957,6 +958,7 @@ def _period_out(p: prd.Period) -> sc.PeriodOut:
         end=p.end.date(),
         weeks=p.weeks,
         partial=p.partial,
+        mean_correlation=round(p.mean_correlation, 4) if np.isfinite(p.mean_correlation) else None,
         correlation=sc.Correlation.from_frame(p.corr.round(4)),
         volatility={k: round(v, 4) for k, v in p.volatility.items()},
         shifts=[

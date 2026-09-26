@@ -1165,6 +1165,8 @@ class PeriodOut(BaseModel):
     end: _date
     weeks: int
     partial: bool
+    #: Mean of the distinct pairs' coefficients.
+    mean_correlation: Optional[float] = None
     #: Factor keys as codes.
     correlation: Correlation
     #: Annualised weekly volatility per factor key.

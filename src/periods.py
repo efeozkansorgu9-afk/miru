@@ -73,6 +73,19 @@ class Period:
     volatility: dict[str, float]
     shifts: list[Shift] = field(default_factory=list)
 
+    @property
+    def mean_correlation(self) -> float:
+        """The average over distinct pairs: how much everything moved together.
+
+        A plain mean of coefficients, stated as that and nothing more; it is
+        the page's one-line summary of a year's matrix, not an estimator of
+        anything, so no interval is claimed for it.
+        """
+        m = self.corr.to_numpy()
+        upper = m[np.triu_indices_from(m, k=1)]
+        upper = upper[np.isfinite(upper)]
+        return float(upper.mean()) if upper.size else float("nan")
+
 
 def _vol(frame: pd.DataFrame) -> dict[str, float]:
     return {

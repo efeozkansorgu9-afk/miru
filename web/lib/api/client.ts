@@ -19,6 +19,7 @@ import type {
   FundPageResponse,
   FundsResponse,
   HealthResponse,
+  MarketPeriodsResponse,
   MarketResponse,
   ValidationIssue,
 } from "./types";
@@ -242,4 +243,9 @@ export function getFundPage(
 /** The fund universe grouped by overlap. Computed server side once a week. */
 export function getMarket(options?: RequestOptions): Promise<MarketResponse> {
   return request<MarketResponse>("/market/clusters", { method: "GET" }, options);
+}
+
+/** The style factors' correlations and volatility per calendar year. */
+export function getMarketPeriods(options?: RequestOptions): Promise<MarketPeriodsResponse> {
+  return request<MarketPeriodsResponse>("/market/periods", { method: "GET" }, options);
 }

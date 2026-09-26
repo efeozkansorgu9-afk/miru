@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { API_BASE_URL, getFundList, getMarket } from "@/lib/api";
+import { API_BASE_URL, getFundList, getMarket, getMarketPeriods } from "@/lib/api";
+import type { MarketPeriodsResponse } from "@/lib/api";
+import { Donemler } from "@/components/market/periods";
+import { donemGirisi } from "@/lib/periods";
 import type { MarketCluster, MarketResponse } from "@/lib/api";
 import { Column } from "@/components/column";
 import { PayCubugu } from "@/components/market/share-bars";
@@ -69,13 +72,23 @@ async function tekrarla<T>(is: () => Promise<T>, deneme = 4, beklemeMs = 15_000)
   throw son;
 }
 
-async function yukle(): Promise<{ m: MarketResponse; adlar: Record<string, string> }> {
+async function yukle(): Promise<{
+  m: MarketResponse;
+  adlar: Record<string, string>;
+  donemler: MarketPeriodsResponse | null;
+}> {
   try {
-    const [m, list] = await Promise.all([
+    const [m, list, donemler] = await Promise.all([
       tekrarla(() => getMarket({ timeoutMs: 90_000 })),
       tekrarla(() => getFundList({ timeoutMs: 30_000 })),
+      // An extra: without it the page loses one section, not the build.
+      getMarketPeriods({ timeoutMs: 90_000 }).catch(() => null),
     ]);
-    return { m, adlar: Object.fromEntries(list.funds.map((f) => [f.code, f.name])) };
+    return {
+      m,
+      adlar: Object.fromEntries(list.funds.map((f) => [f.code, f.name])),
+      donemler: donemler && donemler.periods.length > 1 ? donemler : null,
+    };
   } catch (error) {
     throw new Error(
       `Market page cannot be generated: ${API_BASE_URL}/market/clusters did not ` +
@@ -86,7 +99,8 @@ async function yukle(): Promise<{ m: MarketResponse; adlar: Record<string, strin
 }
 
 export default async function Piyasa() {
-  const { m, adlar } = await yukle();
+  const { m, adlar, donemler } = await yukle();
+  const donemGiris = donemler ? donemGirisi(donemler) : null;
   const g = gruptakiler(m);
   const olculmeyen = Object.values(m.unmeasured).reduce((a, v) => a + (v?.length ?? 0), 0);
   const parcalar = dilimler(m);
@@ -213,6 +227,32 @@ export default async function Piyasa() {
           )}
         </Column>
       </div>
+
+      {donemler && (
+        <Column className="pt-section">
+          <section id="donemler" aria-labelledby="donemler-baslik" className="scroll-mt-28 sm:scroll-mt-24">
+            <p className="text-overline uppercase text-accent">Dönemler</p>
+            <h2 id="donemler-baslik" className="mt-4 max-w-prose text-display-sm text-balance">
+              Varlık sınıfları arasındaki ilişki yıldan yıla değişiyor
+            </h2>
+            {donemGiris && (
+              <p className="mt-4 max-w-prose text-lead text-ink-muted text-pretty">{donemGiris}</p>
+            )}
+            <p className="mt-4 max-w-prose text-body text-ink-muted text-pretty">
+              Her varlık sınıfını aşağıda, adlar bölümünde saydığımız temsilci
+              fonla ölçüyoruz. Bir ikilinin bir yıldaki ilişkisini, diğer
+              yılların haftalarındaki ilişkisiyle karşılaştırıyoruz ve farkı
+              yalnızca, o yılın {donemler.factors.length * (donemler.factors.length - 1) / 2}{" "}
+              ikilisi birlikte sınandığında bile tesadüfle açıklanamayacak kadar
+              büyükse gösteriyoruz.{" "}
+              <Link href={`${METHOD_HREF}#donemler`} className="text-accent underline-offset-4 hover:underline">
+                Nasıl sınadığımız
+              </Link>
+            </p>
+            <Donemler data={donemler} />
+          </section>
+        </Column>
+      )}
 
       <Column className="pt-section">
         <section className="max-w-prose">

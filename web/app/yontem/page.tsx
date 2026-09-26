@@ -35,6 +35,7 @@ const BOLUMLER = [
   { id: "sepet", baslik: "Sepet Analizi", ozet: "Gruplar, çeşitlendirme ve kademeli alım" },
   { id: "getiri", baslik: "Getiri ve enflasyon", ozet: "Nominal ve reel getiri aynı pencerede" },
   { id: "risk-ucret", baslik: "Risk, dolar ve ücret", ozet: "Oynaklık, düşüş, risk payı ve yıllık ücret" },
+  { id: "donemler", baslik: "Dönemler", ozet: "Bir yılın ilişkileri diğer yıllardan ne zaman ayrılıyor" },
   { id: "ilkeler", baslik: "Ne yapmıyoruz", ozet: "Tavsiye, not ve ölçülemeyen iddialar" },
 ] as const;
 
@@ -340,7 +341,48 @@ z &= \operatorname{artanh}(r) = \tfrac{1}{2}\ln\frac{1+r}{1-r} \\[4pt]
             </P>
           </Bolum>
 
-          <Bolum id="ilkeler" no={8} baslik="Ne yapmıyoruz">
+          <Bolum id="donemler" no={8} baslik="Dönemler">
+            <P>
+              Dört yıl boyunca ölçülen bir korelasyon, farklı dönemlerin
+              ortalamasıdır. Türk hisseleri ile altın 2025’te çoğunlukla ters
+              yönde, 2026’da aynı yönde hareket etti; dört yılın ortalaması
+              ikisini de “ilişkisiz” gösteriyor, ki bu iki yılın hiçbirini
+              anlatmıyor. Piyasa haritasındaki dönem bölümü bu yüzden her
+              takvim yılını ayrı ölçüyor.
+            </P>
+            <P>
+              Sekiz varlık sınıfını, adlar bölümünde anlattığımız temsilci
+              fonlarla temsil ediyoruz. Her yıl ve her ikili için o yılın
+              korelasyonunu, <strong>diğer yılların haftalarındaki</strong>{" "}
+              korelasyonla karşılaştırıyoruz. Bütün dönemle değil, çünkü bütün
+              dönem o yılı da içeriyor; iki örneklem ortak hafta paylaşmayınca
+              standart iki örneklem sınaması geçerli oluyor.
+            </P>
+            <Formula
+              tex={String.raw`z = \frac{\operatorname{artanh} r_{\text{yıl}} - \operatorname{artanh} r_{\text{diğer}}}{\sqrt{\frac{1}{n_{\text{yıl}} - 3} + \frac{1}{n_{\text{diğer}} - 3}}}`}
+            >
+              Fisher dönüşümüyle iki korelasyonun farkı, standart hatasına
+              bölünüyor.
+            </Formula>
+            <P>
+              Sekiz sınıf 28 ikili ediyor; bir yılda 28 sınamayı birden
+              yapınca, hiçbir şey değişmemiş olsa bile yüzde 5 eşikte bir
+              ikisinin “farklı” çıkması beklenir. Bunu önlemek için eşiği
+              Bonferroni düzeltmesiyle yükseltiyoruz: bir farkı ancak{" "}
+              <strong>|z| 3,12’yi</strong> geçerse gösteriyoruz. Böylece bir
+              yılda gösterdiğimiz ikililer arasında tesadüfen oraya düşmüş en az
+              bir tane bulunma olasılığı yüzde 5’in altında kalıyor. Bu kuralla
+              hiçbir ikilinin ayrılmadığı yıllar da çıkıyor, ve bunu da öyle
+              söylüyoruz.
+            </P>
+            <P>
+              Fiyat tablomuz 2022’nin ortasından başladığı için ilk ve son yıl
+              eksik; ikisini de kapsadıkları aylarla birlikte gösteriyoruz. Bir
+              yılı en az 20 hafta veri varsa ölçüyoruz.
+            </P>
+          </Bolum>
+
+          <Bolum id="ilkeler" no={9} baslik="Ne yapmıyoruz">
             <ul className="flex flex-col gap-3">
               <Ilke baslik="Yatırım tavsiyesi vermiyoruz.">
                 Hangi fonu almanız ya da satmanız gerektiğini söylemiyoruz.

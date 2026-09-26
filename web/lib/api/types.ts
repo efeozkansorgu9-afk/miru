@@ -647,3 +647,41 @@ export interface MarketResponse {
   style_factors: StyleFactor[];
   style_min_r2: number | null;
 }
+
+/* ------------------------------------------------------------------ */
+/* Periods                                                             */
+/* ------------------------------------------------------------------ */
+
+/** A pair whose correlation in one year differs from the other years'. */
+export interface PeriodShift {
+  a: string;
+  b: string;
+  /** Inside the year. */
+  corr: number;
+  /** Over every week outside it. */
+  rest: number;
+  /** Fisher z difference over its standard error. */
+  z: number;
+}
+
+/** The style factors over one calendar year, or the whole window ("all"). */
+export interface MarketPeriod {
+  key: string;
+  start: string;
+  end: string;
+  weeks: number;
+  partial: boolean;
+  mean_correlation?: number | null;
+  /** Factor keys as codes. */
+  correlation: Correlation;
+  volatility: Record<string, number>;
+  shifts: PeriodShift[];
+}
+
+export interface MarketPeriodsResponse {
+  factors: StyleFactor[];
+  whole: MarketPeriod | null;
+  periods: MarketPeriod[];
+  alpha: number;
+  z_critical: number | null;
+}

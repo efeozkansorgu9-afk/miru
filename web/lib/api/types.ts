@@ -572,6 +572,26 @@ export interface MarketCluster {
   top_category: string | null;
   top_category_share: number | null;
   total_assets: number | null;
+  /** What the group's equal-weight return is made of. */
+  style: Style | null;
+}
+
+/**
+ * Returns-based style: non-negative weights over the factors, summing to 1.
+ * `reportable` is false when the mix explains too little (`r2` under the
+ * model's minimum); nothing is then printed about composition.
+ */
+export interface Style {
+  weights: Record<string, number>;
+  r2: number;
+  weeks: number;
+  reportable: boolean;
+}
+
+export interface StyleFactor {
+  key: string;
+  /** The fund standing for this factor in this snapshot. */
+  proxy: string;
 }
 
 export type UnmeasuredReason = "short_history" | "stale_prices";
@@ -589,4 +609,6 @@ export interface MarketResponse {
   window_end: string | null;
   total_assets_measured: number | null;
   last_run_at: string | null;
+  style_factors: StyleFactor[];
+  style_min_r2: number | null;
 }

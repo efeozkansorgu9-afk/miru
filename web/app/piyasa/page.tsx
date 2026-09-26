@@ -5,13 +5,17 @@ import { API_BASE_URL, getFundList, getMarket } from "@/lib/api";
 import type { MarketCluster, MarketResponse } from "@/lib/api";
 import { Column } from "@/components/column";
 import { Reveal } from "@/components/reveal";
-import { ayYil, korelasyon, paraKisa, sayi, yuzde, yuzdeEki } from "@/lib/format";
+import { ayYil, korelasyon, oran, paraKisa, sayi, yuzde, yuzdeEki } from "@/lib/format";
 import {
+  ETKEN_ACIKLAMALARI,
+  ETKEN_ADLARI,
   OLCULEMEDI,
   RENKLI_GRUP,
+  bilesim,
   dilimler,
   grupAdi,
   gruptakiler,
+  kategoriSatiri,
 } from "@/lib/market";
 import type { Dilim } from "@/lib/market";
 import { METHOD_HREF, SITE, TOOL, fundHref } from "@/lib/site";
@@ -121,8 +125,8 @@ export default async function Piyasa() {
           {enCokPara && toplamPara > 0 && (
             <p>
               Fon sayısı ile para aynı yere düşmüyor. Paranın en büyük kısmı{" "}
-              <strong className="text-ink">{grupAdi(enCokPara)}</strong>{" "}
-              grubunda. Fonların yalnızca {yuzde(enCokPara.size / m.measured)}
+              <strong className="text-ink">{kisaAd(enCokPara)}</strong>{" "}
+              {enCokPara.size} fonluk grupta. Fonların yalnızca {yuzde(enCokPara.size / m.measured)}
               {yuzdeEki(enCokPara.size / m.measured)} bu grupta, ama ölçülen
               fonlardaki paranın{" "}
               {yuzde((enCokPara.total_assets ?? 0) / toplamPara)}
@@ -185,6 +189,43 @@ export default async function Piyasa() {
           )}
         </Column>
       </div>
+
+      <Column className="pt-section">
+        <section className="max-w-prose">
+          <h2 className="text-display-sm text-balance">Grupların adları nereden geliyor</h2>
+          <p className="mt-4 text-body text-ink-muted text-pretty">
+            TEFAS’ın kategorileri bir fonun hukuki türünü söylüyor, içinde ne
+            olduğunu söylemiyor: “Serbest Fon” etiketli bir fon dolar tahvili de
+            tutabilir, TL mevduat da. Bu yüzden grupları, getirilerinin neyden
+            oluştuğuna bakarak adlandırıyoruz. Her grubun haftalık getirisini
+            aşağıdaki sekiz etkenin bir karışımı olarak açıklıyoruz; karışımdaki
+            paylar eksi olamıyor ve toplamları %100 ediyor (Sharpe’ın stil
+            analizi). “Dolar %72 · TL faiz %28”, grubun haftalık hareketinin
+            böyle bir karışımla en iyi açıklandığı anlamına geliyor.
+          </p>
+          <p className="mt-4 text-body text-ink-muted text-pretty">
+            Her etkeni, o türü doğrudan izleyen uzun geçmişli bir TEFAS fonu
+            temsil ediyor. Hangi fonun seçileceğini biz belirlemiyoruz: her
+            hafta, adaylar arasından kendi türüne en tipik olanı, yani diğer
+            adaylarla ortanca korelasyonu en yüksek olanı seçiliyor. Karışımın
+            açıklama gücü (R²) {oran(m.style_min_r2 ?? 0.6)} değerinin
+            altındaysa, o gruba bileşim adı vermiyoruz; TEFAS kategorisini
+            gösterip bunu açıkça belirtiyoruz.
+          </p>
+          {m.style_factors.length > 0 && (
+            <ul className="mt-5 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+              {m.style_factors.map((f) => (
+                <li key={f.key} className="flex items-baseline gap-2 text-caption text-ink-muted">
+                  <span className="whitespace-nowrap font-medium text-ink">{ETKEN_ADLARI[f.key] ?? f.key}</span>
+                  <span>·</span>
+                  <FonKodu code={f.proxy} ad={adlar[f.proxy]} />
+                  <span className="text-ink-subtle">{ETKEN_ACIKLAMALARI[f.key] ?? ""}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </Column>
 
       <Column className="py-section">
         <div className="grid gap-10 lg:grid-cols-2">
@@ -270,6 +311,13 @@ export default async function Piyasa() {
 /* Pieces                                                              */
 /* ------------------------------------------------------------------ */
 
+/** "altın ağırlıklı" for a sentence; the category when there is no mix. */
+function kisaAd(c: MarketCluster): string {
+  const b = bilesim(c.style);
+  if (b && b.length > 0) return `${b[0].ad.toLocaleLowerCase("tr")} ağırlıklı`;
+  return c.top_category ?? "karışık";
+}
+
 function Sayac({
   deger,
   etiket,
@@ -318,7 +366,7 @@ function PayCubugu({ dilimler: ds }: { dilimler: Dilim[] }) {
             key={d.anahtar}
             className="h-full first:rounded-l-control last:rounded-r-control"
             style={{ width: `${pay * 100}%`, background: d.renk }}
-            title={`${d.etiket}: ${yuzde(pay)}`}
+            title={`${d.etiket}${d.alt ? ` (${d.alt})` : ""}: ${yuzde(pay)}`}
           />
         );
       })}
@@ -345,8 +393,8 @@ function PayCubugu({ dilimler: ds }: { dilimler: Dilim[] }) {
         <thead>
           <tr className="border-b border-border text-label text-ink-subtle">
             <th scope="col" className="py-2 font-normal">Grup</th>
-            <th scope="col" className="w-14 py-2 text-right font-normal sm:w-20">Fonlar</th>
-            <th scope="col" className="w-14 py-2 text-right font-normal sm:w-20">Para</th>
+            <th scope="col" className="w-16 py-2 text-right font-normal sm:w-24">Fon payı</th>
+            <th scope="col" className="w-16 py-2 text-right font-normal sm:w-24">Para payı</th>
           </tr>
         </thead>
         <tbody className="text-caption tabular-nums">
@@ -359,8 +407,9 @@ function PayCubugu({ dilimler: ds }: { dilimler: Dilim[] }) {
                     className="size-3 shrink-0 rounded-[3px]"
                     style={{ background: d.renk }}
                   />
-                  <span className="truncate" title={d.etiket}>
+                  <span className="min-w-0 truncate" title={d.alt ? `${d.etiket} · ${d.alt}` : d.etiket}>
                     {d.etiket}
+                    {d.alt && <span className="ml-2 text-ink-subtle">{d.alt}</span>}
                   </span>
                 </span>
               </th>
@@ -411,6 +460,14 @@ function GrupKarti({
           {c.size} fon · {c.founders} farklı kurum
           {c.total_assets !== null ? ` · ${paraKisa(c.total_assets)}` : ""}
         </p>
+        {c.style && (
+          <p className="mt-1 text-caption text-ink-subtle tabular-nums">
+            {kategoriSatiri(c) ? `${kategoriSatiri(c)} · ` : ""}
+            {c.style.reportable
+              ? `açıklama gücü (R²) ${oran(c.style.r2)}`
+              : `açıklama gücü (R²) ${oran(Math.max(0, c.style.r2))}, bileşim adı verilmedi`}
+          </p>
+        )}
         <p className="mt-1 text-caption text-ink-subtle tabular-nums">
           En zayıf çiftin alt sınırı {korelasyon(c.weakest_ci_low)} · ortanca
           korelasyon {korelasyon(c.median_correlation)}

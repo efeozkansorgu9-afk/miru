@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Column } from "@/components/column";
+import { Numara } from "@/components/method/numara";
+import { Formula, Tex } from "@/components/method/tex";
+import { TocCard, TocRail } from "@/components/method/toc";
 import { Reveal } from "@/components/reveal";
 import { FUND_BASE, SITE, TOOL } from "@/lib/site";
 
@@ -25,13 +28,13 @@ export const metadata: Metadata = {
 };
 
 const BOLUMLER = [
-  { id: "veri", baslik: "Veri" },
-  { id: "haftalik", baslik: "Neden haftalık getiri" },
-  { id: "korelasyon", baslik: "Korelasyon ve güven aralığı" },
-  { id: "kovalar", baslik: "Kovalar" },
-  { id: "sepet", baslik: "Sepet Analizi" },
-  { id: "getiri", baslik: "Getiri ve enflasyon" },
-  { id: "ilkeler", baslik: "Ne yapmıyoruz" },
+  { id: "veri", baslik: "Veri", ozet: "Fiyatlar nereden geliyor, ne sıklıkla yenileniyor" },
+  { id: "haftalik", baslik: "Neden haftalık getiri", ozet: "Seyrek fiyatlanan fonlar ve günlük verinin tuzağı" },
+  { id: "korelasyon", baslik: "Korelasyon ve güven aralığı", ozet: "Tek bir sayı neden yetmiyor" },
+  { id: "kovalar", baslik: "Kovalar", ozet: "Hangi çifte hangi hüküm, hangi kuralla" },
+  { id: "sepet", baslik: "Sepet Analizi", ozet: "Gruplar, çeşitlendirme ve kademeli alım" },
+  { id: "getiri", baslik: "Getiri ve enflasyon", ozet: "Nominal ve reel getiri aynı pencerede" },
+  { id: "ilkeler", baslik: "Ne yapmıyoruz", ozet: "Tavsiye, not ve ölçülemeyen iddialar" },
 ] as const;
 
 export default function Yontem() {
@@ -40,263 +43,303 @@ export default function Yontem() {
       <Reveal className="max-w-prose">
         <p className="text-overline uppercase text-ink-subtle">Yöntem</p>
         <h1 className="mt-4 text-display-md text-balance">
-          Sayılar nereden geliyor, nasıl hesaplanıyor.
+          Sayılarımızın arkasında ne var
         </h1>
         <p className="mt-5 text-lead text-ink-muted text-pretty">
           {SITE.brand} size ne almanız gerektiğini söylemez; elinizde ne olduğunu
-          gösterir. Bunu yapabilmesi için her iddianın ölçülmüş olması, ölçülemeyen
-          yerde de susması gerekiyor. Bu sayfa o ölçümün nasıl yapıldığını anlatıyor.
+          gösterir. Bu iddiayı ciddiye alabilmeniz için her sayının nereden
+          geldiğini açıkça yazmamız gerekiyor. Bu sayfada tam olarak bunu
+          yapıyoruz: hangi veriyi kullandığımızı, nasıl hesapladığımızı ve bilerek
+          neleri yapmadığımızı anlatıyoruz.
         </p>
       </Reveal>
 
-      <nav
-        aria-label="Bu sayfada"
-        className="mt-10 max-w-prose rounded-card border border-border bg-surface px-6 py-5"
-      >
-        <p className="text-label text-ink-subtle">Bu sayfada</p>
-        <ol className="mt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-          {BOLUMLER.map((b, i) => (
-            <li key={b.id}>
-              <a
-                href={`#${b.id}`}
-                className="text-body text-ink transition-colors hover:text-accent"
-              >
-                <span className="mr-2 font-mono text-label text-ink-subtle tabular-nums">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                {b.baslik}
-              </a>
-            </li>
-          ))}
-        </ol>
-      </nav>
+      <div className="mt-10 max-w-prose lg:hidden">
+        <TocCard items={BOLUMLER} />
+      </div>
 
-      <div className="mt-section flex max-w-prose flex-col gap-section">
-        <Bolum id="veri" no={1} baslik="Veri">
-          <P>
-            Fon fiyatları TEFAS&apos;tan (Türkiye Elektronik Fon Alım Satım
-            Platformu) alınıyor. Evrende TEFAS üzerinden işlem gören yatırım ve
-            emeklilik fonları var, yaklaşık 1.370 fon. Nitelikli yatırımcıya
-            açık gayrimenkul ve girişim sermayesi fonları ile TEFAS&apos;ta işlem
-            görmeyen fonlar hesaba hiç girmiyor.
-          </P>
-          <P>
-            TEFAS bugünden geriye beş yıl fiyat veriyor, daha eskisini vermiyor.
-            Enflasyon verisi TÜİK&apos;in tüketici fiyat endeksi; TCMB&apos;nin EVDS
-            servisinden okunuyor.
-          </P>
-          <P>
-            Fon sayfalarındaki her şey her pazartesi 03:00&apos;te (İstanbul)
-            yeniden hesaplanıyor: fiyatlar çekiliyor, bütün fon çiftlerinin
-            korelasyonu ve her fonun getirisi hesaplanıp veritabanına yazılıyor.
-            Sayfalar bu hazır sonuçları okuyor, ziyaret sırasında hiçbir şey
-            hesaplanmıyor.
-          </P>
-          <Not>
-            Bir fonun fiyatı çekilemediğinde o fon sessizce listeden düşmüyor:
-            neden dışarıda kaldığı kaydediliyor. Çekilemeyen bir istek birkaç
-            dakika sonra bir kez daha deneniyor, çünkü &ldquo;istek
-            tamamlanmadı&rdquo; ile &ldquo;bu fonun fiyatı yok&rdquo; aynı şey
-            değil.
-          </Not>
-        </Bolum>
+      <div className="mt-section lg:mt-14 lg:grid lg:grid-cols-[minmax(0,1fr)_13rem] lg:gap-16">
+        <div className="flex max-w-prose flex-col gap-section">
+          <Bolum id="veri" no={1} baslik="Veri">
+            <P>
+              Fiyatları doğrudan TEFAS’tan alıyoruz. TEFAS üzerinden alınıp
+              satılabilen bütün yatırım ve emeklilik fonlarına bakıyoruz; bu şu
+              an 1.370 civarında fon ediyor. Yalnızca nitelikli yatırımcıya açık
+              gayrimenkul ve girişim sermayesi fonlarını ve TEFAS’ta işlem
+              görmeyen fonları dışarıda bırakıyoruz. Çoğu kişinin zaten
+              alamayacağı fonları hesaba katmanın anlamı yok.
+            </P>
+            <P>
+              TEFAS geriye doğru en fazla beş yıllık fiyat veriyor; bizim de
+              bakabildiğimiz en uzak nokta bu. Enflasyon için TÜİK’in tüketici
+              fiyat endeksini kullanıyoruz, onu da Merkez Bankası’nın EVDS
+              servisinden çekiyoruz.
+            </P>
+            <P>
+              Her pazartesi sabah 03:00’te bütün hesabı baştan yapıyoruz:
+              fiyatları çekiyor, yaklaşık 950 bin fon çiftinin korelasyonunu ve
+              her fonun getirisini hesaplayıp kaydediyoruz. Siz bir fon sayfasını
+              açtığınızda o an hiçbir şey hesaplanmıyor; gördüğünüz şey, pazartesi
+              sabahı hazırlanmış sonuç.
+            </P>
+            <Not>
+              Bir fonun fiyatını çekemediğimizde onu sessizce listeden silmiyoruz.
+              Önce birkaç dakika bekleyip bir kez daha deniyoruz, çünkü “TEFAS o
+              an cevap vermedi” ile “bu fonun fiyatı yok” çok farklı şeyler.
+              İkinci denemede de olmazsa fonu dışarıda bırakıyoruz, ama nedenini
+              kaydediyoruz.
+            </Not>
+          </Bolum>
 
-        <Bolum id="haftalik" no={2} baslik="Neden haftalık getiri">
-          <P>
-            Bütün hesaplar haftalık getiriler üzerinden yapılıyor: her haftanın
-            son işlem gününün fiyatı (hafta cuma biter) alınıp bir önceki haftaya
-            bölünüyor.
-          </P>
-          <P>
-            Günlük veri daha çok gözlem demek, ama Türkiye&apos;de bazı fonlar
-            her gün gerçekten fiyatlanmıyor; fiyatı birkaç gün aynı kalıp sonra
-            sıçrıyor. Günlük getirilerle bakıldığında bu fonlar hiçbir şeyle
-            birlikte hareket etmiyormuş gibi görünür ve aslında tek bir varlığa
-            yığılmış bir sepet, dağılmış gibi okunur. Haftalık getiri bu gecikmeyi
-            büyük ölçüde emiyor.
-          </P>
-          <P>
-            Eksik günler doldurulmuyor. Bir önceki fiyatı ileri taşımak, var
-            olmayan sıfır getirili günler uydurmak ve oynaklığı olduğundan düşük
-            göstermek olurdu. Haftalarının %30&apos;undan fazlasında hiç
-            fiyat değişmemiş bir fon için korelasyon hükmü hiç verilmiyor; o fon
-            fiyatlanmıyor, taşınıyor.
-          </P>
-        </Bolum>
+          <Bolum id="haftalik" no={2} baslik="Neden haftalık getiri">
+            <P>
+              Günlük değil, haftalık getirilerle çalışıyoruz. Her haftanın son
+              işlem günündeki fiyatı bir önceki haftanınkiyle karşılaştırıyoruz:
+            </P>
+            <Formula tex={String.raw`r_t = \frac{P_t}{P_{t-1}} - 1`}>
+              <Tex>{"P_t"}</Tex>, fonun <Tex>{"t"}</Tex> haftasındaki son fiyatı.
+              Haftalarımız cuma günü bitiyor.
+            </Formula>
+            <P>
+              İlk bakışta günlük veri daha iyi gibi duruyor, sonuçta daha çok
+              gözlem demek. Ama Türkiye’de bazı fonların fiyatı her gün gerçekten
+              değişmiyor: birkaç gün aynı kalıyor, sonra bir anda sıçrıyor. Günlük
+              veriyle bakınca bu fonlar hiçbir şeyle birlikte hareket etmiyormuş
+              gibi görünüyor. Sonuç tehlikeli: aslında tek bir şeye yatırılmış bir
+              sepet, güzelce dağılmış gibi çıkıyor. Haftalık veride bu gecikmeler
+              büyük ölçüde kayboluyor.
+            </P>
+            <P>
+              Eksik günleri de doldurmuyoruz. Önceki günün fiyatını ileri taşımak
+              kolay olurdu, ama bu hiç yaşanmamış “sıfır getirili” günler
+              uydurmak demek; fon da olduğundan daha sakin görünür. Haftalarının
+              %30’undan fazlasında fiyatı hiç kıpırdamamış bir fon hakkında ise
+              korelasyon hükmü vermiyoruz. Öyle bir fonun fiyatı piyasayı değil,
+              fiyatlama takvimini yansıtıyor.
+            </P>
+          </Bolum>
 
-        <Bolum id="korelasyon" no={3} baslik="Korelasyon ve güven aralığı">
-          <P>
-            İki fonun ne kadar birlikte hareket ettiği, haftalık getirilerinin
-            Pearson korelasyonu ile ölçülüyor: 1 aynı hareket, 0 ilişki yok, −1
-            ters hareket. Her çift, iki fonun <em>ortak</em> olduğu haftalar
-            üzerinden ölçülüyor; yeni kurulmuş bir fon, eski bir fonla yalnızca
-            kendi ömrü kadar karşılaştırılıyor. Yaklaşık 950 bin çiftin hepsi
-            tek bir matris işlemiyle, tek seferde hesaplanıyor.
-          </P>
-          <P>
-            Tek bir korelasyon sayısı, kaç haftaya dayandığını söylemez. 30
-            haftada ölçülen 0,92 ile 200 haftada ölçülen 0,92 aynı güveni hak
-            etmez. Bu yüzden her çift için Fisher z dönüşümüyle %95 güven
-            aralığı hesaplanıyor:
-          </P>
-          <Formul>
-            z = artanh(r) &nbsp;·&nbsp; SE = 1 / √(n − 3) &nbsp;·&nbsp; aralık =
-            tanh(z ± 1,96 · SE)
-          </Formul>
-          <AralikOrnegi />
-          <P>
-            İki çiftin korelasyonu aynı, ama 30 haftalık olanın aralığı alt
-            sınırda 0,837&apos;ye kadar iniyor. Hüküm bu aralığa göre verildiği
-            için ikisi farklı kovalara düşüyor. 52 haftadan az ortak geçmişi olan
-            çiftler için ise hiç hüküm verilmiyor.
-          </P>
-        </Bolum>
+          <Bolum id="korelasyon" no={3} baslik="Korelasyon ve güven aralığı">
+            <P>
+              İki fonun ne kadar birlikte hareket ettiğini, haftalık getirilerinin
+              korelasyonuyla ölçüyoruz. 1 tamamen aynı hareket, 0 hiçbir ilişki
+              yok, −1 tam ters hareket demek.
+            </P>
+            <Formula
+              tex={String.raw`\rho_{AB} = \frac{\sum_t \bigl(r^A_t - \bar r^A\bigr)\bigl(r^B_t - \bar r^B\bigr)}{\sqrt{\sum_t \bigl(r^A_t - \bar r^A\bigr)^2}\;\sqrt{\sum_t \bigl(r^B_t - \bar r^B\bigr)^2}}`}
+            >
+              Standart Pearson korelasyonu, tek bir farkla: toplamları yalnızca
+              iki fonun da fiyatı olan haftalar üzerinden alıyoruz. Geçen yıl
+              kurulmuş bir fonu, on yıllık bir fonla ancak kendi ömrü kadar
+              karşılaştırabiliriz.
+            </Formula>
+            <P>
+              Burada çoğu yerde atlanan bir sorun var: tek bir korelasyon sayısı,
+              kaç haftalık veriye dayandığını söylemez. 30 haftada çıkmış 0,92 ile
+              200 haftada çıkmış 0,92 aynı şey değil; ilki şansa çok daha açık. Bu
+              yüzden her çiftin sayısının etrafına %95 güven aralığı koyuyoruz.
+              Bunun için Fisher z dönüşümünü kullanıyoruz:
+            </P>
+            <Formula
+              tex={String.raw`\begin{aligned}
+z &= \operatorname{artanh}(r) = \tfrac{1}{2}\ln\frac{1+r}{1-r} \\[4pt]
+\mathrm{SE} &= \frac{1}{\sqrt{n-3}} \\[4pt]
+\bigl[\,r_{\text{alt}},\; r_{\text{üst}}\,\bigr] &= \bigl[\tanh(z - 1{,}96\,\mathrm{SE}),\; \tanh(z + 1{,}96\,\mathrm{SE})\bigr]
+\end{aligned}`}
+            >
+              Korelasyonu önce <Tex>{"z"}</Tex> ölçeğine çeviriyor, aralığı orada
+              kuruyor, sonra geri çeviriyoruz. <Tex>{"n"}</Tex> iki fonun ortak
+              hafta sayısı; veri azaldıkça SE büyüyor, aralık da genişliyor.
+            </Formula>
+            <AralikOrnegi />
+            <P>
+              İki çiftin korelasyonu tıpatıp aynı. Ama 30 haftalık olanın aralığı
+              0,837’ye kadar iniyor; yani “örtüşüyorlar” diyecek kadar emin
+              olamıyoruz. 200 haftalık olan ise rahatça eşiğin üstünde kalıyor.
+              Ortak geçmişi 52 haftadan kısa olan çiftler hakkında ise hiç hüküm
+              vermiyoruz.
+            </P>
+          </Bolum>
 
-        <Bolum id="kovalar" no={4} baslik="Kovalar">
-          <P>
-            Her çift bir kovaya konuyor. Kural tek: <strong>hüküm, güven
-            aralığının iddiaya karşı olan ucuna bakılarak veriliyor.</strong>{" "}
-            &ldquo;Bu iki fon örtüşüyor&rdquo; demek için aralığın alt ucuna,
-            &ldquo;ters hareket ediyorlar&rdquo; demek için üst ucuna bakılıyor.
-            Böylece az veriye dayanan yüksek bir sayı kendiliğinden güçlü bir iddia
-            haline gelmiyor.
-          </P>
-          <KovaTablosu />
-          <P>
-            Fon sayfasındaki komşular da sıralı bir liste olarak değil, kova
-            kova gösteriliyor. Sıralı bir listede insanlar en üsttekini alır,
-            o da örtük bir tavsiye olur. Bir fonun en yakın komşusu da en
-            büyük katsayıya göre değil, güven aralığının alt ucuna göre
-            seçiliyor: dokuz haftada 0,99 çıkan bir çift, üç yılda 0,95 çıkan
-            bir çiftin önüne geçemiyor.
-          </P>
-        </Bolum>
+          <Bolum id="kovalar" no={4} baslik="Kovalar">
+            <P>
+              Her çifti bir kovaya koyuyoruz ve bunu yaparken tek bir kurala
+              uyuyoruz: <strong>iddiamıza karşı çıkan uca bakıyoruz.</strong>{" "}
+              “Bu iki fon örtüşüyor” diyeceksek, aralığın alt ucu bile yeterince
+              yüksek olmalı. “Ters hareket ediyorlar” diyeceksek, üst ucu bile
+              yeterince düşük olmalı. Böylece az veriden çıkmış parlak bir sayı,
+              kendiliğinden güçlü bir iddiaya dönüşemiyor.
+            </P>
+            <KovaTablosu />
+            <P>
+              Fon sayfalarında komşuları da sıralı bir liste olarak değil, bu
+              kovalara ayırarak gösteriyoruz. Sebebi basit: sıralı bir listede
+              insanlar en üsttekini seçer, o da farkında olmadan bir tavsiyeye
+              dönüşür. Bir fonun “en yakın komşusunu” seçerken de en büyük sayıya
+              değil, aralığın alt ucuna bakıyoruz. Yoksa dokuz haftalık veriyle
+              0,99 çıkmış bir çift, üç yıl boyunca 0,95’te kalmış bir çiftin önüne
+              geçerdi.
+            </P>
+          </Bolum>
 
-        <Bolum id="sepet" no={5} baslik={TOOL.name}>
-          <P>
-            {TOOL.name}, girdiğiniz fonları son beş yılın ortak haftaları
-            üzerinden karşılaştırıyor. Bu süre ayarlanamıyor; ne kadar geriye
-            bakılacağı kullanıcıya bırakılırsa, yanlış seçim cevabı sessizce
-            değiştirir.
-          </P>
-          <P>
-            <strong>Gruplar.</strong> Aralarındaki <em>her</em> çiftin
-            korelasyonu 0,85&apos;in üstünde olan fonlar bir grup sayılıyor.
-            Zincir yeterli değil: A, B&apos;ye ve B, C&apos;ye benziyor diye A ile
-            C aynı gruba girmiyor. Bir fon birden fazla gruba uyuyorsa yalnızca
-            en ağır olanında sayılıyor, böylece grup ağırlıkları toplamı %100&apos;ü
-            geçmiyor.
-          </P>
-          <P>
-            Bir grubun ne kadar yüksek sesle söylendiği ağırlığına bağlı:
-            sepetin yarısından fazlası tek bir grupsa sonuç bununla başlıyor,
-            dörtte biri ile yarısı arasındaysa başlıkta adı geçiyor, dörtte
-            birinden azsa başlığa çıkmıyor ama altta yazıyor. Bilgi hiçbir
-            zaman atılmıyor, yalnızca vurgusu değişiyor.
-          </P>
-          <P>
-            <strong>Çeşitlendirme oranı.</strong> Fonların tek tek
-            oynaklıklarının ağırlıklı toplamının, sepetin gerçek oynaklığına
-            oranı. 1 çıkıyorsa fonlar tek bir şey gibi hareket ediyor ve birden
-            fazla fon tutmak bir şey kazandırmamış demektir; 1&apos;in ne kadar
-            üstündeyse, fonların birbirinden bağımsız hareketi o kadar
-            birbirini dengeliyor.
-          </P>
-          <P>
-            <strong>Kademeli alım.</strong> Tarihli alımlar girildiğinde
-            ağırlıklar ödenen paraya göre değil, bugünkü değere göre
-            hesaplanıyor. Getirinin başlığında basit yüzde değil yıllık iç
-            verim oranı (XIRR) var: geçen ay yatırılan para, üç yıl önce
-            yatırılan kadar çalışmadı. Gerçek bir 36 aylık düzenli alım
-            sepetinde basit getiri %136, XIRR ise yıllık %46 çıktı. Oynaklık
-            ve en büyük düşüş ise para girişlerinden arındırılmış seri
-            üzerinden ölçülüyor; aksi halde her yeni yatırım bir toparlanma
-            gibi görünürdü.
-          </P>
-          <P>
-            <strong>İki ölçü ayrıştığında.</strong> Pearson korelasyonu birkaç
-            uç haftadan çok etkilenebiliyor. Bu yüzden sonuçta sıralama tabanlı
-            Spearman korelasyonu da hesaplanıyor ve ikisi arasındaki fark 0,10&apos;u
-            geçen çiftler ayrıca gösteriliyor. Örneğin 24 Aralık 2021 haftası
-            (kurun sert döndüğü, altın fonlarının yaklaşık %24, hisse fonlarının
-            yaklaşık %20 düştüğü hafta) tek başına bazı çiftlerin Pearson
-            katsayısını iki katına çıkarıyor; Spearman ise neredeyse
-            kıpırdamıyor. Gruplama yine Pearson&apos;la yapılıyor; fark yalnızca
-            bilgi olarak veriliyor.
-          </P>
-        </Bolum>
+          <Bolum id="sepet" no={5} baslik={TOOL.name}>
+            <P>
+              {TOOL.name}’ne fonlarınızı girdiğinizde, hepsinin birlikte
+              fiyatlandığı haftalara son beş yıl üzerinden bakıyoruz. Bu süreyi
+              değiştirmenize bilerek izin vermiyoruz. Ne kadar geriye
+              bakılacağını seçmek sonucu fark ettirmeden değiştirebilecek bir
+              karar, ve bu yükü size bırakmak istemiyoruz.
+            </P>
+            <P>
+              <strong>Gruplar.</strong> Aralarındaki <em>her</em> çiftin
+              korelasyonu 0,85’in üstündeyse, o fonları bir grup sayıyoruz. “Her
+              çift” kısmı önemli: A, B’ye, B de C’ye benziyor diye A ile C’yi
+              aynı gruba koymuyoruz. Bir fon birden fazla gruba uyuyorsa onu
+              yalnızca en ağır grupta sayıyoruz; böylece grupların toplam
+              ağırlığı hiçbir zaman %100’ü aşmıyor.
+            </P>
+            <P>
+              Bir grubu ne kadar öne çıkaracağımız da ağırlığına bağlı. Sepetinizin
+              yarısından fazlası tek bir gruptaysa söze bununla başlıyoruz.
+              Dörtte biriyle yarısı arasındaysa başlıkta adını anıyoruz. Dörtte
+              birden azsa başlığa taşımıyoruz ama aşağıda mutlaka yazıyoruz. Hiçbir
+              bulguyu saklamıyoruz, sadece sesini ayarlıyoruz.
+            </P>
+            <P>
+              <strong>Çeşitlendirme oranı.</strong> Fonlarınızın tek tek ne kadar
+              oynak olduğunu, sepetin bütün olarak ne kadar oynak olduğuyla
+              karşılaştırıyoruz:
+            </P>
+            <Formula tex={String.raw`\text{ÇO} = \frac{\sum_i w_i\,\sigma_i}{\sigma_p}`}>
+              <Tex>{"w_i"}</Tex> fonun sepetteki payı, <Tex>{"\\sigma_i"}</Tex>{" "}
+              kendi oynaklığı, <Tex>{"\\sigma_p"}</Tex> sepetin oynaklığı. Oran 1
+              çıkıyorsa fonlarınız tek bir şeymiş gibi hareket ediyor ve birden
+              fazla fon tutmak size bir şey kazandırmamış. 1’in ne kadar
+              üstündeyse, fonlar birbirinin dalgalanmasını o kadar dengeliyor.
+            </Formula>
+            <P>
+              <strong>Kademeli alım.</strong> Alımlarınızı tarihleriyle
+              girdiğinizde iki şey değişiyor. Birincisi, ağırlıkları yatırdığınız
+              paraya göre değil, bugünkü değere göre hesaplıyoruz. İkincisi,
+              getiriyi basit yüzdeyle göstermiyoruz, çünkü geçen ay yatırdığınız
+              para üç yıl önce yatırdığınız kadar çalışmadı. Onun yerine yıllık iç
+              verim oranını (XIRR) kullanıyoruz:
+            </P>
+            <Formula tex={String.raw`\sum_{k} \frac{C_k}{(1+x)^{(t_k - t_0)/365}} = 0`}>
+              <Tex>{"C_k"}</Tex> her alımda cebinizden çıkan para (eksi) ve
+              bugünkü değer (artı), <Tex>{"t_k"}</Tex> de tarihi. Denklemi sıfır
+              yapan <Tex>{"x"}</Tex> yıllık getiriniz. Böyle bir oran
+              bulunamıyorsa sayı uydurmuyoruz, boş bırakıyoruz.
+            </Formula>
+            <P>
+              Farkın ne kadar büyük olabileceğini gerçek bir örnekte gördük: 36 ay
+              boyunca her ay alım yapılan bir sepette basit getiri %136 çıkarken,
+              XIRR yıllık %46 çıktı. Oynaklığı ve en büyük düşüşü ise para
+              girişlerinden arındırılmış seri üzerinden ölçüyoruz; yoksa her yeni
+              yatırımınız grafikte bir toparlanma gibi görünürdü.
+            </P>
+            <P>
+              <strong>İki ölçü ayrıştığında.</strong> Pearson korelasyonunun bir
+              zaafı var: birkaç uç hafta onu epey oynatabiliyor. 24 Aralık 2021
+              haftasını hatırlayın. Kur sert döndü; altın fonları bir haftada
+              yaklaşık %24, hisse fonları %20 civarında düştü. O tek hafta, bazı
+              fon çiftlerinin korelasyonunu neredeyse iki katına çıkarıyor. Bu
+              yüzden yanına sıralamaya dayanan Spearman korelasyonunu da
+              hesaplıyoruz; o bu tür haftalardan pek etkilenmiyor. İkisi
+              arasındaki fark 0,10’u geçen çiftleri ayrıca gösteriyoruz. Grupları
+              yine Pearson’la kuruyoruz; aradaki fark size ek bilgi olarak
+              veriliyor.
+            </P>
+          </Bolum>
 
-        <Bolum id="getiri" no={6} baslik="Getiri ve enflasyon">
-          <P>
-            Fon sayfalarında getiriler 6 ay, 1 yıl, 3 yıl ve 4 yıl için,
-            hem nominal hem de enflasyondan arındırılmış (reel) olarak veriliyor.
-          </P>
-          <P>
-            Pencere bugünde değil, <strong>son yayımlanmış TÜFE ayının
-            sonunda</strong> bitiyor. TÜİK bir ayın endeksini ertesi ayın
-            başında yayımlıyor; son birkaç haftanın fiyatlarının arkasında henüz
-            bir endeks yok. İki rakam da aynı pencerede ölçülüyor: bugüne kadar
-            giden bir nominal getiriyi geçen aya kadar giden bir reel getirinin
-            yanına koymak, aradaki farkı enflasyon gibi gösterirdi. Endeks hiçbir
-            zaman tahmin edilmiyor ya da ileri taşınmıyor.
-          </P>
-          <P>
-            5 yıllık getiri yok. TEFAS beş yıldan eskisini vermiyor, pencere de
-            son TÜFE ayında bittiği için 60 aylık bir pencere o sınırın
-            öncesine taşıyor. Ölçülebilen en uzun yuvarlak pencere 48 ay; 48
-            aya &ldquo;5 yıl&rdquo; demek bu sitenin yapmadığı şey.
-          </P>
-          <P>
-            Bir fonun geçmişi bir dönemi kapsamıyorsa o dönem için sayı
-            verilmiyor; daha kısa bir süreden hesaplanıp aynı etiketle
-            gösterilmiyor. Yönetim ücreti fon fiyatının içinde olduğu için
-            getiriler ücret düşülmüş haliyle; vergi hesaba katılmıyor.
-          </P>
-        </Bolum>
+          <Bolum id="getiri" no={6} baslik="Getiri ve enflasyon">
+            <P>
+              Fon sayfalarında getirileri 6 ay, 1 yıl, 3 yıl ve 4 yıl için
+              veriyoruz; hem nominal hem de enflasyondan arındırılmış (reel)
+              olarak.
+            </P>
+            <P>
+              Burada küçük ama önemli bir ayrıntı var: pencereyi bugün değil,{" "}
+              <strong>son açıklanan enflasyon ayının sonunda</strong> bitiriyoruz.
+              TÜİK bir ayın enflasyonunu ertesi ayın başında açıklıyor; yani son
+              birkaç haftanın fiyatlarının karşılığında henüz bir enflasyon rakamı
+              yok. Nominal getiriyi bugüne kadar, reel getiriyi geçen aya kadar
+              hesaplasaydık, aradaki fark enflasyonmuş gibi görünürdü. Oysa bir
+              kısmı sadece fazladan geçen haftalar olurdu. Bu yüzden ikisini de
+              aynı pencerede ölçüyoruz ve enflasyonu hiçbir zaman tahmin
+              etmiyoruz.
+            </P>
+            <Formula
+              tex={String.raw`R_{\text{reel}} = \frac{1 + R_{\text{nominal}}}{1 + \pi} - 1, \qquad \pi = \frac{\text{TÜFE}_{\text{bitiş}}}{\text{TÜFE}_{\text{başlangıç}}} - 1`}
+            >
+              Nominal getiri de enflasyon da aynı başlangıç ve bitiş ayı arasında
+              ölçülüyor.
+            </Formula>
+            <P>
+              “5 yıllık getiri neden yok?” diye sorabilirsiniz. TEFAS beş yıldan
+              eskisini vermiyor; pencere de son enflasyon ayında bittiği için tam
+              60 aylık bir pencere o sınırın biraz gerisine taşıyor. Ölçebildiğimiz
+              en uzun yuvarlak dönem 48 ay. 48 aya “5 yıl” demek ise yapmayacağımız
+              bir şey.
+            </P>
+            <P>
+              Aynı nedenle, bir fonun geçmişi bir dönemi kapsamıyorsa o dönem
+              için sayı göstermiyoruz; daha kısa bir süreden hesaplayıp aynı
+              etiketi yapıştırmıyoruz. Yönetim ücreti zaten fon fiyatının içinde,
+              yani gördüğünüz getiriler ücret düşülmüş hali. Vergiyi ise hesaba
+              katmıyoruz.
+            </P>
+          </Bolum>
 
-        <Bolum id="ilkeler" no={7} baslik="Ne yapmıyoruz">
-          <ul className="flex flex-col gap-3">
-            <Ilke baslik="Yatırım tavsiyesi vermiyoruz.">
-              Hangi fonu almanız ya da satmanız gerektiğini söylemiyoruz. Kişiye
-              özel yatırım danışmanlığı SPK düzenlemesine tabi; bu site yalnızca
-              kamuya açık fiyatlardan ölçüm yapıyor.
-            </Ilke>
-            <Ilke baslik="Ölçemediğimizi iddia etmiyoruz.">
-              Yeterli veri yoksa hüküm yok, tahmin de yok. &ldquo;Yetersiz
-              veri&rdquo; de bir sonuç.
-            </Ilke>
-            <Ilke baslik="Sepete not vermiyoruz.">
-              Bir sepete &ldquo;güvenli&rdquo; ya da &ldquo;iyi dağılmış&rdquo;
-              demiyoruz. Ne bulduğumuzu söylüyoruz; bir şey bulamadıysak onu da
-              teselli etmeden söylüyoruz.
-            </Ilke>
-            <Ilke baslik="Fonları renkle yargılamıyoruz.">
-              Yakın bir komşu iyi haber, uzak bir komşu kötü haber değil; bu
-              yüzden korelasyon yeşil ya da kırmızıyla boyanmıyor. Yeşil ve
-              kırmızı yalnızca paraya, yani getirilere ait.
-            </Ilke>
-            <Ilke baslik="Geçmiş, geleceğin garantisi değil.">
-              Buradaki her sayı geçmiş fiyatlardan. İki fonun şimdiye kadar
-              birlikte hareket etmiş olması, bundan sonra da öyle yapacağı
-              anlamına gelmiyor.
-            </Ilke>
-          </ul>
-        </Bolum>
+          <Bolum id="ilkeler" no={7} baslik="Ne yapmıyoruz">
+            <ul className="flex flex-col gap-3">
+              <Ilke baslik="Yatırım tavsiyesi vermiyoruz.">
+                Hangi fonu almanız ya da satmanız gerektiğini söylemiyoruz.
+                Kişiye özel yatırım danışmanlığı SPK düzenlemesine tabi bir iş;
+                biz yalnızca herkese açık fiyatlar üzerinden ölçüm yapıyoruz.
+              </Ilke>
+              <Ilke baslik="Ölçemediğimizi iddia etmiyoruz.">
+                Yeterli veri yoksa ne hüküm veriyoruz ne tahmin yürütüyoruz.
+                “Yetersiz veri” de dürüst bir cevap.
+              </Ilke>
+              <Ilke baslik="Sepetinize not vermiyoruz.">
+                Sepetinize “güvenli” ya da “iyi dağılmış” demiyoruz. Ne bulduysak
+                onu söylüyoruz; bir şey bulamadıysak, bunu da sizi rahatlatmaya
+                çalışmadan söylüyoruz.
+              </Ilke>
+              <Ilke baslik="Fonları renkle yargılamıyoruz.">
+                İki fonun birbirine yakın çıkması iyi haber, uzak çıkması kötü
+                haber değil. Bu yüzden korelasyonları yeşile ya da kırmızıya
+                boyamıyoruz; o renkleri yalnızca paraya, yani getirilere
+                ayırıyoruz.
+              </Ilke>
+              <Ilke baslik="Geçmişi geleceğe satmıyoruz.">
+                Buradaki her sayı geçmiş fiyatlardan geliyor. İki fonun bugüne
+                kadar birlikte hareket etmiş olması, bundan sonra da öyle
+                yapacakları anlamına gelmiyor.
+              </Ilke>
+            </ul>
+          </Bolum>
 
-        <div className="flex flex-wrap gap-3 border-t border-border pt-8">
-          <Link
-            href={TOOL.href}
-            className="inline-flex items-center rounded-control bg-accent px-6 py-3.5 text-body font-medium text-accent-ink transition-colors hover:bg-accent-hover"
-          >
-            {TOOL.name}&apos;ni dene
-          </Link>
-          <Link
-            href={FUND_BASE}
-            className="inline-flex items-center rounded-control border border-border-strong bg-surface px-6 py-3.5 text-body font-medium text-ink transition-colors hover:border-accent hover:text-accent"
-          >
-            Fonlara göz at
-          </Link>
+          <div className="flex flex-wrap gap-3 border-t border-border pt-8">
+            <Link
+              href={TOOL.href}
+              className="inline-flex items-center rounded-control bg-accent px-6 py-3.5 text-body font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+            >
+              Sepetinizi inceleyin
+            </Link>
+            <Link
+              href={FUND_BASE}
+              className="inline-flex items-center rounded-control border border-border-strong bg-surface px-6 py-3.5 text-body font-medium text-ink transition-colors hover:border-accent hover:text-accent"
+            >
+              Fonlara göz atın
+            </Link>
+          </div>
         </div>
+
+        <aside>
+          <TocRail items={BOLUMLER} />
+        </aside>
       </div>
     </Column>
   );
@@ -319,12 +362,12 @@ function Bolum({
 }) {
   return (
     <section id={id} aria-labelledby={`${id}-baslik`} className="scroll-mt-24">
-      <p className="font-mono text-label text-accent tabular-nums">
-        {String(no).padStart(2, "0")}
-      </p>
-      <h2 id={`${id}-baslik`} className="mt-2 text-display-sm text-balance">
-        {baslik}
-      </h2>
+      <div className="flex items-center gap-3">
+        <Numara n={no} size="md" />
+        <h2 id={`${id}-baslik`} className="text-display-sm text-balance">
+          {baslik}
+        </h2>
+      </div>
       <div className="mt-4 flex flex-col gap-4">{children}</div>
     </section>
   );
@@ -337,14 +380,6 @@ function P({ children }: { children: React.ReactNode }) {
 function Not({ children }: { children: React.ReactNode }) {
   return (
     <p className="rounded-control border-l-2 border-accent bg-accent-surface px-4 py-3 text-caption text-ink text-pretty">
-      {children}
-    </p>
-  );
-}
-
-function Formul({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="overflow-x-auto rounded-control border border-border bg-canvas-sunken px-4 py-3 font-mono text-caption text-ink">
       {children}
     </p>
   );
@@ -442,9 +477,9 @@ function AralikOrnegi() {
         ))}
       </svg>
       <figcaption className="mt-2 text-caption text-ink-subtle text-pretty">
-        İki çiftin korelasyonu da 0,92. Nokta katsayıyı, bant %95 güven
-        aralığını gösteriyor. Örtüşen demek için bandın tamamı çizginin sağında
-        olmalı.
+        İki çiftin de korelasyonu 0,92. Nokta katsayıyı, bant %95 güven
+        aralığını gösteriyor. “Örtüşüyor” diyebilmemiz için bandın tamamının
+        çizginin sağında kalması gerekiyor.
       </figcaption>
     </figure>
   );

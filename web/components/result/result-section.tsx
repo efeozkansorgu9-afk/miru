@@ -15,6 +15,7 @@
 
 import type { AnalyzeRequest, AnalyzeResponse } from "@/lib/api";
 import { riskBirimleri } from "@/lib/risk-share";
+import { sepetUcreti } from "@/lib/fee";
 import { Column } from "@/components/column";
 import { Reveal } from "@/components/reveal";
 import { ScrollRise } from "@/components/scroll-rise";
@@ -32,6 +33,7 @@ import { FailedCodes } from "./failed-codes";
 import { MainFinding } from "./main-finding";
 import { Returns } from "./returns";
 import { RiskShare } from "./risk-share";
+import { Fees } from "./fees";
 import { RollingCorrelation } from "./rolling-correlation";
 import { TechnicalDetails } from "./technical-details";
 import { ValueChart } from "./value-chart";
@@ -202,6 +204,13 @@ function Result({
   const chart = chartData(response, request);
   const excluded = Object.keys(coverage.excluded_codes).length > 0;
   const risk = riskBirimleri(analysis, grouping, coverage.fund_names);
+  const ucret = sepetUcreti(
+    grouping.groups,
+    grouping.standalone.map((s) => s.code),
+    response.fees ?? {},
+    fundAmounts(analysis, request),
+    coverage.fund_names,
+  );
 
   return (
     <div className="flex flex-col gap-section">
@@ -237,6 +246,12 @@ function Result({
       {risk && (
         <ScrollRise>
           <RiskShare birimler={risk} />
+        </ScrollRise>
+      )}
+
+      {ucret && (
+        <ScrollRise>
+          <Fees ucret={ucret} />
         </ScrollRise>
       )}
 

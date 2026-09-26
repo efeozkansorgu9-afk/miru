@@ -32,6 +32,7 @@ import {
 } from "@/lib/fund";
 import type { HeroBulgusu } from "@/lib/fund";
 import { kisalt, paraKisa, sayi } from "@/lib/format";
+import { karsilastirilabilir, ucretAdi, ucretKisa, ucretOrani } from "@/lib/fee";
 import { fundHref } from "@/lib/site";
 
 export function Identity({
@@ -43,6 +44,25 @@ export function Identity({
 }) {
   const meta = kimlikSatiri(fund);
   const segmentler = riskSegmentleri(fund.risk_value);
+  const sonrakiler: { anahtar: string; metin: string; soluk?: boolean }[] = [
+    {
+      anahtar: "buyukluk",
+      metin: `Büyüklük ${fund.total_assets === null ? BELIRTILMEMIS : paraKisa(fund.total_assets)}`,
+      soluk: fund.total_assets === null,
+    },
+  ];
+  if (fund.investor_count !== null) {
+    sonrakiler.push({ anahtar: "yatirimci", metin: `${sayi(fund.investor_count)} yatırımcı` });
+  }
+  if (fund.fee) {
+    sonrakiler.push({ anahtar: "ucret", metin: ucretKisa(fund.fee), soluk: fund.fee.rate === 0 });
+  }
+  const komsuUcreti = bulgu.es ? bulgu.es.komsu.fund.fee : null;
+  const ucretKarsilastir =
+    bulgu.es &&
+    karsilastirilabilir(fund.fee) &&
+    karsilastirilabilir(komsuUcreti) &&
+    fund.fee.kind === komsuUcreti.kind;
 
   return (
     <header>
@@ -78,19 +98,19 @@ export function Identity({
           </span>
           <Ayirac />
         </span>
-        {/* Size and investors, TEFAS's latest published figures. Same rule
-            as the rest of the line: a missing value says so. Separators
-            trail, as above, so a wrapped line never starts with a dot. */}
-        <span className="flex items-center gap-2.5">
-          <span className={fund.total_assets === null ? "text-ink-subtle" : "tabular-nums"}>
-            Büyüklük{" "}
-            {fund.total_assets === null ? BELIRTILMEMIS : paraKisa(fund.total_assets)}
+        {/* Size, investors and fee, TEFAS's latest published figures. Same
+            rule as the rest of the line: a missing value says so, except the
+            fee, which is left out when the list was unreachable rather than
+            printed as unknown on every page. Separators trail, as above, so a
+            wrapped line never starts with a dot. */}
+        {sonrakiler.map((parca, i) => (
+          <span key={parca.anahtar} className="flex items-center gap-2.5">
+            <span className={parca.soluk ? "text-ink-subtle" : "tabular-nums"}>
+              {parca.metin}
+            </span>
+            {i < sonrakiler.length - 1 && <Ayirac />}
           </span>
-          {fund.investor_count !== null && <Ayirac />}
-        </span>
-        {fund.investor_count !== null && (
-          <span className="tabular-nums">{sayi(fund.investor_count)} yatırımcı</span>
-        )}
+        ))}
       </div>
 
       {/* The verdict, on the same screen as the name for the first time. The
@@ -116,6 +136,17 @@ export function Identity({
             </Link>
             {" — "}
             <span className="tabular-nums">{bulgu.es.sonrasi}</span>
+          </p>
+        )}
+
+        {/* The one thing two funds that move as one can still differ in.
+            Stated for both, in a sentence, never as a verdict on which to
+            hold: "için" rather than a case suffix, because a suffix on a
+            fund code depends on how the letters are read aloud. */}
+        {ucretKarsilastir && bulgu.es && fund.fee && komsuUcreti && (
+          <p className="mt-3 max-w-prose text-body text-ink-muted text-pretty tabular-nums">
+            {ucretAdi(fund.fee.kind)} bu fon için {ucretOrani(fund.fee.rate)},{" "}
+            {bulgu.es.komsu.fund.code} için {ucretOrani(komsuUcreti.rate)}.
           </p>
         )}
 

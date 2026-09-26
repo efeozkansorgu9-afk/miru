@@ -34,6 +34,7 @@ const BOLUMLER = [
   { id: "kovalar", baslik: "Kovalar", ozet: "Hangi çifte hangi hüküm, hangi kuralla" },
   { id: "sepet", baslik: "Sepet Analizi", ozet: "Gruplar, çeşitlendirme ve kademeli alım" },
   { id: "getiri", baslik: "Getiri ve enflasyon", ozet: "Nominal ve reel getiri aynı pencerede" },
+  { id: "risk-ucret", baslik: "Risk, dolar ve ücret", ozet: "Oynaklık, düşüş, risk payı ve yıllık ücret" },
   { id: "ilkeler", baslik: "Ne yapmıyoruz", ozet: "Tavsiye, not ve ölçülemeyen iddialar" },
 ] as const;
 
@@ -291,7 +292,55 @@ z &= \operatorname{artanh}(r) = \tfrac{1}{2}\ln\frac{1+r}{1-r} \\[4pt]
             </P>
           </Bolum>
 
-          <Bolum id="ilkeler" no={7} baslik="Ne yapmıyoruz">
+          <Bolum id="risk-ucret" no={7} baslik="Risk, dolar ve ücret">
+            <P>
+              Fon sayfasında her dönem için getirinin yanında üç sayı daha
+              veriyoruz. <strong>Yıllık oynaklık</strong>, haftalık getirilerin
+              standart sapmasının yıla çevrilmiş hali.{" "}
+              <strong>En büyük düşüş</strong>, dönem içindeki bir zirveden sonraki
+              en derin dibe kadar kaybedilen değer. İkisini de haftalık
+              fiyatlardan hesaplıyoruz; hafta içinde görülüp aynı hafta geri
+              dönülen bir dip bu yüzden görünmeyebilir.{" "}
+              <strong>Dolar bazında getiri</strong> ise TL getirinin, dönemin ilk
+              ve son iş günündeki TCMB dolar alış kuruyla dolara çevrilmiş hali.
+              Üçü de getiriyle aynı pencerede ölçülüyor.
+            </P>
+            <Formula
+              tex={String.raw`\sigma = s\big(r_{\text{hafta}}\big)\sqrt{52}, \qquad R_{\text{USD}} = \big(1 + R_{\text{TL}}\big)\,\frac{\text{kur}_{\text{başlangıç}}}{\text{kur}_{\text{bitiş}}} - 1`}
+            >
+              Oynaklık haftalık getirilerden; dolar getirisi, TL getirinin kur
+              değişimiyle düzeltilmiş hali.
+            </Formula>
+            <P>
+              Sepet Analizi ve piyasa haritası ayrıca{" "}
+              <strong>dalgalanmadaki payı</strong> gösteriyor: sepetin haftalık
+              dalgalanmasının (varyansının) ne kadarının hangi fondan ya da
+              gruptan geldiği. Paylar toplamda yüzde 100 ediyor. Paradaki payından
+              büyük bir pay, o fonun sepeti ağırlığından fazla salladığı anlamına
+              geliyor. Diğerlerine ters hareket eden bir fonun payı ise eksi
+              çıkabiliyor. Piyasa haritasında aynı hesabı, ölçtüğümüz bütün fonları
+              büyüklükleri oranında tutan tek bir sepet için yapıyoruz.
+            </P>
+            <Formula
+              tex={String.raw`\text{Pay}_i = \frac{w_i\,(\Sigma w)_i}{w^{\top}\Sigma\, w}, \qquad \sum_i \text{Pay}_i = 1`}
+            >
+              w ağırlıklar, Σ haftalık getirilerin kovaryans matrisi.
+            </Formula>
+            <P>
+              <strong>Yıllık ücret</strong>, TEFAS’ın fon karşılaştırma
+              sayfasında yayımladığı, fonun <em>uyguladığı</em> yönetim ücreti;
+              emeklilik fonlarında aynı alan fon işletim giderini taşıyor, biz de
+              öyle adlandırıyoruz. İç tüzükte yazan üst sınırı ve fon türü için
+              konulan azami gider oranını kullanmıyoruz; ikisi de fonun gerçekte
+              aldığı ücret değil. Ücret her gün fonun değerinden düşüldüğü için
+              bütün getirilerimizin içinde zaten var; hiçbir şeyden ayrıca
+              çıkarmıyoruz. Aynı hareket eden fonların ücretlerini yan yana
+              gösteriyoruz ama ücrete göre sıralamıyor, “en ucuz” demiyoruz: hangi
+              fonu tutacağınız sizin kararınız.
+            </P>
+          </Bolum>
+
+          <Bolum id="ilkeler" no={8} baslik="Ne yapmıyoruz">
             <ul className="flex flex-col gap-3">
               <Ilke baslik="Yatırım tavsiyesi vermiyoruz.">
                 Hangi fonu almanız ya da satmanız gerektiğini söylemiyoruz.

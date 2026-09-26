@@ -374,6 +374,8 @@ export interface AnalyzeResponse {
 
   rolling_status: RollingStatus;
   rolling_correlation: RollingCorrelation | null;
+  /** Applied fee per requested code TEFAS's list carries. A missing code is unknown, not free. */
+  fees?: Record<string, Fee>;
 }
 
 /** One pair's correlation over the moving window, plus its flat average. */
@@ -467,6 +469,17 @@ export interface FundReturn {
 }
 
 /** What a fund is. Every field but the code and the name may be absent. */
+/**
+ * The fee a fund applies, as TEFAS publishes it. `rate` is annual, as a
+ * fraction. Securities funds report a management fee, pension funds the
+ * fund operating expense; the page names them differently. Zero is passed
+ * on as reported and may be a gap in TEFAS's data.
+ */
+export interface Fee {
+  rate: number;
+  kind: "management" | "operating";
+}
+
 export interface FundIdentity {
   code: string;
   name: string;
@@ -478,6 +491,8 @@ export interface FundIdentity {
   investor_count: number | null;
   /** 1 to 7 on TEFAS's own scale. Null means TEFAS did not say, not zero. */
   risk_value: number | null;
+  /** Absent on pages built before the API sent it; null when TEFAS did not say. */
+  fee?: Fee | null;
   returns: FundReturn[];
 }
 
@@ -589,6 +604,9 @@ export interface MarketCluster {
    * to 1. Null when no sizes were known; absent before the field existed.
    */
   risk_share?: number | null;
+  /** Lowest and highest applied fee among members with a non-zero one. */
+  fee_low?: number | null;
+  fee_high?: number | null;
   /** What the group's equal-weight return is made of. */
   style: Style | null;
 }

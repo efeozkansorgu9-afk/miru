@@ -7,6 +7,7 @@ import { Column } from "@/components/column";
 import { PayCubugu } from "@/components/market/share-bars";
 import { Reveal } from "@/components/reveal";
 import { ayYil, korelasyon, oran, paraKisa, sayi, yuzde, yuzdeEki } from "@/lib/format";
+import { ucretOrani } from "@/lib/fee";
 import {
   ETKEN_ACIKLAMALARI,
   ETKEN_ADLARI,
@@ -402,6 +403,16 @@ function GrupKarti({
             {c.style.reportable
               ? `açıklama gücü (R²) ${oran(c.style.r2)}`
               : `açıklama gücü (R²) ${oran(Math.max(0, c.style.r2))}, bileşim adı verilmedi`}
+          </p>
+        )}
+        {/* A range, not a pick: the funds in a group move as one, and the
+            fee is what still differs between them. Which to hold is the
+            reader's decision; the page states the spread and stops. */}
+        {c.fee_low != null && c.fee_high != null && (
+          <p className="mt-1 text-caption text-ink-muted tabular-nums">
+            {c.fee_low === c.fee_high
+              ? `Yıllık ücret ${ucretOrani(c.fee_low)}`
+              : `Yıllık ücret ${ucretOrani(c.fee_low)} ile ${ucretOrani(c.fee_high)} arasında`}
           </p>
         )}
         <p className="mt-1 text-caption text-ink-subtle tabular-nums">

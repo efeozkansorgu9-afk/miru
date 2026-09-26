@@ -86,6 +86,13 @@ export const TERIMLER = {
       "bu çubuk, o sepetin haftalık dalgalanmasının ne kadarının hangi " +
       "gruptan geldiğini gösterir.",
   },
+  ucret: {
+    ad: "Yıllık ücret",
+    aciklama:
+      "Fonun yönetim ücreti (emeklilik fonlarında fon işletim gideri), yıllık " +
+      "oran olarak. Her gün fonun değerinden düşülür, bu yüzden getirilerin " +
+      "içinde zaten vardır.",
+  },
   reel: {
     ad: "Enflasyondan arındırılmış getiri",
     aciklama:

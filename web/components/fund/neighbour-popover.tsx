@@ -54,6 +54,7 @@ import { createPortal } from "react-dom";
 
 import type { Bucket, Neighbour, WeeklySeries } from "@/lib/api";
 import { korelasyon, paraKisa, sayi, yuzdeIsaretli } from "@/lib/format";
+import { ucretOrani } from "@/lib/fee";
 import { periodLabel } from "@/lib/fund-chart";
 import { KOVA_ETIKETLERI, gosterilecekGetiriler } from "@/lib/fund";
 import { sparkLines } from "@/lib/neighbour-chart";
@@ -104,8 +105,13 @@ export function NeighbourRow({
    * animates its own opacity and a transform here would be one more writer
    * of the same property. Positioning through `top`/`left` keeps them apart.
    */
-  const { refs, floatingStyles } = useFloating<HTMLAnchorElement>({
+  // Elements held in state rather than read off `refs` during render, which
+  // the React compiler's lint refuses (the same pattern as `InfoTip`).
+  const [anchor, setAnchor] = useState<HTMLAnchorElement | null>(null);
+  const [floating, setFloatingEl] = useState<HTMLElement | null>(null);
+  const { floatingStyles } = useFloating<HTMLAnchorElement>({
     open,
+    elements: { reference: anchor, floating },
     placement: "bottom-start",
     whileElementsMounted: autoUpdate,
     transform: false,
@@ -127,7 +133,7 @@ export function NeighbourRow({
   return (
     <>
       <Link
-        ref={refs.setReference}
+        ref={setAnchor}
         href={fundHref(komsu.fund.code)}
         aria-describedby={open ? id : undefined}
         className="flex h-12 items-center gap-3 px-6 transition-colors hover:bg-canvas-sunken focus-visible:bg-canvas-sunken sm:gap-4"
@@ -155,7 +161,7 @@ export function NeighbourRow({
         id={id}
         komsu={komsu}
         open={open}
-        setFloating={refs.setFloating}
+        setFloating={setFloatingEl}
         floatingStyles={floatingStyles}
       />
     </>
@@ -251,6 +257,15 @@ function Preview({
                 ? "—"
                 : paraKisa(komsu.fund.total_assets)}
             </span>
+            {komsu.fund.fee && (
+              <>
+                {" "}
+                · {komsu.fund.fee.kind === "operating" ? "İşletim gideri" : "Ücret"}{" "}
+                <span className="text-ink-muted">
+                  {komsu.fund.fee.rate === 0 ? "sıfır bildirilmiş" : `${ucretOrani(komsu.fund.fee.rate)} / yıl`}
+                </span>
+              </>
+            )}
           </p>
         </div>
       </div>

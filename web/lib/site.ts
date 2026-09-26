@@ -93,6 +93,9 @@ export function fundHref(code: string): string {
   return `${FUND_BASE}/${code}`;
 }
 
+/** How every number on the site is produced. Not a tool, a page. */
+export const METHOD_HREF = "/yontem";
+
 /* ------------------------------------------------------------------ */
 /* What the header calls where you are                                 */
 /* ------------------------------------------------------------------ */
@@ -134,6 +137,10 @@ export const SECTIONS: readonly Section[] = [
      */
     label: "Fon",
     owns: (path) => path === FUND_BASE || path.startsWith(`${FUND_BASE}/`),
+  },
+  {
+    label: "Yöntem",
+    owns: (path) => path === METHOD_HREF,
   },
 ];
 

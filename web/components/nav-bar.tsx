@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Column } from "@/components/column";
-import { FUND_BASE, SITE, TOOL, sectionLabel } from "@/lib/site";
+import { FUND_BASE, METHOD_HREF, SITE, TOOL, sectionLabel } from "@/lib/site";
 import { ThemeToggle } from "./theme-toggle";
 
 /**
@@ -25,6 +25,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: TOOL.name, short: "Sepet", href: TOOL.href },
   { label: "Fonlar", short: "Fonlar", href: FUND_BASE },
+  { label: "Yöntem", short: "Yöntem", href: METHOD_HREF },
 ];
 
 /** The item whose area the reader is in: its own path or anything under it. */
@@ -60,7 +61,10 @@ export function NavBar() {
               tracking pulled in is what makes it look drawn rather than
               typed. `lowercase` is not a class here on purpose, the brand
               is lower case in `lib/site` where the title tag can see it. */}
-          <span className="shrink-0 font-display text-lead font-bold tracking-[-0.04em]">
+          {/* Under 360px the three menu items and the toggle leave no room for
+              the wordmark, and it gives way to the mark alone rather than
+              being overlapped. The link keeps its name for screen readers. */}
+          <span className="shrink-0 font-display text-lead font-bold tracking-[-0.04em] max-[359px]:sr-only">
             {SITE.brand}
           </span>
           {/* Below `sm` the rule and the section give way to the menu,
@@ -86,7 +90,7 @@ export function NavBar() {
                   key={item.href}
                   href={item.href}
                   aria-current={current ? "page" : undefined}
-                  className={`rounded-control px-2.5 py-2 text-label transition-colors hover:bg-canvas-sunken hover:text-ink sm:px-3 ${
+                  className={`rounded-control px-2 py-2 text-label transition-colors hover:bg-canvas-sunken hover:text-ink min-[400px]:px-2.5 sm:px-3 ${
                     current ? "font-medium text-ink" : "text-ink-muted"
                   }`}
                 >

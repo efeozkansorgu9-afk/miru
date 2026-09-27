@@ -44,7 +44,8 @@
  * the fund does have would be a different figure wearing this one's name.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { animate, motion, useReducedMotion } from "framer-motion";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -114,22 +115,26 @@ export function Returns({
     );
   }
 
+  const pencere =
+    active?.ret?.window_start && active.ret.window_end
+      ? `${ayYilKisa(active.ret.window_start)} – ${ayYilKisa(active.ret.window_end)}`
+      : null;
+  const ret = active?.available ? active.ret : null;
+
   return (
     <section aria-labelledby="getiriler" className="scroll-mt-28 sm:scroll-mt-24">
-      <Heading />
-
-      <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
-        <PeriodPicker
-          options={options}
-          chosen={chosen}
-          onChoose={setChosen}
-        />
-        {active?.ret?.window_start && active.ret.window_end && (
-          <p className="text-caption text-ink-subtle tabular-nums">
-            {ayYilKisa(active.ret.window_start)} –{" "}
-            {ayYilKisa(active.ret.window_end)}
+      {/* Heading and control on one row: the control is what the section is
+          about, and under the heading it pushed the numbers a line down for
+          no reason. The window sits under the heading because it changes
+          with the control, and a reader should see it change. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div>
+          <Heading />
+          <p className="mt-1.5 text-caption text-ink-subtle tabular-nums">
+            {pencere ?? "Dönem seçin"} · toplam getiri, yıllığa çevrilmemiş
           </p>
-        )}
+        </div>
+        <PeriodPicker options={options} chosen={chosen} onChoose={setChosen} />
       </div>
 
       {active && !active.available && (
@@ -138,44 +143,44 @@ export function Returns({
         </p>
       )}
 
-      {chart && <Chart points={chart.points} withInflation={chart.withInflation} />}
+      {ret && (
+        <dl
+          className={`mt-6 grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border ${
+            ret.usd != null ? "sm:grid-cols-3" : "sm:grid-cols-2"
+          }`}
+        >
+          <Figure label="Nominal" value={ret.nominal ?? null} />
+          <Figure label="Enflasyondan arındırılmış" value={ret.real ?? null} term="reel" />
+          {/* Only when there was a rate for both ends of the window; a
+              missing dollar figure is left out rather than shown as "—",
+              which would read as a result of zero. */}
+          {ret.usd != null && <Figure label="Dolar bazında" value={ret.usd} term="dolar" />}
+        </dl>
+      )}
 
-      {active?.available && (
-        <div className="mt-6 rounded-card border border-border bg-surface px-5 py-4 sm:px-6 sm:py-5">
-          <div
-            className={`grid gap-4 ${
-              active.ret?.usd != null ? "sm:grid-cols-3" : "sm:grid-cols-2"
-            }`}
-          >
-            <Figure label="Nominal" value={active.ret?.nominal ?? null} />
-            <Figure
-              label="Enflasyondan arındırılmış"
-              value={active.ret?.real ?? null}
-              term="reel"
-            />
-            {/* Only when there was a rate for both ends of the window; a
-                missing dollar figure is left out rather than shown as "—",
-                which would read as a result of zero. */}
-            {active.ret?.usd != null && (
-              <Figure label="Dolar bazında" value={active.ret.usd} term="dolar" />
-            )}
-          </div>
-          {(active.ret?.volatility != null || active.ret?.max_drawdown != null) && (
-            <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4">
+      {chart && (
+        <div className="mt-4 rounded-card border border-border bg-surface px-3 pt-4 pb-3 sm:px-5 sm:pt-5">
+          <Chart
+            key={active?.months ?? 0}
+            points={chart.points}
+            withInflation={chart.withInflation}
+          />
+          {ret && (ret.volatility != null || ret.max_drawdown != null) && (
+            <dl className="mt-2 flex flex-wrap gap-x-8 gap-y-2 border-t border-border px-2 pt-3 sm:px-1">
               <Olcu
                 label="Yıllık oynaklık"
                 term="oynaklik"
-                value={active.ret?.volatility != null ? yuzdeHassas(active.ret.volatility) : "—"}
+                value={ret.volatility != null ? yuzdeHassas(ret.volatility) : "—"}
               />
               <Olcu
                 label="En büyük düşüş"
                 term="dusus"
                 value={
-                  active.ret?.max_drawdown == null
+                  ret.max_drawdown == null
                     ? "—"
-                    : active.ret.max_drawdown === 0
+                    : ret.max_drawdown === 0
                       ? "düşüş yok"
-                      : yuzdeHassas(active.ret.max_drawdown)
+                      : yuzdeHassas(ret.max_drawdown)
                 }
               />
             </dl>
@@ -183,13 +188,14 @@ export function Returns({
         </div>
       )}
 
-      <p className="mt-5 max-w-prose text-caption text-ink-subtle text-pretty">
-        Toplam getiri, yıllığa çevrilmemiş. Bütün rakamlar aynı dönem
-        üzerinden ölçülüyor: dönem, TÜİK&apos;in endeks açıkladığı son ayda
-        biter, bugünde değil. Nominal ile reel arasındaki fark enflasyondur.
-        Oynaklık ve en büyük düşüş haftalık fiyatlardan hesaplanıyor; hafta
-        içindeki bir dip bu yüzden görünmeyebilir. Fon giderleri fiyata
-        yansımış durumda, vergi hesaba katılmamıştır.
+      <p className="mt-4 max-w-prose text-caption text-ink-subtle text-pretty">
+        Dönem, TÜİK&apos;in endeks açıkladığı son ayda biter, bugünde değil;
+        bütün rakamlar bu aynı dönem üzerinden ölçülüyor. İki çizgi de dönem
+        başında 100&apos;den başlar, aradaki fark fonun enflasyonun ne kadar
+        önünde ya da gerisinde olduğudur; enflasyon çizgisi son açıklanan ayda
+        biter, sonraki haftalara taşınmaz. Oynaklık ve en büyük düşüş haftalık
+        fiyatlardan hesaplanıyor; hafta içindeki bir dip görünmeyebilir. Fon
+        giderleri fiyata yansımış durumda, vergi hesaba katılmamıştır.
       </p>
     </section>
   );
@@ -197,12 +203,9 @@ export function Returns({
 
 function Heading() {
   return (
-    <>
-      <p className="text-overline uppercase text-ink-subtle">Getiri</p>
-      <h2 id="getiriler" className="mt-4 text-display-sm text-balance">
-        Fonun getirisi
-      </h2>
-    </>
+    <h2 id="getiriler" className="text-display-sm text-balance">
+      Getiri
+    </h2>
   );
 }
 
@@ -234,6 +237,8 @@ function PeriodPicker({
 }) {
   const refs = useRef(new Map<number, HTMLButtonElement>());
   const usable = options.filter((o) => o.available);
+  const pill = useId();
+  const reduceMotion = useReducedMotion();
 
   function move(delta: number) {
     if (usable.length === 0) return;
@@ -278,7 +283,7 @@ function PeriodPicker({
       role="radiogroup"
       aria-label="Getiri dönemi"
       onKeyDown={onKeyDown}
-      className="inline-flex rounded-control border border-border bg-surface p-0.5"
+      className="inline-flex rounded-control border border-border bg-surface p-1"
     >
       {options.map((option) => {
         const on = option.months === chosen;
@@ -298,15 +303,27 @@ function PeriodPicker({
             }}
             onClick={() => option.available && onChoose(option.months)}
             title={option.available ? undefined : option.reason ?? undefined}
-            className={`rounded-[calc(var(--radius-control)-2px)] px-3.5 py-2 text-label transition-colors sm:px-4 ${
+            className={`relative rounded-[calc(var(--radius-control)-3px)] px-3.5 py-1.5 text-label transition-colors duration-200 sm:px-4 ${
               on
-                ? "bg-accent-surface text-accent"
+                ? "text-accent-ink"
                 : option.available
                   ? "text-ink-muted hover:text-ink"
-                  : "cursor-not-allowed text-ink-subtle/60"
+                  : "cursor-not-allowed text-ink-subtle/50 line-through decoration-ink-subtle/40"
             }`}
           >
-            {option.label}
+            {/* The selection is one pill that slides between periods rather
+                than four backgrounds switching on and off: the eye follows
+                it, which is what tells a reader the numbers below changed
+                because of this. */}
+            {on && (
+              <motion.span
+                layoutId={pill}
+                aria-hidden="true"
+                className="absolute inset-0 rounded-[calc(var(--radius-control)-3px)] bg-accent"
+                transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 38 }}
+              />
+            )}
+            <span className="relative">{option.label}</span>
           </button>
         );
       })}
@@ -351,10 +368,11 @@ function Chart({
     [points, genislik],
   );
   const lines = withInflation ? [LINES.value, LINES.inflation] : [LINES.value];
+  const reduceMotion = useReducedMotion();
 
   return (
     <>
-      <ul className="mt-6 flex flex-wrap gap-x-5 gap-y-2">
+      <ul className="flex flex-wrap gap-x-5 gap-y-2 px-2 sm:px-1">
         {lines.map((line) => (
           <li
             key={line.key}
@@ -399,7 +417,7 @@ function Chart({
               // half the height spent on values nothing reaches. An index
               // is read by the distance between the two lines, and a zero
               // baseline adds nothing to that.
-              domain={["auto", "auto"]}
+              domain={[(min: number) => Math.floor((min * 0.95) / 10) * 10, "auto"]}
               width={52}
               tickFormatter={(v: number) => `${Math.round(v)}`}
               tickLine={false}
@@ -417,18 +435,18 @@ function Chart({
                 strokeWidth={2}
                 dot={false}
                 connectNulls={false}
-                isAnimationActive={false}
+                // Drawn left to right when the period changes (the chart is
+                // keyed on it), so the new window visibly replaces the old
+                // one instead of the lines jumping.
+                isAnimationActive={!reduceMotion}
+                animationDuration={900}
+                animationEasing="ease-out"
               />
             ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
 
-      <p className="mt-3 max-w-prose text-caption text-ink-subtle text-pretty">
-        Her iki çizgi dönem başında 100&apos;den başlıyor, aradaki fark fonun
-        enflasyona göre nerede olduğunu gösterir. Enflasyon çizgisi TÜİK
-        endeksinin açıklandığı son ayda biter; sonraki haftalara taşınmaz.
-      </p>
     </>
   );
 }
@@ -481,30 +499,35 @@ function ChartTooltip({
 }
 
 /**
- * One figure.
- *
- * Green up, red down, and nothing else on this page gets either colour. A
- * figure that is missing while its partner exists prints a dash: the row is
- * on screen because the other half of it could be measured, and an empty
- * space there would read as a zero.
- */
-/**
  * A risk figure: set smaller than the returns and in plain ink. Volatility
  * is not good or bad news, and a drawdown, though always a fall, is a
  * measurement of the past rather than a warning; neither is painted red.
  */
 function Olcu({ label, value, term }: { label: string; value: string; term: TerimAdi }) {
   return (
-    <div>
-      <dt className="text-label text-ink-muted">
+    <div className="flex items-baseline gap-2">
+      <dt className="text-caption text-ink-muted">
         {label}
         <InfoTip term={term} />
       </dt>
-      <dd className="mt-1 text-lead font-semibold tabular-nums text-ink">{value}</dd>
+      <dd className="text-body font-semibold tabular-nums text-ink">{value}</dd>
     </div>
   );
 }
 
+/**
+ * One figure.
+ *
+ * Green up, red down, and nothing else on this page gets either colour. A
+ * figure that is missing while its partner exists prints a dash: the row is
+ * on screen because the other half of it could be measured, and an empty
+ * space there would read as a zero.
+ *
+ * The number rolls from the old period's value to the new one's when the
+ * period changes. It never counts up from zero on arrival: the server
+ * renders the real figure, and a number that starts at 0 and climbs would
+ * spend its first half second saying something false.
+ */
 function Figure({
   label,
   value,
@@ -515,13 +538,13 @@ function Figure({
   term?: TerimAdi;
 }) {
   return (
-    <div>
-      <p className="text-label text-ink-muted">
+    <div className="bg-surface px-5 py-4 sm:py-5">
+      <dt className="text-label text-ink-muted">
         {label}
         {term && <InfoTip term={term} />}
-      </p>
-      <p
-        className={`mt-1.5 text-display-sm tabular-nums ${
+      </dt>
+      <dd
+        className={`mt-1.5 text-[1.75rem] leading-tight font-semibold tracking-tight tabular-nums transition-colors duration-300 ${
           value === null || value === 0
             ? "text-ink"
             : value > 0
@@ -529,8 +552,32 @@ function Figure({
               : "text-negative"
         }`}
       >
-        {value === null ? "—" : yuzdeIsaretli(value)}
-      </p>
+        {value === null ? "—" : <Yuvarlanan value={value} />}
+      </dd>
     </div>
   );
+}
+
+/** A percentage that tweens between the values it is given. */
+function Yuvarlanan({ value }: { value: number }) {
+  const [shown, setShown] = useState(value);
+  const from = useRef(value);
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (reduceMotion || from.current === value) {
+      from.current = value;
+      setShown(value);
+      return;
+    }
+    const controls = animate(from.current, value, {
+      duration: 0.6,
+      ease: [0.22, 1, 0.36, 1],
+      onUpdate: (v) => setShown(v),
+    });
+    from.current = value;
+    return () => controls.stop();
+  }, [value, reduceMotion]);
+
+  return <>{yuzdeIsaretli(shown)}</>;
 }

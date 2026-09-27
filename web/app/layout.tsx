@@ -4,6 +4,7 @@ import Script from "next/script";
 
 import { NavBar } from "@/components/nav-bar";
 import { ThemeProvider, themeScript } from "@/components/theme-provider";
+import { motionScript } from "@/lib/motion";
 import { SITE, TOOL, pageTitle } from "@/lib/site";
 import "./globals.css";
 
@@ -99,6 +100,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           id="theme"
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: themeScript }}
+        />
+        {/* Tells the stylesheet that scripts run, so `Appear` may start a
+            block hidden. Before paint, for the same reason as the theme. */}
+        <Script
+          id="motion"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: motionScript }}
         />
         <ThemeProvider>
           <NavBar />

@@ -136,7 +136,7 @@ export function NeighbourRow({
         ref={setAnchor}
         href={fundHref(komsu.fund.code)}
         aria-describedby={open ? id : undefined}
-        className="flex h-12 items-center gap-3 px-6 transition-colors hover:bg-canvas-sunken focus-visible:bg-canvas-sunken sm:gap-4"
+        className="flex h-12 items-center gap-3 px-5 transition-colors hover:bg-canvas-sunken/70 focus-visible:bg-canvas-sunken sm:gap-4"
         // Hover is bound to a mouse. A touch fires `pointerenter` too, and
         // opening a card on the way to a navigation nobody cancelled is a
         // flash of something the reader did not ask for.

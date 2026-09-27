@@ -5,8 +5,7 @@ import { cache } from "react";
 import { API_BASE_URL, ApiError, getFundList, getFundPage } from "@/lib/api";
 import type { FundListItem, FundPageResponse } from "@/lib/api";
 import { Column } from "@/components/column";
-import { Reveal } from "@/components/reveal";
-import { ScrollRise } from "@/components/scroll-rise";
+import { Appear } from "@/components/appear";
 import { BasketBridge, Footnote } from "@/components/fund/footer";
 import { Identity } from "@/components/fund/identity";
 import { NeighbourList } from "@/components/fund/neighbour-list";
@@ -151,17 +150,15 @@ export default async function FonSayfasi({ params }: PageProps<"/fon/[kod]">) {
           boxes of metadata that between them said thirty characters. */}
       <Column className="pt-section pb-section">
         <div className="flex flex-col gap-section">
-          <Reveal>
-            <Identity fund={page.fund} bulgu={finding} />
-          </Reveal>
+          <Identity fund={page.fund} bulgu={finding} />
 
-          <ScrollRise>
+          <Appear>
             <Returns
               returns={page.fund.returns}
               series={page.series}
               cpi={page.cpi}
             />
-          </ScrollRise>
+          </Appear>
         </div>
       </Column>
 
@@ -176,19 +173,19 @@ export default async function FonSayfasi({ params }: PageProps<"/fon/[kod]">) {
                 "Örtüşenler (1)" group below it said, and the verdict now
                 leads the page. What is left is only the list the verdict
                 was read off. */}
-            <ScrollRise>
+            <Appear>
               <SubjectProvider code={page.fund.code} series={page.series}>
                 <NeighbourList komsular={komsular} />
               </SubjectProvider>
-            </ScrollRise>
+            </Appear>
 
-            <ScrollRise>
-              <Footnote freshness={page.freshness} />
-            </ScrollRise>
-
-            <ScrollRise>
+            <Appear>
               <BasketBridge code={page.fund.code} />
-            </ScrollRise>
+            </Appear>
+
+            {/* Last, after the way onward: the date the numbers were
+                computed and what they are not. */}
+            <Footnote freshness={page.freshness} />
           </div>
         </Column>
       </div>

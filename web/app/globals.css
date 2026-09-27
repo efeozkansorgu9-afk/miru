@@ -470,3 +470,58 @@
     opacity: 1;
   }
 }
+
+/* ====================================================================
+   Appearing: once, on a clock
+   ====================================================================
+   `Appear` (components/appear.tsx) marks a block `data-appear`, and
+   `data-appear="stagger"` for one whose direct children arrive in turn. The
+   hidden state exists only under `html.motion-ok`, which an inline script
+   sets before paint, and only without reduced motion. The observer sets
+   `data-shown`; the transition does the rest and leaves nothing behind —
+   no fill, so no stacking context once it has run.
+
+   `appear-failsafe` is for the case where the bundle that runs the observer
+   never arrives: after four seconds everything shows regardless. A reader
+   should never have to wait on JavaScript to see a number.
+   ==================================================================== */
+@keyframes appear-failsafe {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .motion-ok [data-appear=""],
+  .motion-ok [data-appear="stagger"] > * {
+    transition:
+      opacity 0.7s var(--ease-out-soft),
+      transform 0.7s var(--ease-out-soft);
+  }
+
+  .motion-ok [data-appear=""]:not([data-shown]),
+  .motion-ok [data-appear="stagger"]:not([data-shown]) > * {
+    opacity: 0;
+    transform: translateY(1rem);
+    animation: appear-failsafe 0.01s linear 4s forwards;
+  }
+
+  .motion-ok [data-appear="stagger"] > :nth-child(2) { transition-delay: 70ms; }
+  .motion-ok [data-appear="stagger"] > :nth-child(3) { transition-delay: 140ms; }
+  .motion-ok [data-appear="stagger"] > :nth-child(4) { transition-delay: 210ms; }
+  .motion-ok [data-appear="stagger"] > :nth-child(5) { transition-delay: 280ms; }
+  .motion-ok [data-appear="stagger"] > :nth-child(n + 6) { transition-delay: 350ms; }
+
+  /* The first screen, which is on the page before any script runs: a CSS
+     animation from paint, children in turn. `backwards`, not `both`: the
+     starting frame applies during the delay, and when the animation ends
+     nothing is left filled, so no stacking context stays behind. */
+  .enter > * {
+    animation: rise 0.7s var(--ease-out-soft) backwards;
+  }
+  .enter > :nth-child(2) { animation-delay: 80ms; }
+  .enter > :nth-child(3) { animation-delay: 160ms; }
+  .enter > :nth-child(4) { animation-delay: 240ms; }
+  .enter > :nth-child(n + 5) { animation-delay: 320ms; }
+}

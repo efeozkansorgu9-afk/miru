@@ -68,20 +68,34 @@ function veriTarihi(freshness: DataFreshness): string {
  */
 export function BasketBridge({ code }: { code: string }) {
   return (
-    <section className="rounded-card border border-border bg-surface px-6 py-6 sm:px-8 sm:py-8">
-      <h2 className="text-display-sm text-balance">
-        Bu fon sizin sepetinizde ne yapıyor?
-      </h2>
-      <p className="mt-3 max-w-prose text-body text-ink-muted text-pretty">
-        {TOOL.name}, elinizdeki fonların gerçekte kaç ayrı şeye yatırıldığını
-        gösterir. {code} seçili olarak açılır, yanına kendi fonlarınızı
-        ekleyebilirsiniz.
-      </p>
+    <section className="flex flex-col gap-6 rounded-card border border-border bg-surface px-6 py-6 sm:px-8 sm:py-7 md:flex-row md:items-center md:justify-between md:gap-10">
+      <div className="min-w-0">
+        <h2 className="text-display-sm text-balance">
+          Bu fon sizin sepetinizde ne yapıyor?
+        </h2>
+        <p className="mt-2 max-w-prose text-body text-ink-muted text-pretty">
+          {TOOL.name}, elinizdeki fonların gerçekte kaç ayrı şeye yatırıldığını
+          gösterir. {code} seçili olarak açılır, yanına kendi fonlarınızı
+          ekleyebilirsiniz.
+        </p>
+      </div>
       <Link
         href={`${TOOL.href}?fon=${code}`}
-        className="mt-6 inline-flex items-center rounded-control bg-accent px-6 py-3.5 text-body font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+        className="group inline-flex shrink-0 items-center gap-2 self-start rounded-control bg-accent px-5 py-3 text-body font-medium text-accent-ink shadow-sm transition-[background-color,transform] duration-200 hover:bg-accent-hover active:scale-[0.98] md:self-auto"
       >
         {code} ile sepet kur
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className="size-4 transition-transform duration-300 ease-out-soft group-hover:translate-x-0.5 motion-reduce:transition-none"
+        >
+          <path d="M3 8h10M9 4l4 4-4 4" />
+        </svg>
       </Link>
     </section>
   );

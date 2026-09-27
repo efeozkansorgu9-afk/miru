@@ -26,9 +26,9 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { useState } from "react";
 
-import type { Neighbour } from "@/lib/api";
+import type { Bucket, Neighbour } from "@/lib/api";
 import { oran, kisalt } from "@/lib/format";
-import { GRUP_ONIZLEME, KOVA_ETIKETLERI, acikGruplar, kovaGruplari } from "@/lib/fund";
+import { GRUP_ONIZLEME, acikGruplar, kovaGruplari } from "@/lib/fund";
 import type { KovaGrubu } from "@/lib/fund";
 import { NeighbourRow } from "./neighbour-popover";
 
@@ -43,18 +43,22 @@ export function NeighbourList({ komsular }: { komsular: Neighbour[] }) {
 
   return (
     <section aria-labelledby="komsular" className="scroll-mt-28 sm:scroll-mt-24">
-      <p className="text-overline uppercase text-ink-subtle">Komşular</p>
-      <h2 id="komsular" className="mt-4 text-display-sm text-balance">
+      <h2 id="komsular" className="text-display-sm text-balance">
         Bu fonla ölçülen {komsular.length} fon
       </h2>
-      <p className="mt-3 max-w-prose text-caption text-ink-subtle text-pretty">
-        Her fon haftalık getirileri üzerinden bütün fonlarla karşılaştırıldı; en
-        güçlü ve en zayıf ilişkiler burada. Gruplandırma, korelasyonun kendisine
-        değil güven aralığının fona karşı çıkan ucuna bakıyor — az sayıda ortak
-        haftaya dayanan yüksek bir katsayı böylece öne geçemiyor.
+      <p className="mt-2 max-w-prose text-caption text-ink-subtle text-pretty">
+        Haftalık getiriler üzerinden bütün fonlarla karşılaştırıldı; en yakın ve
+        en uzak ilişkiler burada. Gruplar korelasyonun kendisine değil, güven
+        aralığının iddiaya karşı çıkan ucuna göre kuruluyor, böylece az haftaya
+        dayanan yüksek bir katsayı öne geçemiyor.
       </p>
 
-      <div className="mt-6 space-y-3">
+      {/* One card, the groups as bands inside it. It was a stack of cards,
+          one per group, each with a display-size heading: six headings for
+          twenty rows, and a page that read as a set of boxes rather than as
+          one list. The scale on the right of every row is the same for
+          every group, so the list can be read down as one measurement. */}
+      <div className="mt-6 overflow-hidden rounded-card border border-border bg-surface">
         {gruplar.map((grup) => (
           <Group key={grup.kova} grup={grup} baslangictaAcik={acik.has(grup.kova)} />
         ))}
@@ -78,31 +82,35 @@ function Group({
   const gorunen = hepsi ? grup.komsular : grup.komsular.slice(0, GRUP_ONIZLEME);
 
   return (
-    <div className="rounded-card border border-border bg-surface">
+    <div className="border-t border-border first:border-t-0">
       <h3>
         <button
           type="button"
           onClick={() => setAcik((it) => !it)}
           aria-expanded={acik}
-          className="flex w-full cursor-pointer items-center gap-3 rounded-card px-6 py-5 text-left"
+          className="flex w-full cursor-pointer items-center gap-3 bg-canvas-sunken/60 px-5 py-3.5 text-left transition-colors hover:bg-canvas-sunken"
         >
           <Chevron acik={acik} />
-          <span className="text-display-sm">
-            {grup.baslik}{" "}
-            <span className="text-ink-subtle tabular-nums">
-              ({grup.komsular.length})
-            </span>
+          <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${NOKTA[yon(grup.kova)]}`} />
+          <span className="text-body font-semibold text-ink">{grup.baslik}</span>
+          <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-label text-ink-muted tabular-nums">
+            {grup.komsular.length}
+          </span>
+          <span className="ml-auto hidden min-w-0 truncate text-caption text-ink-subtle md:block">
+            {grup.aciklama}
           </span>
         </button>
       </h3>
 
       <Fold acik={acik} baslangictaAcik={baslangictaAcik} reduceMotion={reduceMotion}>
         <div className="border-t border-border">
-          <p className="px-6 pt-5 text-caption text-ink-subtle text-pretty">
+          {/* The rule the group was sorted by, under its heading on a phone,
+              where the heading row has no room for it. */}
+          <p className="px-5 pt-3 text-caption text-ink-subtle text-pretty md:hidden">
             {grup.aciklama}
           </p>
 
-          <ul className="mt-3">
+          <ul>
             {gorunen.map((komsu) => (
               <Row key={komsu.fund.code} komsu={komsu} />
             ))}
@@ -125,7 +133,7 @@ function Group({
                 type="button"
                 onClick={() => setHepsi((it) => !it)}
                 aria-expanded={hepsi}
-                className="w-full cursor-pointer border-t border-border px-6 py-3 text-left text-label text-accent transition-colors hover:bg-canvas-sunken"
+                className="w-full cursor-pointer border-t border-border px-5 py-3 text-left text-label font-medium text-accent transition-colors hover:bg-canvas-sunken"
               >
                 {hepsi ? "Daha azını göster" : `${fazla} tane daha`}
               </button>
@@ -240,21 +248,66 @@ function Row({ komsu }: { komsu: Neighbour }) {
           {kisalt(komsu.fund.name, 64)}
         </span>
 
-        {/* Hidden below `sm` rather than shortened. The group heading already
-            names the bucket every row in it belongs to, so on a phone the
-            badge is the same word repeated down the column, and the space is
-            better spent on the fund's name. */}
-        <span className="hidden shrink-0 rounded-control border border-border bg-canvas-sunken px-2.5 py-1 text-label text-ink sm:inline">
-          {KOVA_ETIKETLERI[komsu.bucket]}
-        </span>
+        <Olcek komsu={komsu} />
 
-        <span className="w-11 shrink-0 text-right text-caption tabular-nums text-ink-subtle">
+        <span className="w-11 shrink-0 text-right text-caption tabular-nums text-ink-muted">
           {oran(komsu.correlation)}
         </span>
       </NeighbourRow>
     </li>
   );
 }
+
+/**
+ * Where the pair sits on −1..1, with its interval as a band.
+ *
+ * Replaces the bucket badge, which repeated the group heading on every row.
+ * The scale says something the heading cannot: how far apart two rows in
+ * the same group are, and how wide each one's interval is. Coloured by
+ * direction like the rest of the page — purple together, teal against,
+ * grey neither — never by merit. Hidden on a phone, where the name needs
+ * the width more.
+ */
+function Olcek({ komsu }: { komsu: Neighbour }) {
+  const x = (v: number) => ((Math.max(-1, Math.min(1, v)) + 1) / 2) * 100;
+  const lo = komsu.ci_low ?? komsu.correlation;
+  const hi = komsu.ci_high ?? komsu.correlation;
+  const t = yon(komsu.bucket);
+  return (
+    <span aria-hidden="true" className="relative hidden h-2 w-28 shrink-0 sm:block">
+      <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border-strong" />
+      <span className="absolute top-0 left-1/2 h-2 w-px bg-border-strong" />
+      <span
+        className={`absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full ${BANT[t]}`}
+        style={{ left: `${x(lo)}%`, width: `${Math.max(1.5, x(hi) - x(lo))}%` }}
+      />
+      <span
+        className={`absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface ${NOKTA[t]}`}
+        style={{ left: `${x(komsu.correlation)}%` }}
+      />
+    </span>
+  );
+}
+
+type Yon = "birlikte" | "ters" | "notr";
+
+function yon(bucket: Bucket): Yon {
+  if (bucket === "overlapping" || bucket === "similar") return "birlikte";
+  if (bucket === "inverse") return "ters";
+  return "notr";
+}
+
+const NOKTA: Record<Yon, string> = {
+  birlikte: "bg-accent",
+  ters: "bg-series-alt",
+  notr: "bg-ink-subtle",
+};
+
+const BANT: Record<Yon, string> = {
+  birlikte: "bg-accent/25",
+  ters: "bg-series-alt/25",
+  notr: "bg-ink-subtle/20",
+};
 
 function Chevron({ acik }: { acik: boolean }) {
   return (
@@ -266,7 +319,7 @@ function Chevron({ acik }: { acik: boolean }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
-      className={`size-5 shrink-0 text-ink-subtle transition-transform duration-300 ease-out-soft motion-reduce:transition-none ${
+      className={`size-4 shrink-0 text-ink-subtle transition-transform duration-300 ease-out-soft motion-reduce:transition-none ${
         acik ? "rotate-90" : ""
       }`}
     >

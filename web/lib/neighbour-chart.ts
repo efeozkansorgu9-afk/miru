@@ -42,7 +42,7 @@ function alignedSubject(
   return slice.length === recent.values.length ? slice : null;
 }
 
-function rebase(values: (number | null)[], at: number): (number | null)[] {
+export function rebase(values: (number | null)[], at: number): (number | null)[] {
   const base = values[at];
   if (base === null || base === undefined || base === 0) return values.map(() => null);
   return values.map((v) => (v === null ? null : (100 * v) / base));
@@ -52,7 +52,7 @@ function rebase(values: (number | null)[], at: number): (number | null)[] {
  * A path that lifts the pen over a blank week. A gap reads as a gap here
  * as everywhere else in this product: nothing is filled across it.
  */
-function path(
+export function path(
   values: (number | null)[],
   x: (i: number) => number,
   y: (v: number) => number,

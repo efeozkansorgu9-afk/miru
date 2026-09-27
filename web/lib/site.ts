@@ -99,6 +99,11 @@ export const METHOD_HREF = "/yontem";
 /** The whole market, grouped: how many different things the funds hold. */
 export const MARKET_HREF = "/piyasa";
 
+/** A market group's page, addressed by any member's code. */
+export function groupHref(code: string): string {
+  return `${MARKET_HREF}/grup/${code}`;
+}
+
 /* ------------------------------------------------------------------ */
 /* What the header calls where you are                                 */
 /* ------------------------------------------------------------------ */
@@ -147,7 +152,7 @@ export const SECTIONS: readonly Section[] = [
   },
   {
     label: "Piyasa",
-    owns: (path) => path === MARKET_HREF,
+    owns: (path) => path === MARKET_HREF || path.startsWith(`${MARKET_HREF}/`),
   },
 ];
 

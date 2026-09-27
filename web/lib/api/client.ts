@@ -19,6 +19,7 @@ import type {
   FundPageResponse,
   FundsResponse,
   HealthResponse,
+  MarketGroupResponse,
   MarketPeriodsResponse,
   MarketResponse,
   ValidationIssue,
@@ -248,4 +249,13 @@ export function getMarket(options?: RequestOptions): Promise<MarketResponse> {
 /** The style factors' correlations and volatility per calendar year. */
 export function getMarketPeriods(options?: RequestOptions): Promise<MarketPeriodsResponse> {
   return request<MarketPeriodsResponse>("/market/periods", { method: "GET" }, options);
+}
+
+/** One market group, found by any member's code. 404 when it is in none. */
+export function getMarketGroup(code: string, options?: RequestOptions): Promise<MarketGroupResponse> {
+  return request<MarketGroupResponse>(
+    `/market/group/${encodeURIComponent(code)}`,
+    { method: "GET" },
+    options,
+  );
 }

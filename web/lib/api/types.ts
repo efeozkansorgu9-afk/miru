@@ -604,6 +604,10 @@ export interface MarketCluster {
    * to 1. Null when no sizes were known; absent before the field existed.
    */
   risk_share?: number | null;
+  /** The member the group's page is addressed by (its largest fund). */
+  anchor?: string | null;
+  /** What sets the group apart beyond its style. */
+  qualifiers?: Qualifier[];
   /** Lowest and highest applied fee among members with a non-zero one. */
   fee_low?: number | null;
   fee_high?: number | null;
@@ -684,4 +688,35 @@ export interface MarketPeriodsResponse {
   periods: MarketPeriod[];
   alpha: number;
   z_critical: number | null;
+}
+
+/**
+ * What sets a market group apart beyond its style. `word`: `key` is a
+ * title-word code (`lib/market.ts` names it). `founder`: `key` is the house.
+ */
+export interface Qualifier {
+  kind: "word" | "founder";
+  key: string;
+  count: number;
+  of: number;
+}
+
+export interface GroupMember {
+  fund: FundIdentity;
+  /** The last year of the fund's weekly line, base 100. */
+  recent?: WeeklySeries | null;
+}
+
+export interface MarketGroupResponse {
+  /** 1-based position among the groups, largest first. */
+  rank: number;
+  groups: number;
+  cluster: MarketCluster;
+  members: GroupMember[];
+  style_factors: StyleFactor[];
+  style_min_r2: number | null;
+  overlapping_threshold: number;
+  window_start: string | null;
+  window_end: string | null;
+  last_run_at: string | null;
 }

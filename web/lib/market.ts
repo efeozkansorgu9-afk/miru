@@ -74,11 +74,76 @@ export function bilesim(style: Style | null | undefined): Bilesen[] | null {
  * a category names the legal wrapper, not the contents.
  */
 export function grupAdi(c: MarketCluster): string {
+  const kelimeler = ayirtKelimeler(c);
+  const govde = bilesimAdi(c);
+  // The words lead: they are what differs between groups whose make-up
+  // reads the same, and 26 groups read "Türk hisse · TL faiz" on the
+  // style analysis alone.
+  return kelimeler.length > 0 ? `${kelimeler.map((k) => k.ad).join(" · ")} — ${govde}` : govde;
+}
+
+/** The composition half of a group's name. */
+export function bilesimAdi(c: MarketCluster): string {
   const b = bilesim(c.style);
-  if (b && b.length > 0) {
-    return b.map((x) => `${x.ad} %${Math.round(x.pay * 100)}`).join(" · ");
+  return b && b.length > 0
+    ? b.map((x) => `${x.ad} %${Math.round(x.pay * 100)}`).join(" · ")
+    : `${c.top_category ?? "Karışık"} · bileşimi belirlenemedi`;
+}
+
+/**
+ * The title words the API may single out, named and with the word the
+ * reader will find in the funds' titles. The name leads a group's heading;
+ * the evidence goes under it with its count, so the heading can be checked
+ * against the list.
+ */
+export const KELIMELER: Record<string, { ad: string; kanit: string }> = {
+  participation: { ad: "Katılım", kanit: "katılım" },
+  dividend: { ad: "Temettü", kanit: "temettü / kâr payı" },
+  bank: { ad: "Banka", kanit: "banka" },
+  tech: { ad: "Teknoloji", kanit: "teknoloji" },
+  bist30: { ad: "BIST 30", kanit: "BIST 30" },
+  bist100: { ad: "BIST 100", kanit: "BIST 100" },
+  sustainability: { ad: "Sürdürülebilirlik", kanit: "sürdürülebilir" },
+  energy: { ad: "Enerji", kanit: "enerji" },
+  health: { ad: "Sağlık", kanit: "sağlık" },
+  industry: { ad: "Sanayi", kanit: "sanayi" },
+  export: { ad: "İhracat", kanit: "ihracat" },
+  sme: { ad: "Halka arz", kanit: "halka arz / KOBİ" },
+  real_estate: { ad: "Gayrimenkul", kanit: "gayrimenkul" },
+  foreign: { ad: "Yabancı", kanit: "yabancı" },
+  eurobond: { ad: "Eurobond", kanit: "eurobond" },
+  fund_of_funds: { ad: "Fon sepeti", kanit: "fon sepeti" },
+  short_term: { ad: "Kısa vadeli", kanit: "kısa vadeli" },
+  money_market: { ad: "Para piyasası", kanit: "para piyasası" },
+  gold: { ad: "Altın", kanit: "altın" },
+  silver: { ad: "Gümüş", kanit: "gümüş" },
+  usd: { ad: "Dolar", kanit: "dolar" },
+  eur: { ad: "Avro", kanit: "avro / euro" },
+  hedge: { ad: "Serbest", kanit: "serbest" },
+  oks: { ad: "OKS", kanit: "OKS" },
+  pension: { ad: "Emeklilik", kanit: "emeklilik" },
+  variable: { ad: "Değişken", kanit: "değişken" },
+  index: { ad: "Endeks", kanit: "endeks" },
+};
+
+/** The group's distinguishing title words, named, theme first. */
+export function ayirtKelimeler(
+  c: MarketCluster,
+): { ad: string; kanit: string; count: number; of: number }[] {
+  return (c.qualifiers ?? [])
+    .filter((x) => x.kind === "word")
+    .map((q) => ({ ...(KELIMELER[q.key] ?? { ad: q.key, kanit: q.key }), count: q.count, of: q.of }));
+}
+
+/** Evidence lines under a heading: which word, which house, how many of how many. */
+export function ayirtSatirlari(c: MarketCluster): string[] {
+  const out: string[] = [];
+  for (const k of ayirtKelimeler(c)) {
+    out.push(`Adında “${k.kanit}” geçen: ${k.count} / ${k.of} fon`);
   }
-  return `${c.top_category ?? "Karışık"} · bileşimi belirlenemedi`;
+  const f = c.qualifiers?.find((x) => x.kind === "founder");
+  if (f) out.push(`Kurucusu ${f.key}: ${f.count} / ${f.of} fon`);
+  return out;
 }
 
 /** TEFAS's own category, as a secondary line under the composition. */

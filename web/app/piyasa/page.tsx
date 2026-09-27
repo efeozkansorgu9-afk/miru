@@ -16,13 +16,14 @@ import {
   ETKEN_ADLARI,
   OLCULEMEDI,
   RENKLI_GRUP,
+  ayirtSatirlari,
   bilesim,
   dilimler,
   grupAdi,
   gruptakiler,
   kategoriSatiri,
 } from "@/lib/market";
-import { METHOD_HREF, SITE, TOOL, fundHref } from "@/lib/site";
+import { METHOD_HREF, SITE, TOOL, fundHref, groupHref } from "@/lib/site";
 
 /**
  * The whole market, grouped: `/piyasa`.
@@ -178,7 +179,7 @@ export default async function Piyasa() {
         <PayCubugu dilimler={parcalar} />
       </Column>
 
-      <div className="border-t border-border bg-canvas-sunken">
+      <div id="gruplar" className="scroll-mt-28 border-t border-border bg-canvas-sunken sm:scroll-mt-24">
         <Column className="py-section">
           <p className="text-overline uppercase text-ink-subtle">Gruplar</p>
           <h2 className="mt-4 max-w-prose text-display-sm text-balance">
@@ -204,23 +205,21 @@ export default async function Piyasa() {
                 Diğer {m.clusters.length - KART_SAYISI} grubu göster
                 <span className="ml-2 text-ink-subtle group-open:hidden">+</span>
               </summary>
+              {/* One line per group, each a link to the group's own page,
+                  which carries the funds. */}
               <ul className="border-t border-border">
                 {m.clusters.slice(KART_SAYISI).map((c, i) => (
-                  <li
-                    key={c.codes[0]}
-                    className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-border px-6 py-3 first:border-t-0"
-                  >
-                    <span className="w-8 shrink-0 font-display text-label font-semibold text-ink-subtle tabular-nums">
-                      {KART_SAYISI + i + 1}
-                    </span>
-                    <span className="text-caption text-ink">
-                      {grupAdi(c)} · {c.size} fon
-                    </span>
-                    <span className="flex flex-wrap gap-1.5">
-                      {c.codes.map((code) => (
-                        <FonKodu key={code} code={code} ad={adlar[code]} />
-                      ))}
-                    </span>
+                  <li key={c.codes[0]} className="border-t border-border first:border-t-0">
+                    <Link
+                      href={groupHref(c.anchor ?? c.codes[0])}
+                      className="flex items-baseline gap-3 px-6 py-3 transition-colors hover:bg-canvas-sunken"
+                    >
+                      <span className="w-8 shrink-0 font-display text-label font-semibold text-ink-subtle tabular-nums">
+                        {KART_SAYISI + i + 1}
+                      </span>
+                      <span className="min-w-0 flex-1 text-caption text-ink">{grupAdi(c)}</span>
+                      <span className="shrink-0 text-caption text-ink-subtle tabular-nums">{c.size} fon →</span>
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -256,7 +255,7 @@ export default async function Piyasa() {
       )}
 
       <Column className="pt-section">
-        <section className="max-w-prose">
+        <section id="adlar" className="max-w-prose scroll-mt-28 sm:scroll-mt-24">
           <h2 className="text-display-sm text-balance">Grupların adları nereden geliyor</h2>
           <p className="mt-4 text-body text-ink-muted text-pretty">
             TEFAS’ın kategorileri bir fonun hukuki türünü söylüyor, içinde ne
@@ -276,6 +275,18 @@ export default async function Piyasa() {
             açıklama gücü (R²) {oran(m.style_min_r2 ?? 0.6)} değerinin
             altındaysa, o gruba bileşim adı vermiyoruz; TEFAS kategorisini
             gösterip bunu açıkça belirtiyoruz.
+          </p>
+          <p className="mt-4 text-body text-ink-muted text-pretty">
+            Sekiz etken bazı grupları birbirinden ayıramıyor: katılım
+            hisseleri, temettü hisseleri ve geniş borsa aynı “Türk hisse”
+            etkenine yükleniyor. Bu yüzden bir grubun adına, fonlarının
+            adlarında ortak geçen bir kelimeyi de ekliyoruz; ama yalnızca
+            grubun en az yarısında geçiyorsa ve grup dışındaki fonlarda en
+            fazla yarısı kadar yaygınsa. Kurucu şirketin adındaki kelimeleri
+            saymıyoruz: “QNB Sağlık Hayat” bir sağlık fonu değil. Aynı kuralla,
+            fonların en az yarısı tek bir kurumunsa o kurumu da gösteriyoruz. Kelimenin kaç fonda geçtiğini her grubun altında
+            yazıyoruz; kontrol etmek isterseniz grubun sayfasındaki listede
+            hepsi var.
           </p>
           {m.style_factors.length > 0 && (
             <ul className="mt-5 grid gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -421,6 +432,7 @@ function GrupKarti({
   const renk = sira <= RENKLI_GRUP ? `var(--group-${sira})` : "var(--ink-subtle)";
   const onizleme = c.codes.slice(0, ONIZLEME);
   const kalan = c.codes.slice(ONIZLEME);
+  const sayfa = groupHref(c.anchor ?? c.codes[0]);
 
   return (
     <li className="flex flex-col overflow-hidden rounded-card border border-border bg-surface">
@@ -431,9 +443,18 @@ function GrupKarti({
             {sira}
           </span>
           <h3 className="min-w-0 text-lead font-semibold text-ink text-balance">
-            {grupAdi(c)}
+            <Link href={sayfa} className="underline-offset-4 hover:text-accent hover:underline">
+              {grupAdi(c)}
+            </Link>
           </h3>
         </div>
+        {/* What sets this group apart from others of the same make-up, with
+            the count that shows it, so the heading can be checked. */}
+        {ayirtSatirlari(c).map((k) => (
+          <p key={k} className="mt-1 text-caption text-accent tabular-nums">
+            {k}
+          </p>
+        ))}
         <p className="mt-1 text-caption text-ink-muted tabular-nums">
           {c.size} fon · {c.founders} farklı kurum
           {c.total_assets !== null ? ` · ${paraKisa(c.total_assets)}` : ""}
@@ -470,22 +491,13 @@ function GrupKarti({
             <FonSatiri key={code} code={code} ad={adlar[code]} />
           ))}
         </ul>
-        {kalan.length > 0 && (
-          <details className="group/liste mt-2">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 text-label text-accent marker:hidden hover:underline">
-              <span className="group-open/liste:hidden">Tüm {c.size} fonu göster</span>
-              <span className="hidden group-open/liste:inline">Listeyi kısalt</span>
-              <span aria-hidden="true" className="transition-transform group-open/liste:rotate-180">
-                ▾
-              </span>
-            </summary>
-            <ul className="mt-1 max-h-80 overflow-y-auto overscroll-contain rounded-control border border-border">
-              {kalan.map((code) => (
-                <FonSatiri key={code} code={code} ad={adlar[code]} />
-              ))}
-            </ul>
-          </details>
-        )}
+        <Link
+          href={sayfa}
+          className="mt-3 inline-flex items-center gap-1.5 self-start text-label font-medium text-accent underline-offset-4 hover:underline"
+        >
+          {kalan.length > 0 ? `Tüm ${c.size} fonu gör` : "Grubun sayfası"}
+          <span aria-hidden="true">→</span>
+        </Link>
       </div>
     </li>
   );

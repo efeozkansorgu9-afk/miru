@@ -827,22 +827,67 @@ def _market(conn) -> sc.MarketResponse:
     thresholds = pc.Thresholds.from_env()
     g = mk.group_market(returns, thresholds)
 
-    # What each group is made of: the style of its equal-weight return.
+    # What each group is made of: the style of its equal-weight return,
+    # fitted with the factor proxies left out of the group they sit in, and
+    # how far each weight moves over block-bootstrap resamples.
     group_styles: dict[int, sty.Style] = {}
+    style_ranges: dict = {}
     if model is not None and g.clusters:
+        proxy_codes = set(model.proxies.values())
         series = pd.DataFrame(
-            {i: sty.group_series(returns, c.codes) for i, c in enumerate(g.clusters)}
+            {
+                i: sty.group_series(returns, c.codes, exclude=proxy_codes)
+                for i, c in enumerate(g.clusters)
+            }
         )
         group_styles = sty.analyse(series, model)
+        reportable = {i: s for i, s in group_styles.items() if sty.reportable(s)}
+        style_ranges = sty.bootstrap_ranges(series, model, reportable)
 
-    def style_out(s: Optional[sty.Style]) -> Optional[sc.StyleOut]:
+    def style_out(i: int) -> Optional[sc.StyleOut]:
+        s = group_styles.get(i)
         if s is None:
             return None
+        ranges = style_ranges.get(i, {})
         return sc.StyleOut(
             weights={k: round(v, 4) for k, v in s.weights.items()},
             r2=round(s.r2, 4),
             weeks=s.weeks,
             reportable=sty.reportable(s),
+            ranges={k: [round(lo, 4), round(hi, 4)] for k, (lo, hi) in ranges.items()},
+        )
+
+    # The group each group is closest to, by the correlation of the two
+    # equal-weight series, and the weakest pair across the two: the reason
+    # they are two groups is that at least one fund of one and one of the
+    # other do not clear the overlapping line. Several groups share a name,
+    # and this is what the page says about why they are still separate.
+    all_series = pd.DataFrame(
+        {i: sty.group_series(returns, c.codes) for i, c in enumerate(g.clusters)}
+    )
+    group_corr = all_series.corr(min_periods=thresholds.min_weeks).to_numpy() if len(g.clusters) > 1 else None
+
+    def nearest_of(i: int) -> Optional[sc.NearestGroupOut]:
+        if group_corr is None:
+            return None
+        row = group_corr[i].copy()
+        row[i] = np.nan
+        if not np.isfinite(row).any():
+            return None
+        j = int(np.nanargmax(row))
+        codes = list(g.clusters[i].codes) + list(g.clusters[j].codes)
+        corr, n, names = pc.pairwise_pearson(returns[codes])
+        low, _ = pc.fisher_interval(corr, n)
+        pos = {c: k for k, c in enumerate(names)}
+        a = [pos[c] for c in g.clusters[i].codes if c in pos]
+        b = [pos[c] for c in g.clusters[j].codes if c in pos]
+        cross = low[np.ix_(a, b)] if a and b else np.array([])
+        weakest = float(np.nanmin(cross)) if cross.size and np.isfinite(cross).any() else None
+        return sc.NearestGroupOut(
+            rank=j + 1,
+            anchor=None,
+            corr=round(float(row[j]), 4),
+            weakest_ci_low=round(weakest, 4) if weakest is not None else None,
         )
 
     def size_of(codes: list[str]) -> Optional[float]:
@@ -920,7 +965,8 @@ def _market(conn) -> sc.MarketResponse:
                 ],
                 fee_low=fee_range(c.codes)[0],
                 fee_high=fee_range(c.codes)[1],
-                style=style_out(group_styles.get(i)),
+                style=style_out(i),
+                nearest=nearest_of(i),
             )
         )
 
@@ -933,6 +979,9 @@ def _market(conn) -> sc.MarketResponse:
         unmeasured.setdefault(mk.UNMEASURED_SHORT, []).extend(without_prices)
 
     measured_codes = [x for c in g.clusters for x in c.codes] + g.singletons
+    for c in clusters:
+        if c.nearest is not None:
+            c.nearest.anchor = clusters[c.nearest.rank - 1].anchor
     out = sc.MarketResponse(
         listed=len(meta),
         measured=g.measured,

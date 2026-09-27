@@ -1083,6 +1083,9 @@ class StyleOut(BaseModel):
     r2: float
     weeks: int
     reportable: bool
+    #: Factor key -> [5th, 95th] percentile of the weight over moving-block
+    #: bootstrap resamples. Empty when the fit is not reportable.
+    ranges: dict[str, list[float]] = Field(default_factory=dict)
 
 
 class StyleFactorOut(BaseModel):
@@ -1104,6 +1107,19 @@ class QualifierOut(BaseModel):
     key: str
     count: int
     of: int
+
+
+class NearestGroupOut(BaseModel):
+    """The group whose equal-weight series is closest to this one's.
+
+    `weakest_ci_low` is the lowest interval end among pairs with one fund in
+    each group: under the overlapping line, it is why they are two groups.
+    """
+
+    rank: int
+    anchor: Optional[str] = None
+    corr: float
+    weakest_ci_low: Optional[float] = None
 
 
 class MarketClusterOut(BaseModel):
@@ -1128,6 +1144,7 @@ class MarketClusterOut(BaseModel):
     #: The member the group's page is addressed by (its largest fund).
     anchor: Optional[str] = None
     qualifiers: list[QualifierOut] = Field(default_factory=list)
+    nearest: Optional[NearestGroupOut] = None
     #: Lowest and highest applied fee among members with a non-zero one,
     #: over management fees when the group has any, else operating expenses.
     fee_low: Optional[float] = None

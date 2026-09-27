@@ -19,11 +19,28 @@ kind of fees as the funds being explained, and they refresh with every
 weekly run. Sharpe's own formulation uses investable asset-class indices;
 a passive fund is the investable version here.
 
-Which fund stands for a factor is not typed in. Each factor has a list of
-candidates, and the one used is the **most typical of them**: the candidate
-with full history over the window whose median correlation with the other
-candidates is highest. So a candidate that is a poor example of its kind
-never stands for the kind, and the choice is re-made every week from data.
+Which fund stands for a factor is **pinned** (`PINNED`): the funds the
+typicality rule chose on the first live run — for each factor, the
+candidate with full history whose median correlation with the other
+candidates was highest. Re-choosing every week let the fund behind a factor
+change from one snapshot to the next, so a group's name could change with
+nothing about the group having changed. The rule now runs only as a
+fallback, for a factor whose pinned fund lacks full history in the window.
+
+A proxy fund is **left out of its own group's series** before the group is
+fitted (`group_series(..., exclude=...)`). The gold group contains AFO, the
+fund standing for gold; fitting the group with AFO inside it partly fits
+AFO against itself and flatters the R².
+
+## How sure a composition is
+
+`bootstrap_ranges` refits every group on moving-block resamples of the
+weeks (blocks of `BOOT_BLOCK` weeks, so clusters of volatile weeks stay
+together) and reports each weight's 5th and 95th percentile. The factors
+move together — dollar and euro funds at 0.82 over the window — and a
+constrained regression can trade weight between collinear factors without
+fitting any worse; the range is what shows whether "Dolar %72" is a
+measurement or one of several equally good answers.
 
 ## Not every fund gets a label
 
@@ -68,6 +85,27 @@ FACTORS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("foreign_equity", ("AFA", "TFF", "GUH")),
 )
 
+#: The proxy per factor, pinned from the first live run (2026-09-26), when the
+#: typicality rule chose exactly these. Used whenever the fund has full
+#: history in the window; otherwise that factor falls back to the rule.
+PINNED: dict[str, str] = {
+    "tr_equity": "TIE",
+    "gold": "AFO",
+    "silver": "GTZ",
+    "usd": "AKE",
+    "eur": "IUF",
+    "tl_rate": "DLY",
+    "tl_bond": "APT",
+    "foreign_equity": "TFF",
+}
+#: Moving-block bootstrap: resamples, block length in weeks, solver steps
+#: (warm-started from the full-sample fit, so far fewer are needed), and
+#: the percentiles reported.
+BOOT_SAMPLES = 100
+BOOT_BLOCK = 8
+BOOT_ITERATIONS = 600
+BOOT_PERCENTILES = (5.0, 95.0)
+
 #: A proxy must have a return in at least this share of the window's weeks.
 MIN_PROXY_COVERAGE = 0.98
 #: Below this, the composition is not reported.
@@ -111,6 +149,10 @@ def choose_proxies(returns: pd.DataFrame) -> StyleModel:
             if c in window.columns
             and window[c].notna().sum() >= MIN_PROXY_COVERAGE * n_weeks
         ]
+        pinned = PINNED.get(key)
+        if pinned in present:
+            proxies[key] = pinned
+            continue
         if not present:
             continue
         if len(present) == 1:
@@ -138,16 +180,23 @@ def _project_simplex(v: np.ndarray) -> np.ndarray:
     return np.maximum(v - theta[:, None], 0.0)
 
 
-def solve_simplex_ls(G: np.ndarray, c: np.ndarray, iterations: int = ITERATIONS) -> np.ndarray:
+def solve_simplex_ls(
+    G: np.ndarray,
+    c: np.ndarray,
+    iterations: int = ITERATIONS,
+    start: Optional[np.ndarray] = None,
+) -> np.ndarray:
     """min ½wᵀGw − cᵀw on the simplex, for a stack of problems at once.
 
     `G` is (n, k, k), `c` is (n, k). FISTA with step 1/L, L the largest
-    eigenvalue of each G.
+    eigenvalue of each G. `start` warm-starts every problem (it is projected
+    onto the simplex first); the objective is convex, so the start changes
+    how fast the answer is reached, never which answer.
     """
     n, k = c.shape
     L = np.linalg.eigvalsh(G)[:, -1]
     L = np.where(L > 0, L, 1.0)
-    w = np.full((n, k), 1.0 / k)
+    w = _project_simplex(start.copy()) if start is not None else np.full((n, k), 1.0 / k)
     z = w.copy()
     t = 1.0
     for _ in range(iterations):
@@ -205,9 +254,72 @@ def analyse(returns: pd.DataFrame, model: StyleModel, min_weeks: int = MIN_WEEKS
     return out
 
 
-def group_series(returns: pd.DataFrame, codes: list[str]) -> pd.Series:
-    """An equal-weight group's weekly return: the mean of whoever priced."""
-    return returns[codes].mean(axis=1, skipna=True)
+def group_series(
+    returns: pd.DataFrame, codes: list[str], exclude: Optional[set[str]] = None
+) -> pd.Series:
+    """An equal-weight group's weekly return: the mean of whoever priced.
+
+    `exclude` drops the factor proxies, so a group is never fitted against a
+    fund that is inside it. A group made of nothing but proxies keeps them,
+    rather than becoming an empty series.
+    """
+    keep = [c for c in codes if not exclude or c not in exclude] or list(codes)
+    return returns[keep].mean(axis=1, skipna=True)
+
+
+def _systems(Y: np.ndarray, X: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Per-column Gram matrices and cross products over each column's own weeks."""
+    M = np.isfinite(Y)
+    Yz = np.where(M, Y, 0.0)
+    Mf = M.astype("float64")
+    G = np.einsum("tn,ti,tj->nij", Mf, X, X)
+    c = np.einsum("tn,ti->ni", Yz, X)
+    return G, c, Mf.sum(axis=0)
+
+
+def bootstrap_ranges(
+    series: pd.DataFrame,
+    model: StyleModel,
+    styles: dict,
+    samples: int = BOOT_SAMPLES,
+    block: int = BOOT_BLOCK,
+    seed: int = 0,
+) -> dict:
+    """Each fitted column's weight range over moving-block resamples.
+
+    Returns column -> factor key -> (low, high) at `BOOT_PERCENTILES`. The
+    same resampled weeks are used for every column in a replicate, and every
+    replicate starts from that column's full-sample weights. Seeded, so a
+    snapshot's ranges are reproducible.
+    """
+    cols = [c for c in series.columns if c in styles]
+    keys = list(model.factors.columns)
+    if not cols or not keys:
+        return {}
+    X = model.factors.to_numpy(dtype="float64")
+    Y = series[cols].reindex(model.factors.index).to_numpy(dtype="float64")
+    T = X.shape[0]
+    if T < 2 * block:
+        return {}
+    start = np.array([[styles[c].weights[k] for k in keys] for c in cols])
+    rng = np.random.default_rng(seed)
+    starts_per = int(np.ceil(T / block))
+    Gs, cs, inits = [], [], []
+    for _ in range(samples):
+        s = rng.integers(0, T - block + 1, size=starts_per)
+        idx = (s[:, None] + np.arange(block)[None, :]).ravel()[:T]
+        G, c, _ = _systems(Y[idx], X[idx])
+        Gs.append(G)
+        cs.append(c)
+        inits.append(start)
+    W = solve_simplex_ls(
+        np.concatenate(Gs), np.concatenate(cs), BOOT_ITERATIONS, np.concatenate(inits)
+    ).reshape(samples, len(cols), len(keys))
+    lo, hi = np.percentile(W, BOOT_PERCENTILES, axis=0)
+    return {
+        col: {k: (float(lo[j, i]), float(hi[j, i])) for i, k in enumerate(keys)}
+        for j, col in enumerate(cols)
+    }
 
 
 def reportable(style: Optional[Style]) -> bool:

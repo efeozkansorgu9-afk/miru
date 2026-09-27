@@ -295,6 +295,218 @@ def fisher_interval(
 
 
 # ----------------------------------------------------------------------
+# Block bootstrap, and the interval the verdicts are read off
+# ----------------------------------------------------------------------
+
+#: Resamples per run. 200 puts the 2.5th percentile between the fifth and
+#: sixth smallest value.
+BOOT_SAMPLES = 200
+#: Weeks per block. Eight keeps a two-month run of weeks together, so a
+#: stretch where returns cluster is resampled as a stretch.
+BOOT_BLOCK = 8
+#: Fixed, so a re-run over the same prices gives the same verdicts.
+BOOT_SEED = 20260927
+_BOOT_TAIL = 0.025
+
+
+def bootstrap_interval(
+    matrix: pd.DataFrame,
+    samples: int = BOOT_SAMPLES,
+    block: int = BOOT_BLOCK,
+    seed: int = BOOT_SEED,
+) -> tuple[np.ndarray, np.ndarray]:
+    """A 95% moving-block bootstrap interval for every pair, in column order.
+
+    Why it exists: Fisher's interval assumes the weekly returns are
+    independent and normal. They are neither — they cluster, and a few
+    extreme weeks (December 2021, June 2023) can carry a pair's coefficient
+    on their own. Measured on the live universe (2026-09-27, 738,720
+    measurable pairs): this interval is a median 1.19x as wide as Fisher's,
+    1.21x among pairs with |r| above 0.6, and past 2.25x for the widest tenth
+    of those. BJD-IDF reads 0.961 with a Fisher lower bound of 0.949 and a
+    bootstrap one of 0.70.
+
+    Weeks are resampled in blocks of `block` consecutive rows, the whole
+    cross-section at once, so each resample is one matrix and every pair is
+    correlated with the same matrix products `pairwise_pearson` uses. Rows
+    that no fund priced are dropped first, which makes the resampled weeks —
+    and therefore the result — depend only on the weeks the funds share,
+    not on how the caller padded its index.
+
+    Only the six most extreme values at each end are kept per pair, updated
+    by compare-and-swap as resamples arrive, and the percentile is then
+    interpolated the way `numpy.percentile` does over the resamples in which
+    the pair had more than three shared weeks. Memory is two float32 arrays
+    of 6 x N x N rather than 200 of them: ~90 MB for 1,376 funds.
+
+    A pair with no valid resample comes back NaN on both ends; the combined
+    interval then falls back to Fisher's.
+    """
+    values = matrix.dropna(how="all").to_numpy(dtype="float64")
+    t, n_funds = values.shape
+    shape = (n_funds, n_funds)
+    if t < block or n_funds == 0:
+        return np.full(shape, np.nan), np.full(shape, np.nan)
+
+    mask = np.isfinite(values)
+    z0 = np.where(mask, values, 0.0)
+    m0 = mask.astype("float64")
+
+    # Order statistics kept per pair at each end: enough to reach the 2.5%
+    # point and the one after it, six at 200 resamples.
+    k = int(np.floor(_BOOT_TAIL * (samples - 1))) + 2
+    lows = np.full((k, *shape), np.inf, dtype=np.float32)
+    highs = np.full((k, *shape), -np.inf, dtype=np.float32)
+    count = np.zeros(shape, dtype=np.int32)
+
+    rng = np.random.default_rng(seed)
+    blocks = -(-t // block)
+    offsets = np.arange(block)
+    for _ in range(samples):
+        starts = rng.integers(0, t - block + 1, size=blocks)
+        rows = (starts[:, None] + offsets[None, :]).ravel()[:t]
+        z = z0[rows]
+        m = m0[rows]
+        n = m.T @ m
+        sxy = z.T @ z
+        sx = z.T @ m
+        sxx = (z * z).T @ m
+        with np.errstate(invalid="ignore", divide="ignore"):
+            den = np.sqrt((n * sxx - sx * sx) * (n * sxx.T - sx.T * sx.T))
+            valid = (den > 0) & (n > 3)
+            r = np.where(valid, (n * sxy - sx * sx.T) / den, np.nan)
+        del z, m, n, sxy, sx, sxx, den
+        r = np.clip(r, -1.0, 1.0).astype(np.float32)
+        count += valid
+        smaller = np.where(valid, r, np.inf).astype(np.float32)
+        larger = np.where(valid, r, -np.inf).astype(np.float32)
+        for i in range(k):
+            kept = lows[i].copy()
+            np.minimum(kept, smaller, out=lows[i])
+            np.maximum(kept, smaller, out=smaller)
+            kept = highs[i].copy()
+            np.maximum(kept, larger, out=highs[i])
+            np.minimum(kept, larger, out=larger)
+
+    # numpy's linear rule over m values: the 2.5% point sits at position
+    # 0.025 * (m - 1) from the bottom, the 97.5% point at the same distance
+    # from the top.
+    pos = _BOOT_TAIL * (np.maximum(count, 1) - 1)
+    below = np.floor(pos).astype(np.int64)
+    frac = pos - below
+    above = np.minimum(below + 1, k - 1)
+    ii, jj = np.indices(shape)
+
+    def at(stat: np.ndarray, idx: np.ndarray) -> np.ndarray:
+        return stat[np.minimum(idx, k - 1), ii, jj].astype("float64")
+
+    low = at(lows, below) + frac * (at(lows, above) - at(lows, below))
+    high = at(highs, below) + frac * (at(highs, above) - at(highs, below))
+    # A pair no resample could measure has no bootstrap interval.
+    enough = count > 0
+    low = np.where(enough & np.isfinite(low), low, np.nan)
+    high = np.where(enough & np.isfinite(high), high, np.nan)
+    np.fill_diagonal(low, 1.0)
+    np.fill_diagonal(high, 1.0)
+    return low, high
+
+
+def combined_interval(
+    fisher_low: np.ndarray,
+    fisher_high: np.ndarray,
+    boot_low: np.ndarray,
+    boot_high: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """The wider of the two intervals, end by end.
+
+    Every verdict is read off the end that argues against it, so taking the
+    lower of the two lower bounds and the higher of the two upper bounds
+    means the site is never more sure of a pair than either method is. The
+    bootstrap alone would sometimes be narrower than Fisher and upgrade a
+    pair (1,262 "similar" pairs would have become "overlapping" on the day
+    this was measured); nothing here upgrades anything.
+
+    `fmin`/`fmax` ignore a NaN, so a pair the bootstrap could not measure
+    keeps its Fisher interval rather than losing it.
+    """
+    return np.fmin(fisher_low, boot_low), np.fmax(fisher_high, boot_high)
+
+
+def pair_interval(
+    matrix: pd.DataFrame,
+    bootstrap: bool = True,
+) -> tuple[np.ndarray, np.ndarray, list[str], np.ndarray, np.ndarray]:
+    """Correlation, shared weeks, codes and the interval verdicts read off.
+
+    One entry point for the weekly job, the market map and anything else
+    that states a verdict on a pair, so none of them can drift onto a
+    different interval. `bootstrap=False` gives Fisher alone, for callers
+    that only need it as a fallback.
+    """
+    corr, n, codes = pairwise_pearson(matrix)
+    low, high = fisher_interval(corr, n)
+    if bootstrap:
+        b_low, b_high = bootstrap_interval(matrix[codes])
+        low, high = combined_interval(low, high, b_low, b_high)
+    return corr, n, codes, low, high
+
+
+@dataclass(frozen=True)
+class LowerBounds:
+    """Every pair's combined lower bound, as the weekly job measured it.
+
+    The market map groups on the lower bound, and the bootstrap behind it
+    takes about half a minute over the whole universe: too long for a
+    request, which the frontend gives fifteen seconds. So the job, which has
+    just computed it, stores it once per snapshot and the API reads it
+    instead of recomputing.
+
+    Stored as the upper triangle in float32 (3.8 MB for 1,376 funds):
+    float16 would move a bound by up to 0.0005 near 0.85, enough to put a
+    pair on the other side of the line from its fund page.
+    """
+
+    codes: tuple[str, ...]
+    low: np.ndarray  # upper triangle, row-major, float32
+
+    @classmethod
+    def from_matrix(cls, codes: Sequence[str], low: np.ndarray) -> "LowerBounds":
+        iu = np.triu_indices(len(codes), k=1)
+        return cls(tuple(codes), np.asarray(low, dtype=np.float32)[iu])
+
+    def to_bytes(self) -> bytes:
+        return self.low.astype("<f4").tobytes()
+
+    @classmethod
+    def from_bytes(cls, codes: Sequence[str], raw: bytes) -> "LowerBounds":
+        low = np.frombuffer(raw, dtype="<f4")
+        expected = len(codes) * (len(codes) - 1) // 2
+        if low.size != expected:
+            raise ValueError(f"{low.size} stored bounds for {len(codes)} codes")
+        return cls(tuple(codes), low)
+
+    def lookup(self, codes: Sequence[str]) -> np.ndarray:
+        """The bounds for `codes`, as a square matrix in that order.
+
+        NaN for any pair involving a code this snapshot did not measure, so
+        `np.fmin` against a freshly computed Fisher bound falls back to it.
+        """
+        pos = {c: i for i, c in enumerate(self.codes)}
+        size = len(self.codes)
+        idx = np.array([pos.get(c, -1) for c in codes])
+        known = idx >= 0
+        a = np.minimum.outer(idx, idx)
+        b = np.maximum.outer(idx, idx)
+        # Row-major upper-triangle offset of (a, b), a < b.
+        flat = a * size - a * (a + 1) // 2 + (b - a - 1)
+        ok = np.outer(known, known) & (a != b)
+        out = np.full((len(codes), len(codes)), np.nan)
+        out[ok] = self.low[flat[ok]]
+        np.fill_diagonal(out, 1.0)
+        return out
+
+
+# ----------------------------------------------------------------------
 # Buckets
 # ----------------------------------------------------------------------
 

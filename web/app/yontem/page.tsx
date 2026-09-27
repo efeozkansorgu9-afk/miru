@@ -17,14 +17,15 @@ import { FUND_BASE, SITE, TOOL } from "@/lib/site";
  * `web/lib/windows.json`) or a measurement recorded in `CLAUDE.md`; when one
  * of those moves, this page has to move with it. The Fisher examples are
  * computed, not illustrative: r = 0,92 gives (0,837 – 0,962) on 30 weeks and
- * (0,896 – 0,939) on 200.
+ * (0,896 – 0,939) on 200. The bootstrap figures in section 3 were measured on
+ * the live universe on 2026-09-27 and are recorded in `CLAUDE.md`.
  */
 export const dynamic = "force-static";
 
 export const metadata: Metadata = {
   title: { absolute: `Yöntem · ${SITE.brand}` },
   description:
-    "miru'daki her sayının nasıl hesaplandığı: haftalık getiriler, korelasyon, Fisher z güven aralıkları, kovalar ve enflasyona göre getiri.",
+    "miru'daki her sayının nasıl hesaplandığı: haftalık getiriler, korelasyon, güven aralıkları (Fisher z ve blok bootstrap), kovalar ve enflasyona göre getiri.",
 };
 
 const BOLUMLER = [
@@ -173,6 +174,41 @@ z &= \operatorname{artanh}(r) = \tfrac{1}{2}\ln\frac{1+r}{1-r} \\[4pt]
               olamıyoruz. 200 haftalık olan ise rahatça eşiğin üstünde kalıyor.
               Ortak geçmişi 52 haftadan kısa olan çiftler hakkında ise hiç hüküm
               vermiyoruz.
+            </P>
+            <P>
+              Fisher aralığı bir varsayıma dayanıyor: haftalık getiriler
+              birbirinden bağımsız ve normal dağılıyor. Gerçekte öyle değil. Sert
+              haftalar art arda geliyor, uç haftalar sanıldığından sık, ve bazen
+              tek bir hafta bir çiftin korelasyonunu neredeyse tek başına
+              taşıyor. Bu yüzden her çift için ikinci bir aralık daha
+              hesaplıyoruz: haftaları sekizer haftalık bloklar halinde 200 kez
+              yeniden örnekliyor (blok bootstrap), her seferinde korelasyonu
+              yeniden ölçüyor, çıkan 200 sayının %2,5 ve %97,5 dilimlerini
+              alıyoruz. Bloklar, art arda gelen sert haftaları birlikte tutuyor.
+            </P>
+            <Formula
+              tex={String.raw`\begin{aligned}
+r_{\text{alt}} &= \min\bigl(r^{\text{F}}_{\text{alt}},\; r^{\text{B}}_{\text{alt}}\bigr) \\[4pt]
+r_{\text{üst}} &= \max\bigl(r^{\text{F}}_{\text{üst}},\; r^{\text{B}}_{\text{üst}}\bigr)
+\end{aligned}`}
+            >
+              Hüküm verirken iki aralıktan hangisi genişse ona bakıyoruz: alt uç
+              için küçük olanı, üst uç için büyük olanı. <Tex>{"F"}</Tex> Fisher,{" "}
+              <Tex>{"B"}</Tex> bootstrap. Böylece hiçbir çift hakkında iki
+              yöntemden birinin izin verdiğinden daha emin konuşmuyoruz.
+            </Formula>
+            <P>
+              Farkı bütün evrende ölçtük (27 Eylül 2026, hüküm verilebilen
+              738.720 çift). Bootstrap aralığı ortanca olarak Fisher’ınkinden
+              1,19 kat geniş; korelasyonu 0,60’ın üstündeki çiftlerin en geniş
+              onda birinde 2,25 katı geçiyor. Korelasyonu 0,961 olan bir çiftte
+              Fisher’ın alt ucu 0,949, bootstrap’inki 0,70 çıktı: bu çiftin
+              korelasyonu, hangi haftaların örneğe girdiğine çok duyarlı. Geniş aralığa geçince “örtüşen”
+              çiftler 23.820’den 19.328’e, “orta düzeyde” çiftler 32.313’ten
+              7.733’e indi; hüküm verilemeyen “belirsiz” çiftlerin payı %54’ten
+              %65’e çıktı. Fon sayfalarının 115’inde öne çıkan bulgu değişti,
+              çoğu serbest fonlarda. Site artık daha az şey iddia ediyor; kalan her
+              iddiayı iki yöntem de destekliyor.
             </P>
           </Bolum>
 
@@ -463,24 +499,18 @@ z &= \operatorname{artanh}(r) = \tfrac{1}{2}\ln\frac{1+r}{1-r} \\[4pt]
               sayılarıyla yazıyoruz.
             </P>
             <ul className="flex flex-col gap-4">
-              <Ilke baslik="Güven aralığı bazı fonlarda olduğundan dar.">
-                Fisher aralığı, haftalık getirilerin birbirinden bağımsız ve
-                normal dağıldığını varsayıyor. Getiriler böyle değil: sert haftalar
-                art arda geliyor ve uç haftalar sanıldığından sık. Bunu sekiz
-                varlık sınıfının 28 çifti üzerinde ölçtük: haftaları sekizer
-                haftalık bloklar halinde yeniden örnekleyince aralık, Fisher’ınkinden
-                ortanca 1,43 kat, en fazla 3,3 kat genişliyor. Bloksuz yeniden
-                örneklemede bile 1,19 kat; yani sorun yalnızca kümelenme değil,
-                kalın kuyruklar da. Hükümlere etkisini dört büyük grubun 188
-                “örtüşen” çiftinde denedik: Türk hissesi, altın ve katılım
-                gruplarındaki 160 çiftin hiçbiri değişmedi; dolar cinsi serbest
-                fonlardan oluşan grubun 28 çiftinin 23’ü ise 0,85 eşiğinin altına
-                düştü. O grupta örtüşme, birkaç büyük kur haftasına dayanıyor.
-                (Ölçüm tarihi: 27 Eylül 2026.)
+              <Ilke baslik="Aralıklar da birer tahmin.">
+                Hükümleri Fisher ile blok bootstrap aralıklarından geniş olana
+                göre veriyoruz (bölüm 3), ama bootstrap da kusursuz değil. Blok
+                uzunluğu (8 hafta) bir seçim; ortak geçmişi 52 ile 100 hafta
+                arasında olan çiftlerde blok sayısı az, aralık kaba. Hatanın
+                hangi yöne gideceğini seçebildiğimiz yerde temkin tarafını
+                seçtik: iki aralıktan genişini almak, bir çift hakkında
+                olduğundan emin konuşmamızı engelliyor, tersini değil.
               </Ilke>
-              <Ilke baslik="Dönem sınamaları da aynı varsayıma dayanıyor.">
-                Dönemler bölümündeki z testi de Fisher standart hatasını
-                kullanıyor; aralıklar dar olduğu için “belirgin fark” diye
+              <Ilke baslik="Dönem sınamaları Fisher varsayımına dayanıyor.">
+                Dönemler bölümündeki z testi Fisher standart hatasını
+                kullanıyor; o hata gerçekte olduğundan küçük olduğu için “belirgin fark” diye
                 gösterdiğimiz ikililer olması gerekenden biraz fazla olabilir.
                 Bonferroni düzeltmesi bunu kısmen dengeliyor, tamamen değil.
               </Ilke>

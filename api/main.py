@@ -813,19 +813,24 @@ def _market_inputs(conn):
         grid = pd.DataFrame()
     returns = mk.returns_from_grid(grid)
     model = sty.choose_proxies(returns) if not returns.empty else None
-    out = (key, last, grid, returns, meta, model)
+    # The job's stored lower bounds (Fisher and block bootstrap combined).
+    # None before the first run that wrote them: the map then groups on
+    # Fisher alone rather than spending half a minute on the bootstrap here.
+    stored = db.fetch_pair_bounds(conn)
+    bounds = pc.LowerBounds.from_bytes(stored["codes"], stored["low"]) if stored else None
+    out = (key, last, grid, returns, meta, model, bounds)
     _INPUTS_CACHE.clear()
     _INPUTS_CACHE[key] = out
     return out
 
 
 def _market(conn) -> sc.MarketResponse:
-    key, last, grid, returns, meta, model = _market_inputs(conn)
+    key, last, grid, returns, meta, model, bounds = _market_inputs(conn)
     if key in _MARKET_CACHE:
         return _MARKET_CACHE[key]
 
     thresholds = pc.Thresholds.from_env()
-    g = mk.group_market(returns, thresholds)
+    g = mk.group_market(returns, thresholds, bounds)
 
     # What each group is made of: the style of its equal-weight return,
     # fitted with the factor proxies left out of the group they sit in, and
@@ -878,6 +883,8 @@ def _market(conn) -> sc.MarketResponse:
         codes = list(g.clusters[i].codes) + list(g.clusters[j].codes)
         corr, n, names = pc.pairwise_pearson(returns[codes])
         low, _ = pc.fisher_interval(corr, n)
+        if bounds is not None:
+            low = np.fmin(low, bounds.lookup(names))
         pos = {c: k for k, c in enumerate(names)}
         a = [pos[c] for c in g.clusters[i].codes if c in pos]
         b = [pos[c] for c in g.clusters[j].codes if c in pos]
@@ -1105,7 +1112,7 @@ def market_periods() -> sc.MarketPeriodsResponse:
     frontend names them.
     """
     with _db() as conn:
-        key, last, grid, returns, meta, model = _market_inputs(conn)
+        key, last, grid, returns, meta, model, bounds = _market_inputs(conn)
     if key in _PERIODS_CACHE:
         return _PERIODS_CACHE[key]
     if model is None or model.factors.empty:

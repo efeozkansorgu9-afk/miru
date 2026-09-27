@@ -30,6 +30,7 @@ from contextlib import contextmanager
 from typing import Iterator, Optional, Sequence
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,20 @@ CREATE TABLE IF NOT EXISTS job_runs (
 );
 
 ALTER TABLE job_runs ADD COLUMN IF NOT EXISTS cpi_latest_month date;
+
+-- Every pair's lower bound, Fisher and block bootstrap combined, for the
+-- market map. One row: the codes in order and the upper triangle as
+-- little-endian float32 (`precompute.LowerBounds`), ~3.8 MB. A row per pair
+-- would be ~950,000 rows to write every week for something only ever read
+-- whole. Part of the snapshot swap, so a map never groups this week's funds
+-- on last week's bounds.
+CREATE TABLE IF NOT EXISTS pair_bounds (
+    id       smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    codes    jsonb NOT NULL,
+    low      bytea NOT NULL,
+    samples  integer NOT NULL,
+    block    integer NOT NULL
+);
 """
 
 
@@ -219,6 +234,7 @@ def replace_snapshot(
     correlations: Sequence[dict],
     returns: Sequence[dict] = (),
     prices: Sequence[dict] = (),
+    bounds: Optional[dict] = None,
 ) -> None:
     """Swap in this run's snapshot, wholesale.
 
@@ -239,7 +255,9 @@ def replace_snapshot(
     with conn.cursor() as cur:
         # Truncate rather than DELETE: it is one statement, it resets nothing
         # this schema depends on, and CASCADE takes the child tables with it.
-        cur.execute("TRUNCATE funds, fund_correlations, fund_returns, fund_prices")
+        cur.execute(
+            "TRUNCATE funds, fund_correlations, fund_returns, fund_prices, pair_bounds"
+        )
 
         cur.executemany(
             """
@@ -295,6 +313,15 @@ def replace_snapshot(
                 VALUES (%(fund_code)s, %(week_end)s, %(price)s)
                 """,
                 prices[start : start + COPY_BATCH],
+            )
+
+        if bounds is not None:
+            cur.execute(
+                """
+                INSERT INTO pair_bounds (id, codes, low, samples, block)
+                VALUES (1, %(codes)s, %(low)s, %(samples)s, %(block)s)
+                """,
+                {**bounds, "codes": Jsonb(list(bounds["codes"]))},
             )
 
     logger.info(
@@ -551,6 +578,24 @@ def fetch_market_meta(conn: psycopg.Connection) -> dict[str, dict]:
             }
             for r in cur.fetchall()
         }
+
+
+def fetch_pair_bounds(conn: psycopg.Connection) -> Optional[dict]:
+    """The stored lower bounds, or None before any run has written them.
+
+    Checks for the table first rather than catching the error: an API
+    deployed ahead of the job that creates the table must keep answering,
+    and a failed statement would abort the caller's transaction.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('pair_bounds') IS NOT NULL")
+        if not cur.fetchone()[0]:
+            return None
+        cur.execute("SELECT codes, low, samples, block FROM pair_bounds WHERE id = 1")
+        row = cur.fetchone()
+    if row is None:
+        return None
+    return {"codes": list(row[0]), "low": bytes(row[1]), "samples": row[2], "block": row[3]}
 
 
 def fetch_cpi(conn: psycopg.Connection) -> list[dict]:

@@ -2,8 +2,9 @@
 How many different things the fund universe actually holds.
 
 Every tradeable fund is measured against every other, the same way the fund
-pages measure a pair — weekly returns, Pearson, a 95% Fisher interval on the
-pair's own shared weeks, the same thresholds — and then partitioned into
+pages measure a pair — weekly returns, Pearson, a 95% interval on the pair's
+own shared weeks (the wider of Fisher's and a block bootstrap's, as stored
+by the weekly job), the same thresholds — and then partitioned into
 groups in which **every** pair is `overlapping`: the lower end of its
 interval above 0.85. A group here makes the same claim a group in the basket
 tool makes, about a whole market instead of five funds.
@@ -37,7 +38,9 @@ The weekly price grid the job already stores (`fund_prices`), differenced
 the way `precompute.weekly_return_matrix` differences a fund's own prices:
 a missed week gives a two-week return on its far side, never a filled one.
 So the coefficients here are the ones the fund pages quote, from the same
-functions (`pairwise_pearson`, `fisher_interval`, `series_stats`).
+functions (`pairwise_pearson`, `fisher_interval`, `series_stats`). The
+bootstrap half of the interval is not recomputed here — it takes half a
+minute — but read from what the job stored (`pc.LowerBounds`).
 
 Imports `precompute` and nothing that touches the network or a database.
 """
@@ -146,9 +149,18 @@ def complete_linkage(distance: np.ndarray, cut: float) -> list[list[int]]:
 
 
 def group_market(
-    returns: pd.DataFrame, thresholds: Optional[pc.Thresholds] = None
+    returns: pd.DataFrame,
+    thresholds: Optional[pc.Thresholds] = None,
+    bounds: Optional[pc.LowerBounds] = None,
 ) -> MarketGrouping:
-    """Partition a week × fund return matrix into overlapping groups."""
+    """Partition a week × fund return matrix into overlapping groups.
+
+    `bounds` are the weekly job's stored lower bounds, Fisher and block
+    bootstrap combined (`pc.pair_interval`). Each pair is grouped on the
+    lower of that and the Fisher bound computed here, so a pair is never
+    placed with a stronger claim than its fund page makes. Without `bounds`
+    (a snapshot written before they were stored) it is Fisher alone.
+    """
     t = thresholds or pc.Thresholds()
     if returns.empty or returns.shape[1] == 0:
         return MarketGrouping([], [], {}, None, None, t)
@@ -175,6 +187,8 @@ def group_market(
     matrix = returns[keep]
     corr, n, codes = pc.pairwise_pearson(matrix)
     low, _ = pc.fisher_interval(corr, n)
+    if bounds is not None:
+        low = np.fmin(low, bounds.lookup(codes))
 
     measurable = (n >= t.min_weeks) & np.isfinite(low)
     distance = np.where(measurable, 1.0 - low, np.inf)

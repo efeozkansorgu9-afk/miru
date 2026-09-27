@@ -245,7 +245,7 @@ function Result({
           carries, which is the same question asked in money. */}
       {risk && (
         <ScrollRise>
-          <RiskShare birimler={risk} />
+          <RiskShare birimler={risk} analysis={analysis} />
         </ScrollRise>
       )}
 

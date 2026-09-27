@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 
 import { BasketWorkspace } from "@/components/basket/basket-workspace";
 import { Column } from "@/components/column";
-import { Reveal } from "@/components/reveal";
 import { TOOL, pageTitle } from "@/lib/site";
 
 /**
@@ -36,7 +35,7 @@ export default function SepetAnalizi() {
           so its two lines come out near the same length, which is what stops
           centred text looking like a spill. */}
       <Column className="pt-section">
-        <Reveal className="mx-auto max-w-lede text-center">
+        <div className="enter mx-auto max-w-lede text-center">
           <p className="text-overline uppercase text-accent">Sepet incelemesi</p>
           <h1 className="mt-4 text-display-lg text-balance">
             Neye sahipsiniz?
@@ -46,7 +45,7 @@ export default function SepetAnalizi() {
             eden fonları bulup sepetinizin gerçekte ne kadar dağıldığını
             söyleyelim.
           </p>
-        </Reveal>
+        </div>
       </Column>
 
       <BasketWorkspace />

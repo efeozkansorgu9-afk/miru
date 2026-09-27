@@ -38,7 +38,7 @@
  * absolutely positioned card along with the text.
  *
  * Note what that is *not*: it is not the stacking-context trap in
- * `CLAUDE.md`. The `.scroll-rise` ancestor does hold a permanent stacking
+ * `CLAUDE.md`. The `.scroll-rise` ancestor (since replaced) did hold a permanent stacking
  * context, and it would have bitten next, but here `z-40` was never the
  * problem — `overflow: hidden` clips regardless of z-index, so no number
  * would have fixed it. The portal is the fix for both, which is why the rule

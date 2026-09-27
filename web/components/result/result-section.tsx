@@ -17,8 +17,7 @@ import type { AnalyzeRequest, AnalyzeResponse } from "@/lib/api";
 import { riskBirimleri } from "@/lib/risk-share";
 import { sepetUcreti } from "@/lib/fee";
 import { Column } from "@/components/column";
-import { Reveal } from "@/components/reveal";
-import { ScrollRise } from "@/components/scroll-rise";
+import { Appear } from "@/components/appear";
 import {
   analysisStatusText,
   chartData,
@@ -214,7 +213,7 @@ function Result({
 
   return (
     <div className="flex flex-col gap-section">
-      <Reveal>
+      <Appear>
         <MainFinding
           analysis={analysis}
           grouping={grouping}
@@ -227,7 +226,7 @@ function Result({
           partial={excluded}
           valuedToday={analysis.purchases !== null}
         />
-      </Reveal>
+      </Appear>
 
       {/* Directly under the finding, because it answers the question the
           finding provokes: the headline says a pair moves together, and the
@@ -235,46 +234,46 @@ function Result({
           the basket has one fund or too little shared history to draw a
           history of, rather than shown empty. */}
       {response.rolling_correlation && (
-        <ScrollRise>
+        <Appear>
           <RollingCorrelation rolling={response.rolling_correlation} />
-        </ScrollRise>
+        </Appear>
       )}
 
       {/* After the similarity history: the finding says which funds are one
           holding, this says how much of the basket's swing each of them
           carries, which is the same question asked in money. */}
       {risk && (
-        <ScrollRise>
+        <Appear>
           <RiskShare birimler={risk} analysis={analysis} />
-        </ScrollRise>
+        </Appear>
       )}
 
       {ucret && (
-        <ScrollRise>
+        <Appear>
           <Fees ucret={ucret} />
-        </ScrollRise>
+        </Appear>
       )}
 
       {(excluded || Object.keys(coverage.failed_codes).length > 0) && (
-        <ScrollRise className="space-y-8">
+        <Appear className="space-y-8">
           <ExcludedFunds response={response} request={request} />
           <FailedCodes coverage={coverage} />
-        </ScrollRise>
+        </Appear>
       )}
 
       {figures && (
-        <ScrollRise>
+        <Appear>
           <Returns figures={figures} realReturn={response.real_return} />
-        </ScrollRise>
+        </Appear>
       )}
 
       {chart && chart.points.length > 1 && (
-        <ScrollRise>
+        <Appear>
           <ValueChart data={chart} staged={analysis.purchases !== null} />
-        </ScrollRise>
+        </Appear>
       )}
 
-      <ScrollRise>
+      <Appear>
         <TechnicalDetails
           analysis={analysis}
           grouping={grouping}
@@ -284,7 +283,7 @@ function Result({
             coverage.trimmed_coverage.end,
           )}
         />
-      </ScrollRise>
+      </Appear>
     </div>
   );
 }
@@ -300,7 +299,10 @@ function Result({
 function Loading() {
   return (
     <div aria-live="polite" aria-busy="true">
-      <p className="text-overline uppercase text-accent">İnceleme sürüyor</p>
+      <p className="flex items-center gap-2 text-overline uppercase text-accent">
+        <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
+        İnceleme sürüyor
+      </p>
       <h2 className="mt-4 max-w-prose text-display-md text-balance">
         Fon fiyatları TEFAS&apos;tan alınıyor.
       </h2>
@@ -329,7 +331,10 @@ function Skeleton({ className }: { className?: string }) {
 function Failure({ title, body }: { title: string; body: string }) {
   return (
     <div role="alert">
-      <p className="text-overline uppercase text-caution">Sonuç alınamadı</p>
+      <p className="flex items-center gap-2 text-overline uppercase text-caution">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-caution" />
+        Sonuç alınamadı
+      </p>
       <h2 className="mt-4 max-w-prose text-display-md text-balance">{title}</h2>
       <p className="mt-5 max-w-prose text-lead text-ink-muted text-pretty">{body}</p>
       <p className="mt-6 max-w-prose text-caption text-ink-subtle">

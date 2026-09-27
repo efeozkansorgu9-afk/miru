@@ -131,17 +131,22 @@ export function ValueChart({
   // The date axis is ticked by `./axis` for the same reason the value axis
   // is ticked here: left to Recharts, two Fridays in one month both format
   // as "02.26" and the axis repeats itself.
+  // As many date labels as fit, one per 60px, 3 to 10.
+  const [genislik, setGenislik] = useState(0);
   const dateTicks = useMemo(
-    () => monthTicks(data.points.map((p) => p.date)),
-    [data.points],
+    () =>
+      monthTicks(
+        data.points.map((p) => p.date),
+        genislik > 0 ? Math.max(3, Math.min(10, Math.floor(genislik / 60))) : 10,
+      ),
+    [data.points, genislik],
   );
 
   return (
     <section aria-labelledby="deger-grafigi" className="scroll-mt-28 sm:scroll-mt-24">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-overline uppercase text-ink-subtle">Değer</p>
-          <h2 id="deger-grafigi" className="mt-4 text-display-sm">
+          <h2 id="deger-grafigi" className="text-display-sm">
             Sepetin değeri
           </h2>
         </div>
@@ -218,7 +223,11 @@ export function ValueChart({
       </ul>
 
       <div className="mt-4 h-80 w-full sm:h-96">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+          onResize={(w) => setGenislik((eski) => (Math.abs(eski - w) < 1 ? eski : w))}
+        >
           <LineChart
             data={data.points}
             // Room on the right for the last date label. The final tick sits

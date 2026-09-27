@@ -16,7 +16,6 @@ import { useFundRegistry } from "@/lib/funds";
 import type { SearchableFund } from "@/lib/funds";
 import { SAMPLE_COUNT, randomSample } from "@/lib/sample";
 import type { SampleScenario } from "@/lib/sample";
-import { Reveal } from "@/components/reveal";
 import { FundSearch } from "./fund-search";
 import { FundRow } from "./fund-row";
 import { StagedTable } from "./staged-table";
@@ -188,9 +187,9 @@ export function BasketForm({
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-section-sm">
-      <Reveal>
+      <div className="enter">
         <FundSearch chosen={chosen} onChoose={addFund} />
-      </Reveal>
+      </div>
 
       <div>
         {/* The heading and everything that acts on the basket as a whole.
@@ -298,7 +297,7 @@ export function BasketForm({
           type="submit"
           ref={submitRef}
           disabled={!canAnalyze}
-          className="inline-flex items-center gap-2.5 rounded-control bg-accent px-8 py-4 text-body font-medium text-accent-ink transition-all hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent"
+          className="inline-flex items-center gap-2.5 rounded-control bg-accent px-8 py-4 text-body font-medium text-accent-ink shadow-sm transition-[background-color,opacity,transform] duration-200 hover:bg-accent-hover enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:bg-accent"
         >
           <AnimatePresence mode="wait" initial={false}>
             {busy ? (

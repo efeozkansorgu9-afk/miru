@@ -15,8 +15,7 @@ import type { SepetUcreti } from "@/lib/fee";
 export function Fees({ ucret }: { ucret: SepetUcreti }) {
   return (
     <section aria-labelledby="ucretler" className="scroll-mt-28 sm:scroll-mt-24">
-      <p className="text-overline uppercase text-ink-subtle">Ücretler</p>
-      <h2 id="ucretler" className="mt-4 text-display-sm text-balance">
+      <h2 id="ucretler" className="text-display-sm text-balance">
         Bu fonlar yılda ne kadar ücret alıyor?
       </h2>
 

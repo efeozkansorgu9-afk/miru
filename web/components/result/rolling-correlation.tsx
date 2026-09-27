@@ -50,43 +50,46 @@ export function RollingCorrelation({ rolling }: { rolling: Rolling }) {
 
   const pair = rolling.pairs[index] ?? rolling.pairs[0];
   const view = useMemo(() => rollingView(rolling, pair), [rolling, pair]);
-  const dateTicks = useMemo(() => monthTicks(rolling.dates), [rolling.dates]);
+  // As many date labels as fit, one per 60px, 3 to 10: a fixed twelve ran
+  // together on a phone.
+  const [genislik, setGenislik] = useState(0);
+  const dateTicks = useMemo(
+    () => monthTicks(rolling.dates, genislik > 0 ? Math.max(3, Math.min(10, Math.floor(genislik / 60))) : 10),
+    [rolling.dates, genislik],
+  );
 
   const strongest = index === 0;
 
   return (
     <section aria-labelledby="benzerlik" className="scroll-mt-28 sm:scroll-mt-24">
-      <p className="text-overline uppercase text-ink-subtle">Benzerlik</p>
-
-      {/* The pair and what it came to over the whole period, before the
+      <h2 id="benzerlik" className="text-display-sm text-balance">
+        Benzerlik zaman içinde nasıl değişti?
+      </h2>
+      {/* The pair and what it came to over the whole period, under the
           question about it. On the default selection this is the finding's
           own pair, so it says which pair it is; on any other it simply
           names the one being drawn rather than claiming it is the top. */}
-      <p className="mt-4 text-lead text-ink text-pretty">
+      <p className="mt-2 max-w-prose text-body text-ink-muted text-pretty">
         {strongest ? (
           <>
-            <strong className="font-medium">{ciftAdi(view.codes)}</strong> en çok
+            <strong className="font-medium text-ink">{ciftAdi(view.codes)}</strong> en çok
             birlikte hareket eden çift. Tüm dönem korelasyonu{" "}
-            <strong className="font-medium tabular-nums">
+            <strong className="font-medium text-ink tabular-nums">
               {oran(view.fullPeriod)}
             </strong>
             .
           </>
         ) : (
           <>
-            <strong className="font-medium">{ciftAdi(view.codes)}</strong>. Tüm dönem
+            <strong className="font-medium text-ink">{ciftAdi(view.codes)}</strong>. Tüm dönem
             korelasyonu{" "}
-            <strong className="font-medium tabular-nums">
+            <strong className="font-medium text-ink tabular-nums">
               {oran(view.fullPeriod)}
             </strong>
             .
           </>
         )}
       </p>
-
-      <h2 id="benzerlik" className="mt-3 text-display-sm text-balance">
-        Bu benzerlik zaman içinde nasıl değişti?
-      </h2>
 
       {/* Above the chart it scopes, not inside it. Only shown when there is
           something to choose: a two fund basket has one pair, and a control
@@ -112,7 +115,11 @@ export function RollingCorrelation({ rolling }: { rolling: Rolling }) {
       )}
 
       <div className="mt-5 h-72 w-full sm:h-80">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+          onResize={(w) => setGenislik((eski) => (Math.abs(eski - w) < 1 ? eski : w))}
+        >
           <LineChart
             data={view.points}
             // Room on the right for the last date label, which centres on a
@@ -175,7 +182,7 @@ export function RollingCorrelation({ rolling }: { rolling: Rolling }) {
 
       {/* The three values worth reading off, in text, so none of them is
           reachable only by hovering. */}
-      <dl className="mt-5 grid gap-4 sm:grid-cols-3">
+      <dl className="mt-5 grid gap-px overflow-hidden rounded-card border border-border bg-border sm:grid-cols-3">
         <Figure label="Bugün" point={view.latest} />
         <Figure label="En düşük" point={view.lowest} />
         <Figure label="En yüksek" point={view.highest} />
@@ -196,9 +203,9 @@ function Figure({
   point: { date: string; value: number } | null;
 }) {
   return (
-    <div className="rounded-control border border-border bg-canvas-sunken px-5 py-4">
+    <div className="bg-surface px-5 py-4">
       <dt className="text-label text-ink-muted">{label}</dt>
-      <dd className="mt-2 text-display-sm tabular-nums text-ink">
+      <dd className="mt-1.5 text-[1.75rem] leading-tight font-semibold tracking-tight tabular-nums text-ink">
         {point ? korelasyon(point.value) : "hesaplanamadı"}
       </dd>
       {point && (

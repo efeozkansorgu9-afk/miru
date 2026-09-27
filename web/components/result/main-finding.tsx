@@ -31,23 +31,30 @@ export function MainFinding({
 
   return (
     <section aria-labelledby="ana-bulgu" className="scroll-mt-28 sm:scroll-mt-24">
-      <p className="text-overline uppercase text-accent">İnceleme sonucu</p>
+      {/* The answer in a card of its own, the way a fund page's finding
+          is: the one block on the result with a ground and an edge. */}
+      <div className="rounded-card border border-accent/20 bg-accent-surface/70 px-5 py-6 sm:px-8 sm:py-7">
+        <p className="flex items-center gap-2 text-overline uppercase text-accent">
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-accent" />
+          İnceleme sonucu
+        </p>
 
-      <h2 id="ana-bulgu" className="mt-4 max-w-prose text-display-md text-balance">
-        {finding.title}
-      </h2>
+        <h2 id="ana-bulgu" className="mt-3 max-w-3xl text-display-sm text-balance sm:text-display-md">
+          {finding.title}
+        </h2>
 
-      <div className="mt-5 max-w-prose space-y-3">
-        {finding.body.map((sentence) => (
-          <p key={sentence} className="text-lead text-ink-muted text-pretty">
-            {sentence}
-          </p>
-        ))}
+        <div className="mt-4 max-w-prose space-y-3">
+          {finding.body.map((sentence) => (
+            <p key={sentence} className="text-lead text-ink-muted text-pretty">
+              {sentence}
+            </p>
+          ))}
+        </div>
+
+        <p className="mt-5 max-w-prose text-caption text-ink-subtle">
+          {donemCumlesi(analysis)} {DONEM_NOTU}
+        </p>
       </div>
-
-      <p className="mt-6 max-w-prose text-caption text-ink-subtle">
-        {donemCumlesi(analysis)} {DONEM_NOTU}
-      </p>
 
       <div className="mt-10">
         <h3 className="text-display-sm">Sepetin dağılımı</h3>

@@ -231,17 +231,19 @@
 
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 
-  --animate-rise: rise 0.5s var(--ease-out-soft) both;
+}
 
-  @keyframes rise {
-    from {
-      opacity: 0;
-      transform: translateY(0.75rem);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
+/* The one entrance: `.enter` and `Appear` both play it (see the end of
+   this file). Outside `@theme` so it is emitted whether or not a theme
+   variable refers to it. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -412,53 +414,6 @@
   }
 }
 
-/* ====================================================================
-   Arriving on scroll
-   ====================================================================
-   A result page is a column of sections a reader scrolls through once. Each
-   one lifting into place as it comes up softens that, and the whole effect
-   is over inside the first fifth of the section's entry: this is a screen
-   full of numbers someone is trying to read, and a page where things are
-   still moving while you read them is a tiring page.
-
-   Driven by the scroll position rather than by a timer, so it cannot run
-   ahead of the reader, and cannot fire for six sections at once the moment
-   an analysis lands.
-
-   Crucially it is `animation-timeline`, not JavaScript. An IntersectionObserver
-   version has to ship `opacity: 0` in the markup and rely on a bundle
-   arriving to take it away, which for a page whose job is showing someone
-   numbers about their money is the wrong thing to get wrong. Here the whole
-   rule is inside `@supports`: a browser without scroll-driven animations
-   applies no animation at all and simply shows the content, which is the
-   right thing to lose.
-   ==================================================================== */
-@keyframes section-rise {
-  from {
-    opacity: 0;
-    transform: translateY(1.25rem);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    @layer utilities {
-      .scroll-rise {
-        animation: section-rise linear both;
-        animation-timeline: view();
-        /* Finished well before the section is fully on screen, so nothing is
-           still animating by the time it is being read. Scrolling back up
-           reverses it only as the section leaves at the bottom. */
-        animation-range: entry 0% entry 45%;
-      }
-    }
-  }
-}
-
 /* InfoTip's bubble: opacity only. It is placed with `top`/`left`, so a
    transform here would not fight the positioning, but a definition does not
    need to travel to be read. */
@@ -478,8 +433,9 @@
    `data-appear="stagger"` for one whose direct children arrive in turn. The
    hidden state exists only under `html.motion-ok`, which an inline script
    sets before paint, and only without reduced motion. The observer sets
-   `data-shown`; the transition does the rest and leaves nothing behind —
-   no fill, so no stacking context once it has run.
+   `data-shown`; one pass of `rise`, filled backwards only, does the rest
+   and leaves nothing behind — no stacking context once it has run, and no
+   `transition` declared, so the element's own hover transitions still work.
 
    `appear-failsafe` is for the case where the bundle that runs the observer
    never arrives: after four seconds everything shows regardless. A reader
@@ -493,25 +449,26 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .motion-ok [data-appear=""],
-  .motion-ok [data-appear="stagger"] > * {
-    transition:
-      opacity 0.7s var(--ease-out-soft),
-      transform 0.7s var(--ease-out-soft);
-  }
-
+  /* Waiting: invisible, and nothing else. No transform here and no
+     transition anywhere, so a card's own hover transitions are untouched. */
   .motion-ok [data-appear=""]:not([data-shown]),
   .motion-ok [data-appear="stagger"]:not([data-shown]) > * {
     opacity: 0;
-    transform: translateY(1rem);
     animation: appear-failsafe 0.01s linear 4s forwards;
   }
 
-  .motion-ok [data-appear="stagger"] > :nth-child(2) { transition-delay: 70ms; }
-  .motion-ok [data-appear="stagger"] > :nth-child(3) { transition-delay: 140ms; }
-  .motion-ok [data-appear="stagger"] > :nth-child(4) { transition-delay: 210ms; }
-  .motion-ok [data-appear="stagger"] > :nth-child(5) { transition-delay: 280ms; }
-  .motion-ok [data-appear="stagger"] > :nth-child(n + 6) { transition-delay: 350ms; }
+  /* Shown: one pass of `rise`, filled backwards only, so when it ends the
+     element carries no animated value at all. */
+  .motion-ok [data-appear=""][data-shown],
+  .motion-ok [data-appear="stagger"][data-shown] > * {
+    animation: rise 0.7s var(--ease-out-soft) backwards;
+  }
+
+  .motion-ok [data-appear="stagger"][data-shown] > :nth-child(2) { animation-delay: 70ms; }
+  .motion-ok [data-appear="stagger"][data-shown] > :nth-child(3) { animation-delay: 140ms; }
+  .motion-ok [data-appear="stagger"][data-shown] > :nth-child(4) { animation-delay: 210ms; }
+  .motion-ok [data-appear="stagger"][data-shown] > :nth-child(5) { animation-delay: 280ms; }
+  .motion-ok [data-appear="stagger"][data-shown] > :nth-child(n + 6) { animation-delay: 350ms; }
 
   /* The first screen, which is on the page before any script runs: a CSS
      animation from paint, children in turn. `backwards`, not `both`: the

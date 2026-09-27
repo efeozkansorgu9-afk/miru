@@ -5,7 +5,7 @@ import { Column } from "@/components/column";
 import { Numara } from "@/components/method/numara";
 import { Formula, Tex } from "@/components/method/tex";
 import { TocCard, TocRail } from "@/components/method/toc";
-import { Reveal } from "@/components/reveal";
+import { Appear } from "@/components/appear";
 import { FUND_BASE, SITE, TOOL } from "@/lib/site";
 
 /**
@@ -45,8 +45,8 @@ const BOLUMLER = [
 export default function Yontem() {
   return (
     <Column className="pt-section pb-section-lg">
-      <Reveal className="max-w-prose">
-        <p className="text-overline uppercase text-ink-subtle">Yöntem</p>
+      <div className="enter max-w-prose">
+        <p className="text-overline uppercase text-accent">Yöntem</p>
         <h1 className="mt-4 text-display-md text-balance">
           Sayılarımızın arkasında ne var
         </h1>
@@ -57,7 +57,7 @@ export default function Yontem() {
           yapıyoruz: hangi veriyi kullandığımızı, nasıl hesapladığımızı ve bilerek
           neleri yapmadığımızı anlatıyoruz.
         </p>
-      </Reveal>
+      </div>
 
       <div className="mt-10 max-w-prose lg:hidden">
         <TocCard items={BOLUMLER} />
@@ -610,7 +610,7 @@ function Bolum({
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} aria-labelledby={`${id}-baslik`} className="scroll-mt-28 sm:scroll-mt-24">
+    <Appear as="section" id={id} labelledBy={`${id}-baslik`} className="scroll-mt-28 sm:scroll-mt-24">
       <div className="flex items-center gap-3">
         <Numara n={no} size="md" />
         <h2 id={`${id}-baslik`} className="text-display-sm text-balance">
@@ -618,7 +618,7 @@ function Bolum({
         </h2>
       </div>
       <div className="mt-4 flex flex-col gap-4">{children}</div>
-    </section>
+    </Appear>
   );
 }
 

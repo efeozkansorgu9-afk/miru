@@ -36,11 +36,15 @@ import { useEffect, useRef } from "react";
 export function Appear({
   as: Tag = "div",
   stagger = false,
+  id,
+  labelledBy,
   className,
   children,
 }: {
   as?: "div" | "section" | "ul" | "ol";
   stagger?: boolean;
+  id?: string;
+  labelledBy?: string;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -73,6 +77,8 @@ export function Appear({
   return (
     <Tag
       ref={ref as never}
+      id={id}
+      aria-labelledby={labelledBy}
       data-appear={stagger ? "stagger" : ""}
       className={className}
     >

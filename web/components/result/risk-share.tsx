@@ -33,8 +33,7 @@ export function RiskShare({
 
   return (
     <section aria-labelledby="risk-payi" className="scroll-mt-28 sm:scroll-mt-24">
-      <p className="text-overline uppercase text-ink-subtle">Risk dağılımı</p>
-      <h2 id="risk-payi" className="mt-4 text-display-sm text-balance">
+      <h2 id="risk-payi" className="text-display-sm text-balance">
         Paranız nerede, dalgalanma nereden?
       </h2>
       <div className="mt-4 max-w-prose space-y-3">

@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { Column } from "@/components/column";
-import { Reveal } from "@/components/reveal";
 import { TOOL } from "@/lib/site";
 
 /**
@@ -17,7 +16,7 @@ import { TOOL } from "@/lib/site";
 export default function FonBulunamadi() {
   return (
     <Column className="pt-section pb-section-lg">
-      <Reveal className="max-w-prose">
+      <div className="enter max-w-prose">
         <p className="text-overline uppercase text-caution">Fon bulunamadı</p>
         <h1 className="mt-4 text-display-md text-balance">
           Böyle bir fon sayfası yok.
@@ -33,7 +32,7 @@ export default function FonBulunamadi() {
         >
           {TOOL.name}&apos;ne git
         </Link>
-      </Reveal>
+      </div>
     </Column>
   );
 }

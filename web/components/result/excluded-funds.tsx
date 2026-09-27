@@ -47,9 +47,7 @@ export function ExcludedFunds({
 
   return (
     <section aria-labelledby="disarida-kalanlar" className="scroll-mt-28 sm:scroll-mt-24">
-      <p className="text-overline uppercase text-ink-subtle">Dışarıda kalanlar</p>
-
-      <h2 id="disarida-kalanlar" className="mt-4 max-w-prose text-display-sm text-balance">
+      <h2 id="disarida-kalanlar" className="max-w-prose text-display-sm text-balance">
         {kodListesi(codes)} bu incelemenin dışında kaldı.
       </h2>
 

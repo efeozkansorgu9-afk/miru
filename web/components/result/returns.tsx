@@ -42,8 +42,7 @@ export function Returns({
 
   return (
     <section aria-labelledby="getiri" className="scroll-mt-28 sm:scroll-mt-24">
-      <p className="text-overline uppercase text-ink-subtle">Getiri</p>
-      <h2 id="getiri" className="mt-4 text-display-sm text-balance">
+      <h2 id="getiri" className="text-display-sm text-balance">
         {staged ? "Elinizdeki fonların getirisi" : "Sepetin getirisi"}
       </h2>
       {/* The period belongs in the heading, not in a note underneath it. The
@@ -56,7 +55,7 @@ export function Returns({
 
       {/* Equal columns, so neither figure is the headline and the other the
           asterisk. On a phone they stack and stay the same size. */}
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid gap-px overflow-hidden rounded-card border border-border bg-border sm:grid-cols-2">
         <Metric
           label={real ? "Toplam getiri (nominal)" : "Toplam getiri"}
           value={yuzdeIsaretli(figures.nominalTotal)}
@@ -84,7 +83,7 @@ export function Returns({
         )}
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+      <div className="mt-4 grid gap-px overflow-hidden rounded-card border border-border bg-border sm:grid-cols-3">
         <Metric
           label={staged ? "Toplam yatırılan" : "Dönem başındaki değeri"}
           value={para(figures.opening)}
@@ -98,8 +97,9 @@ export function Returns({
       </div>
 
       {staged && (
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="mt-4 grid items-center gap-4 sm:grid-cols-2">
           <Metric
+            framed
             label="Paranızın yıllık getirisi (XIRR)"
             term="xirr"
             value={figures.xirr === null ? "hesaplanamadı" : yuzdeIsaretli(figures.xirr)}
@@ -137,21 +137,24 @@ function Metric({
   value,
   tone,
   term,
+  framed = false,
 }: {
   label: string;
   value: string;
   tone?: "gain" | "loss";
   /** Adds the definition of the word in the label next to it. */
   term?: TerimAdi;
+  /** Its own border, for a figure that does not sit in a joined grid. */
+  framed?: boolean;
 }) {
   return (
-    <div className="rounded-card border border-border bg-surface px-5 py-4">
+    <div className={`bg-surface px-5 py-4 sm:py-5 ${framed ? "rounded-card border border-border" : ""}`}>
       <p className="text-label text-ink-muted">
         {label}
         {term && <InfoTip term={term} />}
       </p>
       <p
-        className={`mt-2 text-display-sm tabular-nums ${
+        className={`mt-1.5 text-[1.75rem] leading-tight font-semibold tracking-tight tabular-nums ${
           tone === "gain" ? "text-positive" : tone === "loss" ? "text-negative" : "text-ink"
         }`}
       >

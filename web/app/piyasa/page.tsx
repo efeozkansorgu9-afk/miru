@@ -8,7 +8,7 @@ import { donemGirisi } from "@/lib/periods";
 import type { MarketCluster, MarketResponse } from "@/lib/api";
 import { Column } from "@/components/column";
 import { PayCubugu } from "@/components/market/share-bars";
-import { Reveal } from "@/components/reveal";
+import { Appear } from "@/components/appear";
 import { ayYil, korelasyon, oran, paraKisa, sayi, yuzde, yuzdeEki } from "@/lib/format";
 import { ucretOrani } from "@/lib/fee";
 import {
@@ -126,7 +126,8 @@ export default async function Piyasa() {
   return (
     <div>
       <Column className="pt-section pb-section">
-        <Reveal className="max-w-prose">
+        <div className="enter">
+        <div className="max-w-prose">
           <p className="text-overline uppercase text-accent">Piyasa haritası</p>
           <h1 className="mt-4 text-display-lg text-balance">
             Türkiye’de gerçekte kaç ayrı fon var?
@@ -138,9 +139,8 @@ export default async function Piyasa() {
             {sayi(m.measured)} fon, sonunda {sayi(m.groups_total)} ayrı harekete
             iniyor.
           </p>
-        </Reveal>
+        </div>
 
-        <Reveal delay={100}>
           <dl className="mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border sm:grid-cols-3">
             <Sayac deger={sayi(m.listed)} etiket="fon TEFAS’ta işlem görüyor" />
             <Sayac
@@ -153,9 +153,9 @@ export default async function Piyasa() {
               vurgu
             />
           </dl>
-        </Reveal>
+        </div>
 
-        <div className="mt-12 flex max-w-prose flex-col gap-4 text-body text-ink-muted text-pretty">
+        <Appear className="mt-12 flex max-w-prose flex-col gap-4 text-body text-ink-muted text-pretty">
           <p>
             <strong className="text-ink">{sayi(g.fon)} fon</strong>, içindeki
             her fon çiftinin birbiriyle örtüştüğü{" "}
@@ -177,18 +177,19 @@ export default async function Piyasa() {
               duruyor.
             </p>
           )}
-        </div>
+        </Appear>
 
-        <PayCubugu dilimler={parcalar} />
+        <Appear>
+          <PayCubugu dilimler={parcalar} />
+        </Appear>
       </Column>
 
       <div id="gruplar" className="scroll-mt-28 border-t border-border bg-canvas-sunken sm:scroll-mt-24">
         <Column className="py-section">
-          <p className="text-overline uppercase text-ink-subtle">Gruplar</p>
-          <h2 className="mt-4 max-w-prose text-display-sm text-balance">
+          <h2 className="max-w-prose text-display-sm text-balance">
             En kalabalık {Math.min(KART_SAYISI, m.clusters.length)} grup
           </h2>
-          <p className="mt-3 max-w-prose text-body text-ink-muted text-pretty">
+          <p className="mt-2 max-w-prose text-body text-ink-muted text-pretty">
             Her grupta fon sayısı, kaç farklı kurumun fonu olduğu, toplam
             büyüklük ve grubun en zayıf çifti var. En zayıf çift bile{" "}
             {korelasyon(m.overlapping_threshold)} eşiğinin üstünde; yani
@@ -196,7 +197,7 @@ export default async function Piyasa() {
             sayıdan yüksek çıkıyor.
           </p>
 
-          <ol className="mt-8 grid items-start gap-4 md:grid-cols-2">
+          <Appear as="ol" stagger className="mt-8 grid items-start gap-4 md:grid-cols-2">
             {m.clusters.slice(0, KART_SAYISI).map((c, i) => (
               <GrupKarti
                 key={c.codes[0]}
@@ -208,7 +209,7 @@ export default async function Piyasa() {
                 yakin={adSayisi.get(grupAdi(c))! > 1 ? yakinGrupCumlesi(c, m.overlapping_threshold) : null}
               />
             ))}
-          </ol>
+          </Appear>
 
           {m.clusters.length > KART_SAYISI && (
             <details className="group mt-6 rounded-card border border-border bg-surface">
@@ -241,13 +242,12 @@ export default async function Piyasa() {
 
       {donemler && (
         <Column className="pt-section">
-          <section id="donemler" aria-labelledby="donemler-baslik" className="scroll-mt-28 sm:scroll-mt-24">
-            <p className="text-overline uppercase text-accent">Dönemler</p>
-            <h2 id="donemler-baslik" className="mt-4 max-w-prose text-display-sm text-balance">
+          <Appear as="section" id="donemler" labelledBy="donemler-baslik" className="scroll-mt-28 sm:scroll-mt-24">
+            <h2 id="donemler-baslik" className="max-w-prose text-display-sm text-balance">
               Varlık sınıfları arasındaki ilişki yıldan yıla değişiyor
             </h2>
             {donemGiris && (
-              <p className="mt-4 max-w-prose text-lead text-ink-muted text-pretty">{donemGiris}</p>
+              <p className="mt-3 max-w-prose text-lead text-ink-muted text-pretty">{donemGiris}</p>
             )}
             <p className="mt-4 max-w-prose text-body text-ink-muted text-pretty">
               Her varlık sınıfını aşağıda, adlar bölümünde saydığımız temsilci
@@ -261,12 +261,12 @@ export default async function Piyasa() {
               </Link>
             </p>
             <Donemler data={donemler} />
-          </section>
+          </Appear>
         </Column>
       )}
 
       <Column className="pt-section">
-        <section id="adlar" className="max-w-prose scroll-mt-28 sm:scroll-mt-24">
+        <Appear as="section" id="adlar" className="max-w-prose scroll-mt-28 sm:scroll-mt-24">
           <h2 className="text-display-sm text-balance">Grupların adları nereden geliyor</h2>
           <p className="mt-4 text-body text-ink-muted text-pretty">
             TEFAS’ın kategorileri bir fonun hukuki türünü söylüyor, içinde ne
@@ -285,9 +285,12 @@ export default async function Piyasa() {
           </p>
           <p className="mt-4 text-body text-ink-muted text-pretty">
             Her etkeni, o türü doğrudan izleyen uzun geçmişli bir TEFAS fonu
-            temsil ediyor. Hangi fonun seçileceğini biz belirlemiyoruz: her
-            hafta, adaylar arasından kendi türüne en tipik olanı, yani diğer
-            adaylarla ortanca korelasyonu en yüksek olanı seçiliyor. Karışımın
+            temsil ediyor. Temsilciyi bir kural seçti: adaylar arasında kendi
+            türüne en tipik olanı, yani diğer adaylarla ortanca korelasyonu en
+            yüksek olanı. İlk ölçümde seçilenleri sabitledik; her hafta yeniden
+            seçmek, içinde hiçbir şey değişmemiş bir grubun adını
+            değiştirebilirdi. Temsilci fon, kendi grubunun getirisi
+            hesaplanırken o gruptan çıkarılıyor. Karışımın
             açıklama gücü (R²) {oran(m.style_min_r2 ?? 0.6)} değerinin
             altındaysa, o gruba bileşim adı vermiyoruz; TEFAS kategorisini
             gösterip bunu açıkça belirtiyoruz.
@@ -316,18 +319,19 @@ export default async function Piyasa() {
               ))}
             </ul>
           )}
-        </section>
+        </Appear>
       </Column>
 
       <Column className="py-section">
-        <div className="grid gap-10 lg:grid-cols-2">
+        <Appear stagger className="grid gap-10 lg:grid-cols-2">
           <section>
             <h2 className="text-display-sm text-balance">Nasıl grupladık</h2>
             <ul className="mt-4 flex flex-col gap-3 text-body text-ink-muted text-pretty">
               <li>
                 Her fon çiftini, fon sayfalarındakiyle aynı yöntemle ölçtük:
                 haftalık getiriler, korelasyon ve {sayi(m.min_weeks)} haftadan
-                uzun ortak geçmiş üzerinden %95 güven aralığı
+                uzun ortak geçmiş üzerinden %95 güven aralığı (Fisher ile
+                blok bootstrap aralıklarından geniş olanı)
                 {m.window_start && m.window_end
                   ? ` (${ayYil(m.window_start.slice(0, 7))} – ${ayYil(m.window_end.slice(0, 7))})`
                   : ""}
@@ -393,7 +397,7 @@ export default async function Piyasa() {
               .
             </p>
           </section>
-        </div>
+        </Appear>
       </Column>
     </div>
   );
@@ -453,15 +457,15 @@ function GrupKarti({
   const sayfa = groupHref(c.anchor ?? c.codes[0]);
 
   return (
-    <li className="flex flex-col overflow-hidden rounded-card border border-border bg-surface">
+    <li className="flex flex-col overflow-hidden rounded-card border border-border bg-surface transition-shadow duration-300 hover:shadow-[0_8px_24px_-14px_color-mix(in_oklab,var(--ink)_30%,transparent)]">
       <div className="h-1" style={{ background: renk }} />
       <div className="flex flex-1 flex-col px-5 pt-4 pb-5">
-        <div className="flex items-baseline gap-3">
-          <span className="font-display text-body font-semibold text-ink-subtle tabular-nums">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-canvas-sunken text-label font-semibold text-ink-muted tabular-nums">
             {sira}
           </span>
           <h3 className="min-w-0 text-lead font-semibold text-ink text-balance">
-            <Link href={sayfa} className="underline-offset-4 hover:text-accent hover:underline">
+            <Link href={sayfa} className="underline-offset-4 transition-colors hover:text-accent hover:underline">
               {grupAdi(c)}
             </Link>
           </h3>
@@ -469,36 +473,42 @@ function GrupKarti({
         {/* What sets this group apart from others of the same make-up, with
             the count that shows it, so the heading can be checked. */}
         {ayirtSatirlari(c).map((k) => (
-          <p key={k} className="mt-1 text-caption text-accent tabular-nums">
+          <p key={k} className="mt-1 pl-9 text-caption text-accent tabular-nums">
             {k}
           </p>
         ))}
-        {yakin && <p className="mt-1 text-caption text-ink-muted text-pretty">{yakin}</p>}
-        <p className="mt-1 text-caption text-ink-muted tabular-nums">
-          {c.size} fon · {c.founders} farklı kurum
-          {c.total_assets !== null ? ` · ${paraKisa(c.total_assets)}` : ""}
-        </p>
-        {c.style && (
-          <p className="mt-1 text-caption text-ink-subtle tabular-nums">
-            {kategoriSatiri(c) ? `${kategoriSatiri(c)} · ` : ""}
-            {c.style.reportable
-              ? `açıklama gücü (R²) ${oran(c.style.r2)}`
-              : `açıklama gücü (R²) ${oran(Math.max(0, c.style.r2))}, bileşim adı verilmedi`}
-          </p>
-        )}
-        {/* A range, not a pick: the funds in a group move as one, and the
-            fee is what still differs between them. Which to hold is the
-            reader's decision; the page states the spread and stops. */}
-        {c.fee_low != null && c.fee_high != null && (
-          <p className="mt-1 text-caption text-ink-muted tabular-nums">
-            {c.fee_low === c.fee_high
-              ? `Yıllık ücret ${ucretOrani(c.fee_low)}`
-              : `Yıllık ücret ${ucretOrani(c.fee_low)} ile ${ucretOrani(c.fee_high)} arasında`}
-          </p>
-        )}
-        <p className="mt-1 text-caption text-ink-subtle tabular-nums">
-          En zayıf çiftin alt sınırı {korelasyon(c.weakest_ci_low)} · ortanca
-          korelasyon {korelasyon(c.median_correlation)}
+
+        {/* The four facts a reader compares groups on, as label over value
+            rather than one line of dots. The fee is a range, not a pick: the
+            funds move as one and the fee is what still differs, and which
+            to hold is the reader's decision. */}
+        <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-control border border-border bg-border">
+          <KartOlcu etiket="Fon" deger={sayi(c.size)} />
+          <KartOlcu etiket="Kurum" deger={sayi(c.founders)} />
+          <KartOlcu etiket="Büyüklük" deger={c.total_assets !== null ? paraKisa(c.total_assets) : "—"} />
+          <KartOlcu
+            etiket="Yıllık ücret"
+            deger={
+              c.fee_low != null && c.fee_high != null
+                ? c.fee_low === c.fee_high
+                  ? ucretOrani(c.fee_low)
+                  : `${ucretOrani(c.fee_low)}–${ucretOrani(c.fee_high)}`
+                : "—"
+            }
+          />
+        </dl>
+
+        {yakin && <p className="mt-3 text-caption text-ink-muted text-pretty">{yakin}</p>}
+        <p className="mt-2 text-caption text-ink-subtle tabular-nums text-pretty">
+          En zayıf çiftin alt sınırı {korelasyon(c.weakest_ci_low)} · ortanca korelasyon{" "}
+          {korelasyon(c.median_correlation)}
+          {c.style
+            ? ` · ${kategoriSatiri(c) ? `${kategoriSatiri(c)} · ` : ""}${
+                c.style.reportable
+                  ? `R² ${oran(c.style.r2)}`
+                  : `R² ${oran(Math.max(0, c.style.r2))}, bileşim adı verilmedi`
+              }`
+            : ""}
         </p>
         {/* The funds as the fund index lists them — code and name, each
             row a link to the fund's page — rather than a wall of code
@@ -519,6 +529,15 @@ function GrupKarti({
         </Link>
       </div>
     </li>
+  );
+}
+
+function KartOlcu({ etiket, deger }: { etiket: string; deger: string }) {
+  return (
+    <div className="bg-surface px-3 py-2">
+      <dt className="text-label text-ink-subtle">{etiket}</dt>
+      <dd className="mt-0.5 truncate text-caption font-semibold text-ink tabular-nums">{deger}</dd>
+    </div>
   );
 }
 

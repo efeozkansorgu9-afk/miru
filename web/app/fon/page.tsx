@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 
 import { API_BASE_URL, getFundList } from "@/lib/api";
 import { Column } from "@/components/column";
-import { Reveal } from "@/components/reveal";
 import { FundDirectory } from "@/components/fund/directory";
 import { SITE } from "@/lib/site";
 
@@ -43,8 +42,9 @@ export default async function FonDizini() {
 
   return (
     <Column className="pt-section pb-section-lg">
-      <Reveal className="max-w-prose">
-        <p className="text-overline uppercase text-ink-subtle">Fonlar</p>
+      <div className="enter">
+      <div className="max-w-prose">
+        <p className="text-overline uppercase text-accent">Fonlar</p>
         <h1 className="mt-4 text-display-md text-balance">
           Bir fonun sayfasını açın.
         </h1>
@@ -52,11 +52,12 @@ export default async function FonDizini() {
           Her fon için getirisi, enflasyona göre getirisi ve hangi fonlarla
           birlikte hareket ettiği.
         </p>
-      </Reveal>
+      </div>
 
-      <Reveal delay={80} className="mt-10">
+      <div className="mt-10">
         <FundDirectory funds={sorted} />
-      </Reveal>
+      </div>
+      </div>
     </Column>
   );
 }

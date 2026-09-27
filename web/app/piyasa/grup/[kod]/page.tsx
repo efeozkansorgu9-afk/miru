@@ -6,7 +6,7 @@ import { cache } from "react";
 import { API_BASE_URL, ApiError, getMarket, getMarketGroup } from "@/lib/api";
 import type { GroupMember, MarketGroupResponse } from "@/lib/api";
 import { Column } from "@/components/column";
-import { Reveal } from "@/components/reveal";
+import { Appear } from "@/components/appear";
 import { karsilastirilabilir, ucretOrani } from "@/lib/fee";
 import { korelasyon, oran, paraKisa, sayi, tarih } from "@/lib/format";
 import { grupCizgileri } from "@/lib/group-chart";
@@ -76,16 +76,22 @@ export default async function GrupSayfasi({ params }: PageProps<"/piyasa/grup/[k
   return (
     <div>
       <Column className="pt-section pb-12">
-        <Reveal className="max-w-prose">
+        <div className="enter">
+        <div className="max-w-prose">
           <Link
             href={`${MARKET_HREF}#gruplar`}
             className="text-label text-ink-muted underline-offset-4 hover:text-accent hover:underline"
           >
             ← Piyasa haritası
           </Link>
-          <p className="mt-8 text-overline uppercase text-accent">
-            {g.rank}. grup · {sayi(g.groups)} grup içinde
-          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="rounded-full bg-accent-surface px-2.5 py-1 text-label font-medium text-accent tabular-nums">
+              {g.rank}. grup
+            </span>
+            <span className="text-caption text-ink-muted tabular-nums">
+              {sayi(g.groups)} grup içinde
+            </span>
+          </div>
           <h1 className="mt-4 text-display-md text-balance">{grupAdi(c)}</h1>
           {kanitlar.length > 0 && (
             <ul className="mt-4 flex flex-col gap-1 text-body text-ink-muted tabular-nums">
@@ -100,7 +106,7 @@ export default async function GrupSayfasi({ params }: PageProps<"/piyasa/grup/[k
             haftadan haftaya neredeyse aynı hareketi yapıyorlar. Farklı kurumların,
             farklı adlarla sattığı ürünler olabilirler; aşağıda hepsi var.
           </p>
-        </Reveal>
+        </div>
 
         <dl className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border sm:grid-cols-4">
           <Olcu etiket="Fon" deger={sayi(c.size)} />
@@ -117,6 +123,7 @@ export default async function GrupSayfasi({ params }: PageProps<"/piyasa/grup/[k
             }
           />
         </dl>
+        </div>
         {yakin && (
           <p className="mt-3 max-w-prose text-caption text-ink-muted text-pretty">
             {yakin}{" "}
@@ -134,8 +141,8 @@ export default async function GrupSayfasi({ params }: PageProps<"/piyasa/grup/[k
         </p>
 
         {bilesenler && c.style && (
-          <section className="mt-12 max-w-prose">
-            <h2 className="text-lead font-semibold text-ink">Grubun getirisi neyden oluşuyor</h2>
+          <Appear as="section" className="mt-12 max-w-prose">
+            <h2 className="text-display-sm text-balance">Grubun getirisi neyden oluşuyor</h2>
             <dl className="mt-4 flex flex-col gap-2.5">
               {bilesenler.map((b) => (
                 <div key={b.anahtar} className="grid grid-cols-[6.5rem_1fr_6.5rem] items-center gap-3">
@@ -177,12 +184,13 @@ export default async function GrupSayfasi({ params }: PageProps<"/piyasa/grup/[k
                 Nasıl hesaplandığı
               </Link>
             </p>
-          </section>
+          </Appear>
         )}
 
         {cizgi && (
+          <Appear>
           <figure className="mt-12">
-            <figcaption className="text-lead font-semibold text-ink">
+            <figcaption className="font-display text-display-sm text-ink">
               Son {cizgi.weeks} hafta, her fon 100’den
             </figcaption>
             <p className="mt-1 text-caption text-ink-subtle">
@@ -206,13 +214,14 @@ export default async function GrupSayfasi({ params }: PageProps<"/piyasa/grup/[k
               </div>
             </div>
           </figure>
+          </Appear>
         )}
       </Column>
 
       <div className="border-t border-border bg-canvas-sunken">
         <Column className="py-section">
           <h2 className="text-display-sm text-balance">Gruptaki {c.size} fon</h2>
-          <p className="mt-3 max-w-prose text-body text-ink-muted text-pretty">
+          <p className="mt-2 max-w-prose text-body text-ink-muted text-pretty">
             Alfabetik sırayla. Aynı hareketi yapan fonları ücrete ya da getiriye
             göre sıralamıyoruz; hangisini tutacağınız sizin kararınız. Her satır
             fonun kendi sayfasına gider.

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { getFundList } from "@/lib/api";
 import { Column } from "@/components/column";
 import { OrnekCarousel } from "@/components/home/example-carousel";
-import { Reveal } from "@/components/reveal";
+import { Appear } from "@/components/appear";
+import { SectionHeading } from "@/components/section-heading";
 import { sayi, tarih } from "@/lib/format";
 import { ornekleriBul } from "@/lib/home-examples";
 import { FUND_BASE, MARKET_HREF, METHOD_HREF, SITE, TOOL } from "@/lib/site";
@@ -51,9 +52,9 @@ export default async function AnaSayfa() {
       {/* Hero: what this is, and real pairs beside it. */}
       <Column className="pt-section pb-section">
         <div
-          className={`grid items-center gap-12 ${ornekVar ? "lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-16" : ""}`}
+          className={`enter grid items-center gap-12 ${ornekVar ? "lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-16" : ""}`}
         >
-          <Reveal className="max-w-prose">
+          <div className="max-w-prose">
             <p className="text-overline uppercase text-accent">
               TEFAS yatırım fonları için
             </p>
@@ -69,28 +70,25 @@ export default async function AnaSayfa() {
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 href={TOOL.href}
-                className="inline-flex items-center rounded-control bg-accent px-6 py-3.5 text-body font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+                className="group inline-flex items-center gap-2 rounded-control bg-accent px-6 py-3.5 text-body font-medium text-accent-ink shadow-sm transition-[background-color,transform] duration-200 hover:bg-accent-hover active:scale-[0.98]"
               >
                 Sepetinizi inceleyin
+                <Ok className="transition-transform duration-300 ease-out-soft group-hover:translate-x-0.5" />
               </Link>
               <Link
                 href={FUND_BASE}
-                className="inline-flex items-center rounded-control border border-border-strong bg-surface px-6 py-3.5 text-body font-medium text-ink transition-colors hover:border-accent hover:text-accent"
+                className="inline-flex items-center rounded-control border border-border-strong bg-surface px-6 py-3.5 text-body font-medium text-ink transition-[color,border-color,transform] duration-200 hover:border-accent hover:text-accent active:scale-[0.98]"
               >
                 Fonlara göz atın
               </Link>
             </div>
-          </Reveal>
+          </div>
 
-          {ornekVar && (
-            <Reveal delay={120}>
-              <OrnekCarousel ornekler={ornekler} />
-            </Reveal>
-          )}
+          {ornekVar && <OrnekCarousel ornekler={ornekler} />}
         </div>
 
         {n !== null && (
-          <Reveal delay={200}>
+          <Appear>
             <dl className="mt-14 grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border sm:grid-cols-3">
               <Sayac deger={sayi(n)} etiket="fonun sayfası var" />
               <Sayac
@@ -102,18 +100,15 @@ export default async function AnaSayfa() {
                 etiket={guncelleme ? "son ölçüm, her pazartesi yenilenir" : "yeniden ölçülüyor"}
               />
             </dl>
-          </Reveal>
+          </Appear>
         )}
       </Column>
 
       {/* The three places to go. */}
       <div className="border-t border-border bg-canvas-sunken">
         <Column className="py-section">
-          <p className="text-overline uppercase text-ink-subtle">Neler var</p>
-          <h2 className="mt-4 max-w-prose text-display-sm text-balance">
-            Dört yerden başlayabilirsiniz.
-          </h2>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SectionHeading title="Dört yerden başlayabilirsiniz." />
+          <Appear stagger className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Arac
               href={TOOL.href}
               baslik={TOOL.name}
@@ -138,17 +133,14 @@ export default async function AnaSayfa() {
               metin="Her sayının nereden geldiği: haftalık getiriler, güven aralıkları ve neden bazı sorulara cevap vermediğimiz."
               eylem="Yöntemi okuyun"
             />
-          </div>
+          </Appear>
         </Column>
       </div>
 
       {/* How the basket tool answers, in three steps. */}
       <Column className="py-section">
-        <p className="text-overline uppercase text-ink-subtle">Nasıl çalışıyor</p>
-        <h2 className="mt-4 max-w-prose text-display-sm text-balance">
-          Bir sepeti incelemek üç adım.
-        </h2>
-        <ol className="mt-8 grid gap-8 md:grid-cols-3">
+        <SectionHeading title="Bir sepeti incelemek üç adım." />
+        <Appear as="ol" stagger className="mt-8 grid gap-8 md:grid-cols-3">
           <Adim no={1} baslik="Fonlarınızı girin">
             Kodunu ya da adını yazın, ne kadar tuttuğunuzu ekleyin. Kademeli
             aldıysanız alım tarihlerini de girebilirsiniz.
@@ -161,13 +153,13 @@ export default async function AnaSayfa() {
             Hangi fonların aslında tek bir şey olduğunu ve sepetinizin ne
             kadarını kapladıklarını açıkça söylüyoruz.
           </Adim>
-        </ol>
+        </Appear>
       </Column>
 
       {/* What it will not do, which is half of what it is. */}
       <div className="border-t border-border bg-canvas-sunken">
         <Column className="py-section">
-          <div className="max-w-prose">
+          <Appear className="max-w-prose">
             <h2 className="text-display-sm text-balance">
               Size ne almanız gerektiğini söylemiyoruz.
             </h2>
@@ -184,7 +176,7 @@ export default async function AnaSayfa() {
               Nasıl ölçtüğümüzü okuyun
               <Ok />
             </Link>
-          </div>
+          </Appear>
         </Column>
       </div>
     </div>
@@ -200,7 +192,7 @@ function Sayac({ deger, etiket }: { deger: string; etiket: string }) {
     <div className="bg-surface px-6 py-5">
       <dt className="sr-only">{etiket}</dt>
       <dd>
-        <span className="block font-display text-display-sm font-semibold tabular-nums text-ink">
+        <span className="block text-[1.75rem] leading-tight font-semibold tracking-tight tabular-nums text-ink">
           {deger}
         </span>
         <span aria-hidden className="mt-1 block text-caption text-ink-subtle">
@@ -225,13 +217,13 @@ function Arac({
   return (
     <Link
       href={href}
-      className="group flex flex-col rounded-card border border-border bg-surface px-6 py-6 transition-colors hover:border-accent"
+      className="group flex flex-col rounded-card border border-border bg-surface px-6 py-6 transition-[border-color,box-shadow,translate] duration-300 ease-out-soft hover:-translate-y-0.5 hover:border-accent/60 hover:shadow-[0_8px_24px_-12px_color-mix(in_oklab,var(--accent)_35%,transparent)] motion-reduce:hover:translate-y-0"
     >
       <h3 className="text-lead font-semibold text-ink">{baslik}</h3>
       <p className="mt-2 flex-1 text-body text-ink-muted text-pretty">{metin}</p>
       <span className="mt-5 inline-flex items-center gap-1.5 text-body font-medium text-accent">
         {eylem}
-        <Ok className="transition-transform group-hover:translate-x-0.5" />
+        <Ok className="transition-transform duration-300 ease-out-soft group-hover:translate-x-0.5" />
       </span>
     </Link>
   );

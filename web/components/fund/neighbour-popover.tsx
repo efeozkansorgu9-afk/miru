@@ -1,7 +1,15 @@
 "use client";
 
 /**
- * A neighbour row: a link to that fund, and a preview of it under the cursor.
+ * A neighbour row: a link to that fund, and a preview of it behind an info
+ * button at the row's end.
+ *
+ * The preview used to open on hovering anywhere on the row, which meant a
+ * card over the list every time the pointer crossed it on the way elsewhere.
+ * It now opens from its own button — hover, focus or press, like `InfoTip` —
+ * and the row itself is only the link. That also gives touch readers the
+ * preview for the first time: a tap on the button opens it, a tap on the
+ * name navigates.
  *
  * The row *is* the link. That is the whole shape of this component, and the
  * two things that used to be wrong here both come from it not having been.
@@ -36,9 +44,6 @@
  * would have fixed it. The portal is the fix for both, which is why the rule
  * is "put it in a portal" and not "raise the z-index".
  *
- * Touch gets the better half of the deal: a tap navigates instead of opening
- * a card it then has to dismiss, and everything the card says is on the page
- * it opens.
  */
 
 import {
@@ -49,7 +54,7 @@ import {
   useFloating,
 } from "@floating-ui/react-dom";
 import Link from "next/link";
-import { createContext, useContext, useEffect, useId, useState } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { Bucket, Neighbour, WeeklySeries } from "@/lib/api";
@@ -89,73 +94,119 @@ export function NeighbourRow({
   children,
 }: {
   komsu: Neighbour;
-  /** The row's contents — code, name, bucket and coefficient. */
+  /** The row's contents — code, name, scale and coefficient. */
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
+  const wrap = useRef<HTMLDivElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
-   * Anchored by floating-ui rather than by `position: absolute`, because in
-   * the body the card has no clipping ancestor to escape from and nothing to
-   * be painted behind. `autoUpdate` keeps it under the row while the page
-   * scrolls, which absolute positioning gave for free and a portal does not.
-   *
-   * `transform: false` for the same reason the search list uses it: the card
-   * animates its own opacity and a transform here would be one more writer
-   * of the same property. Positioning through `top`/`left` keeps them apart.
+   * Anchored by floating-ui to the info button, not the row. `transform:
+   * false` for the same reason the search list uses it: the card animates
+   * its own opacity and positioning through `top`/`left` keeps the two apart.
    */
   // Elements held in state rather than read off `refs` during render, which
   // the React compiler's lint refuses (the same pattern as `InfoTip`).
-  const [anchor, setAnchor] = useState<HTMLAnchorElement | null>(null);
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [floating, setFloatingEl] = useState<HTMLElement | null>(null);
-  const { floatingStyles } = useFloating<HTMLAnchorElement>({
+  const { floatingStyles } = useFloating<HTMLButtonElement>({
     open,
     elements: { reference: anchor, floating },
-    placement: "bottom-start",
+    placement: "bottom-end",
     whileElementsMounted: autoUpdate,
     transform: false,
     middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
   });
 
-  // Escape closes it. There is no outside-press handler and no need for one:
-  // the card cannot be pressed, and anything that takes the pointer or the
-  // focus away from the row closes it already.
+  function clear() {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  }
+
+  // Escape closes, and so does a press anywhere outside the row — the only
+  // way to dismiss a card a thumb opened.
   useEffect(() => {
     if (!open) return;
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
     }
+    function onPointerDown(event: PointerEvent) {
+      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
+    }
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
   }, [open]);
 
+  useEffect(() => clear, []);
+
   return (
-    <>
+    <div
+      ref={wrap}
+      className="flex h-12 items-center transition-colors hover:bg-canvas-sunken/70 has-[a:focus-visible]:bg-canvas-sunken"
+    >
       <Link
-        ref={setAnchor}
         href={fundHref(komsu.fund.code)}
+        className="flex h-full min-w-0 flex-1 items-center gap-3 pl-5 sm:gap-4"
+      >
+        {children}
+      </Link>
+
+      {/* The preview opens from here only, like every other definition on
+          the site: hovering a row on the way to somewhere else used to throw
+          a 320px card over the list. A sibling of the link, never inside
+          it — a button in a link is invalid and a keyboard reaches it twice.
+          A short delay on hover, so sweeping the pointer down the column of
+          buttons does not flash every card on the way. */}
+      <button
+        ref={setAnchor}
+        type="button"
+        aria-label={`${komsu.fund.code} önizlemesi`}
+        aria-expanded={open}
         aria-describedby={open ? id : undefined}
-        className="flex h-12 items-center gap-3 px-5 transition-colors hover:bg-canvas-sunken/70 focus-visible:bg-canvas-sunken sm:gap-4"
-        // Hover is bound to a mouse. A touch fires `pointerenter` too, and
-        // opening a card on the way to a navigation nobody cancelled is a
-        // flash of something the reader did not ask for.
-        onPointerEnter={(event) =>
-          event.pointerType === "mouse" && setOpen(true)
-        }
-        onPointerLeave={(event) =>
-          event.pointerType === "mouse" && setOpen(false)
-        }
-        // `:focus-visible` so a press does not also open it. A mouse press
-        // focuses the link, and a card appearing under a pointer that is
-        // already leaving for another page is noise.
+        onClick={() => {
+          clear();
+          setOpen((it) => !it);
+        }}
+        onPointerEnter={(event) => {
+          if (event.pointerType !== "mouse") return;
+          clear();
+          timer.current = setTimeout(() => setOpen(true), 120);
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType !== "mouse") return;
+          clear();
+          setOpen(false);
+        }}
+        // Keyboard focus opens it; a focus that came from a press must not,
+        // or the press would toggle straight back shut (see `InfoTip`).
         onFocus={(event) => {
           if (event.currentTarget.matches(":focus-visible")) setOpen(true);
         }}
         onBlur={() => setOpen(false)}
+        className={`mr-2.5 ml-1 grid size-8 shrink-0 cursor-pointer place-items-center rounded-full transition-colors sm:mr-3 ${
+          open ? "bg-accent-surface text-accent" : "text-ink-subtle hover:bg-accent-surface hover:text-accent"
+        }`}
       >
-        {children}
-      </Link>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className="size-4.5"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 16.5v-5M12 8.2h.01" />
+        </svg>
+      </button>
 
       <Preview
         id={id}
@@ -164,7 +215,7 @@ export function NeighbourRow({
         setFloating={setFloatingEl}
         floatingStyles={floatingStyles}
       />
-    </>
+    </div>
   );
 }
 

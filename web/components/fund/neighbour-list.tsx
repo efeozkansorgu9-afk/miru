@@ -250,7 +250,7 @@ function Row({ komsu }: { komsu: Neighbour }) {
 
         <Olcek komsu={komsu} />
 
-        <span className="w-11 shrink-0 text-right text-caption tabular-nums text-ink-muted">
+        <span className="w-10 shrink-0 text-right text-caption tabular-nums text-ink-muted">
           {oran(komsu.correlation)}
         </span>
       </NeighbourRow>

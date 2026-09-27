@@ -321,9 +321,11 @@ def qualifiers(
 
     A word qualifies when at least half the group carries it in the product
     part of its title and it is at most half as common among every other
-    measured fund. The best theme word wins; a wrapper word only when no
-    theme does; a word restating one of the group's own style factors is
-    skipped. A house qualifies the same way, and is added as a second
+    measured fund. The best theme word and the best wrapper word are both
+    kept when both qualify — "katılım" alone named four different groups on
+    the live data, and whether a group is mostly pension funds is what told
+    some of them apart. A word restating one of the group's own style
+    factors is skipped. A house qualifies the same way, and is added as a second
     qualifier: several money-market groups share every word, and which
     house runs most of them is then what tells them apart.
     """
@@ -362,7 +364,6 @@ def qualifiers(
                     best = (r[0], k, r[1])
             if best:
                 found.append(Qualifier("word", best[1], best[2], n))
-                break
         best_f = None
         for f, group in founders.items():
             r = score(group)

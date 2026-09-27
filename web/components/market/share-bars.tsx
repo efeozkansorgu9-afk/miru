@@ -2,7 +2,7 @@
 
 import { autoUpdate, flip, offset, shift, useFloating } from "@floating-ui/react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { InfoTip } from "@/components/info-tip";
@@ -41,15 +41,23 @@ export function PayCubugu({ dilimler }: { dilimler: Dilim[] }) {
 
   const [aktif, setAktif] = useState<{ anahtar: string; olcu: Olcu } | null>(null);
   const [capa, setCapa] = useState<HTMLElement | null>(null);
-  const kartRef = useRef<HTMLDivElement | null>(null);
+  // The card element, held in state. There is exactly one card element:
+  // it stays mounted while the pointer moves from segment to segment and
+  // only its content changes. It used to be keyed by group, so every move
+  // mounted a new card while the old one faded out — and when the old one
+  // finished and unmounted, its ref cleared floating-ui's element under the
+  // new card, which then sat at the document's top left, off screen.
+  // Measured before the fix: after a fast sweep across the bars the card
+  // was at (0, -849) with opacity 1.
+  const [kart, setKart] = useState<HTMLDivElement | null>(null);
   const reduce = useReducedMotion();
 
-  const { refs, floatingStyles } = useFloating({
+  const { floatingStyles, isPositioned } = useFloating({
     placement: "top",
     whileElementsMounted: autoUpdate,
     transform: false,
     middleware: [offset(12), flip({ padding: 8 }), shift({ padding: 8 })],
-    elements: { reference: capa },
+    elements: { reference: capa, floating: kart },
   });
 
   // Escape and a press outside both the segment and the card close it.
@@ -58,7 +66,7 @@ export function PayCubugu({ dilimler }: { dilimler: Dilim[] }) {
     const tus = (e: KeyboardEvent) => e.key === "Escape" && setAktif(null);
     const bas = (e: PointerEvent) => {
       const t = e.target as Node;
-      if (capa?.contains(t) || kartRef.current?.contains(t)) return;
+      if (capa?.contains(t) || kart?.contains(t)) return;
       setAktif(null);
     };
     document.addEventListener("keydown", tus);
@@ -67,7 +75,7 @@ export function PayCubugu({ dilimler }: { dilimler: Dilim[] }) {
       document.removeEventListener("keydown", tus);
       document.removeEventListener("pointerdown", bas);
     };
-  }, [aktif, capa]);
+  }, [aktif, capa, kart]);
 
   const ac = (anahtar: string, olcu: Olcu, el: HTMLElement) => {
     setCapa(el);
@@ -218,18 +226,22 @@ export function PayCubugu({ dilimler }: { dilimler: Dilim[] }) {
           <AnimatePresence>
             {secili && aktif && (
               <motion.div
-                key={secili.anahtar}
-                ref={(node) => {
-                  kartRef.current = node;
-                  refs.setFloating(node);
-                }}
+                key="kart"
+                ref={setKart}
                 role="tooltip"
-                style={floatingStyles}
+                // Gliding between segments rather than jumping, once the card
+                // has a first position; before that there is nowhere to glide
+                // from but the page's corner.
+                style={{
+                  ...floatingStyles,
+                  transition:
+                    isPositioned && !reduce ? "top 160ms ease-out, left 160ms ease-out" : undefined,
+                }}
                 initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={reduce ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.98 }}
                 transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                className="pointer-events-none z-50 w-64 max-w-[calc(100vw-1.5rem)] font-sans"
+                className="pointer-events-none z-50 w-64 max-w-[calc(100vw-1.5rem)]"
               >
                 <Kart d={secili} toplam={toplam} olcu={aktif.olcu} riskVar={riskVar} />
               </motion.div>

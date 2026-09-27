@@ -47,7 +47,8 @@ export const metadata: Metadata = {
 /** Groups drawn as full cards; the rest are listed compactly below. */
 const KART_SAYISI = 12;
 /** Members shown on a card before "tümünü göster". */
-const ONIZLEME = 10;
+/** Funds listed on a group card before "Tümünü göster". */
+const ONIZLEME = 5;
 
 /**
  * A few tries, spaced out, before a build gives up.
@@ -191,7 +192,7 @@ export default async function Piyasa() {
             sayıdan yüksek çıkıyor.
           </p>
 
-          <ol className="mt-8 grid gap-4 md:grid-cols-2">
+          <ol className="mt-8 grid items-start gap-4 md:grid-cols-2">
             {m.clusters.slice(0, KART_SAYISI).map((c, i) => (
               <GrupKarti key={c.codes[0]} c={c} sira={i + 1} adlar={adlar} />
             ))}
@@ -459,24 +460,50 @@ function GrupKarti({
           En zayıf çiftin alt sınırı {korelasyon(c.weakest_ci_low)} · ortanca
           korelasyon {korelasyon(c.median_correlation)}
         </p>
-        <div className="mt-4 flex flex-wrap gap-1.5">
+        {/* The funds as the fund index lists them — code and name, each
+            row a link to the fund's page — rather than a wall of code
+            chips nobody can read a name off. The rest open in place, in a
+            box that scrolls, so a 70-fund group does not push the next
+            card a screen away. Everything is in the HTML either way. */}
+        <ul className="mt-4 overflow-hidden rounded-control border border-border">
           {onizleme.map((code) => (
-            <FonKodu key={code} code={code} ad={adlar[code]} />
+            <FonSatiri key={code} code={code} ad={adlar[code]} />
           ))}
-        </div>
+        </ul>
         {kalan.length > 0 && (
-          <details className="mt-2">
-            <summary className="cursor-pointer list-none text-label text-accent marker:hidden hover:underline">
-              {kalan.length} fon daha
+          <details className="group/liste mt-2">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 text-label text-accent marker:hidden hover:underline">
+              <span className="group-open/liste:hidden">Tüm {c.size} fonu göster</span>
+              <span className="hidden group-open/liste:inline">Listeyi kısalt</span>
+              <span aria-hidden="true" className="transition-transform group-open/liste:rotate-180">
+                ▾
+              </span>
             </summary>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <ul className="mt-1 max-h-80 overflow-y-auto overscroll-contain rounded-control border border-border">
               {kalan.map((code) => (
-                <FonKodu key={code} code={code} ad={adlar[code]} />
+                <FonSatiri key={code} code={code} ad={adlar[code]} />
               ))}
-            </div>
+            </ul>
           </details>
         )}
       </div>
+    </li>
+  );
+}
+
+/** One fund as the fund index shows it: code and name, linking to its page. */
+function FonSatiri({ code, ad }: { code: string; ad?: string }) {
+  return (
+    <li className="border-t border-border first:border-t-0">
+      <Link
+        href={fundHref(code)}
+        className="flex min-h-11 items-center gap-3 px-3.5 py-2 transition-colors hover:bg-canvas-sunken"
+      >
+        <span className="w-10 shrink-0 font-mono text-label text-accent">{code}</span>
+        <span className="min-w-0 flex-1 truncate text-caption text-ink" title={ad ?? code}>
+          {ad ?? "Adı bulunamadı"}
+        </span>
+      </Link>
     </li>
   );
 }

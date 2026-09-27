@@ -10,8 +10,8 @@ import { Reveal } from "@/components/reveal";
 import { karsilastirilabilir, ucretOrani } from "@/lib/fee";
 import { korelasyon, oran, paraKisa, sayi, tarih } from "@/lib/format";
 import { grupCizgileri } from "@/lib/group-chart";
-import { ayirtSatirlari, bilesim, grupAdi, kategoriSatiri } from "@/lib/market";
-import { MARKET_HREF, SITE, fundHref } from "@/lib/site";
+import { ayirtSatirlari, bilesim, grupAdi, kategoriSatiri, yakinGrupCumlesi } from "@/lib/market";
+import { MARKET_HREF, METHOD_HREF, SITE, fundHref, groupHref } from "@/lib/site";
 
 /**
  * One market group: what it is made of and every fund in it.
@@ -71,6 +71,7 @@ export default async function GrupSayfasi({ params }: PageProps<"/piyasa/grup/[k
   const bilesenler = bilesim(c.style);
   const kanitlar = ayirtSatirlari(c);
   const cizgi = grupCizgileri(g.members, 800, 260);
+  const yakin = yakinGrupCumlesi(c, g.overlapping_threshold);
 
   return (
     <div>
@@ -116,6 +117,16 @@ export default async function GrupSayfasi({ params }: PageProps<"/piyasa/grup/[k
             }
           />
         </dl>
+        {yakin && (
+          <p className="mt-3 max-w-prose text-caption text-ink-muted text-pretty">
+            {yakin}{" "}
+            {c.nearest?.anchor && (
+              <Link href={groupHref(c.nearest.anchor)} className="text-accent underline-offset-4 hover:underline">
+                {c.nearest.rank}. gruba git
+              </Link>
+            )}
+          </p>
+        )}
         <p className="mt-3 text-caption text-ink-subtle tabular-nums">
           En zayıf çiftin alt sınırı {korelasyon(c.weakest_ci_low)} · ortanca korelasyon{" "}
           {korelasyon(c.median_correlation)}
@@ -127,20 +138,42 @@ export default async function GrupSayfasi({ params }: PageProps<"/piyasa/grup/[k
             <h2 className="text-lead font-semibold text-ink">Grubun getirisi neyden oluşuyor</h2>
             <dl className="mt-4 flex flex-col gap-2.5">
               {bilesenler.map((b) => (
-                <div key={b.anahtar} className="grid grid-cols-[7rem_1fr_3.5rem] items-center gap-3">
+                <div key={b.anahtar} className="grid grid-cols-[6.5rem_1fr_6.5rem] items-center gap-3">
                   <dt className="text-caption text-ink-muted">{b.ad}</dt>
-                  <dd className="h-2 rounded-full bg-canvas-sunken" aria-hidden="true">
-                    <span className="block h-full rounded-full bg-accent/70" style={{ width: `${b.pay * 100}%` }} />
+                  {/* The bar is the fitted weight; the band behind it is the
+                      5-95% range over block-bootstrap resamples. */}
+                  <dd className="relative h-2 rounded-full bg-canvas-sunken" aria-hidden="true">
+                    {b.aralik && (
+                      <span
+                        className="absolute inset-y-0 rounded-full bg-accent/20"
+                        style={{ left: `${b.aralik[0] * 100}%`, width: `${(b.aralik[1] - b.aralik[0]) * 100}%` }}
+                      />
+                    )}
+                    <span className="absolute inset-y-0 left-0 rounded-full bg-accent/70" style={{ width: `${b.pay * 100}%` }} />
                   </dd>
-                  <dd className="text-right text-caption text-ink tabular-nums">%{Math.round(b.pay * 100)}</dd>
+                  <dd className="text-right text-caption text-ink tabular-nums">
+                    %{Math.round(b.pay * 100)}
+                    {b.aralik && (
+                      <span className="text-ink-subtle">
+                        {" "}
+                        ({Math.round(b.aralik[0] * 100)}–{Math.round(b.aralik[1] * 100)})
+                      </span>
+                    )}
+                  </dd>
                 </div>
               ))}
             </dl>
             <p className="mt-3 text-caption text-ink-subtle text-pretty">
               Grubun eşit ağırlıklı haftalık getirisinin, her biri bir temsilci
               fonla ölçülen varlık sınıflarına ayrıştırılması. Açıklama gücü (R²){" "}
-              {oran(c.style.r2)}.{" "}
-              <Link href={`${MARKET_HREF}#adlar`} className="text-accent underline-offset-4 hover:underline">
+              {oran(c.style.r2)}. Parantez içindeki aralık, haftalar yeniden
+              örneklendiğinde payın yüzde 90 olasılıkla kaldığı aralık; geniş bir
+              aralık, varlık sınıfları birlikte hareket ettiği için payın kesin
+              ölçülemediğini gösteriyor
+              {bilesenler.some((b) => !b.kesin)
+                ? ", bu yüzden grubun adında bu payları yazmıyoruz."
+                : "."}{" "}
+              <Link href={`${METHOD_HREF}#harita`} className="text-accent underline-offset-4 hover:underline">
                 Nasıl hesaplandığı
               </Link>
             </p>

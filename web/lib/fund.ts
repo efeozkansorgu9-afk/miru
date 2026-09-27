@@ -22,6 +22,7 @@ import type {
   ReturnUnavailable,
 } from "@/lib/api";
 import { korelasyon } from "@/lib/format";
+import { RETURN_PERIODS } from "@/lib/windows";
 
 /* ------------------------------------------------------------------ */
 /* The bucket vocabulary                                               */
@@ -505,8 +506,16 @@ export function fonAciklamasi(fund: FundIdentity): string {
   const kunye =
     parcalar.length > 0 ? `${fund.code}: ${parcalar.join(", ")}.` : `${fund.code}.`;
 
+  // The periods come from the one list the page's control offers, so this
+  // cannot go on quoting windows the page no longer has.
+  // Same wording as `fund-chart`'s `periodLabel`, written out here because
+  // that module imports this one.
+  const etiket = (m: number) => (m % 12 === 0 ? `${m / 12} yıl` : `${m} ay`);
+  const ilk = etiket(Math.min(...RETURN_PERIODS));
+  const son = etiket(Math.max(...RETURN_PERIODS));
   return (
-    `${kunye} 12 ve 36 aylık nominal ve enflasyondan arındırılmış getirisi, ` +
-    `ve bu fonla birlikte hareket eden fonlar.`
+    `${kunye} ${ilk} ile ${son} arası nominal, enflasyondan arındırılmış ve ` +
+    `dolar bazında getirisi, oynaklığı, yıllık ücreti ve bu fonla birlikte ` +
+    `hareket eden fonlar.`
   );
 }

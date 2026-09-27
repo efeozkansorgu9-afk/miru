@@ -17,6 +17,7 @@ import {
   OLCULEMEDI,
   RENKLI_GRUP,
   ayirtSatirlari,
+  yakinGrupCumlesi,
   bilesim,
   dilimler,
   grupAdi,
@@ -106,6 +107,8 @@ export default async function Piyasa() {
   const g = gruptakiler(m);
   const olculmeyen = Object.values(m.unmeasured).reduce((a, v) => a + (v?.length ?? 0), 0);
   const parcalar = dilimler(m);
+  const adSayisi = new Map<string, number>();
+  for (const c of m.clusters) adSayisi.set(grupAdi(c), (adSayisi.get(grupAdi(c)) ?? 0) + 1);
 
   // The group holding the most money, for the one sentence that says fund
   // counts and money do not land in the same place.
@@ -195,7 +198,15 @@ export default async function Piyasa() {
 
           <ol className="mt-8 grid items-start gap-4 md:grid-cols-2">
             {m.clusters.slice(0, KART_SAYISI).map((c, i) => (
-              <GrupKarti key={c.codes[0]} c={c} sira={i + 1} adlar={adlar} />
+              <GrupKarti
+                key={c.codes[0]}
+                c={c}
+                sira={i + 1}
+                adlar={adlar}
+                // Only where the name alone cannot tell this group from
+                // another: then the page says why they are still two.
+                yakin={adSayisi.get(grupAdi(c))! > 1 ? yakinGrupCumlesi(c, m.overlapping_threshold) : null}
+              />
             ))}
           </ol>
 
@@ -264,8 +275,13 @@ export default async function Piyasa() {
             oluştuğuna bakarak adlandırıyoruz. Her grubun haftalık getirisini
             aşağıdaki sekiz etkenin bir karışımı olarak açıklıyoruz; karışımdaki
             paylar eksi olamıyor ve toplamları %100 ediyor (Sharpe’ın stil
-            analizi). “Dolar %72 · TL faiz %28”, grubun haftalık hareketinin
-            böyle bir karışımla en iyi açıklandığı anlamına geliyor.
+            analizi). “Türk hisse %87 · TL faiz %12”, grubun haftalık
+            hareketinin böyle bir karışımla en iyi açıklandığı anlamına geliyor.
+            Payların ne kadar kesin olduğunu da ölçüyoruz: haftaları yeniden
+            örnekleyip hesabı yüz kez tekrarlıyoruz. Bir pay 20 puandan geniş bir
+            aralıkta oynuyorsa grubun adında o payı yazmıyor, yalnızca varlık
+            sınıfını söylüyoruz: “Dolar · TL faiz”. Aralıkların hepsi grubun
+            kendi sayfasında.
           </p>
           <p className="mt-4 text-body text-ink-muted text-pretty">
             Her etkeni, o türü doğrudan izleyen uzun geçmişli bir TEFAS fonu
@@ -424,10 +440,12 @@ function GrupKarti({
   c,
   sira,
   adlar,
+  yakin,
 }: {
   c: MarketCluster;
   sira: number;
   adlar: Record<string, string>;
+  yakin: string | null;
 }) {
   const renk = sira <= RENKLI_GRUP ? `var(--group-${sira})` : "var(--ink-subtle)";
   const onizleme = c.codes.slice(0, ONIZLEME);
@@ -455,6 +473,7 @@ function GrupKarti({
             {k}
           </p>
         ))}
+        {yakin && <p className="mt-1 text-caption text-ink-muted text-pretty">{yakin}</p>}
         <p className="mt-1 text-caption text-ink-muted tabular-nums">
           {c.size} fon · {c.founders} farklı kurum
           {c.total_assets !== null ? ` · ${paraKisa(c.total_assets)}` : ""}

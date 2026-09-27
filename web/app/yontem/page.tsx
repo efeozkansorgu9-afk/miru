@@ -35,7 +35,9 @@ const BOLUMLER = [
   { id: "sepet", baslik: "Sepet Analizi", ozet: "Gruplar, çeşitlendirme ve kademeli alım" },
   { id: "getiri", baslik: "Getiri ve enflasyon", ozet: "Nominal ve reel getiri aynı pencerede" },
   { id: "risk-ucret", baslik: "Risk, dolar ve ücret", ozet: "Oynaklık, düşüş, risk payı ve yıllık ücret" },
+  { id: "harita", baslik: "Piyasa haritası ve grup adları", ozet: "Gruplar nasıl kuruluyor, adları nereden geliyor" },
   { id: "donemler", baslik: "Dönemler", ozet: "Bir yılın ilişkileri diğer yıllardan ne zaman ayrılıyor" },
+  { id: "sinirlar", baslik: "Sınırlamalar", ozet: "Yöntemin nerede yanılabileceği, ölçtüklerimizle" },
   { id: "ilkeler", baslik: "Ne yapmıyoruz", ozet: "Tavsiye, not ve ölçülemeyen iddialar" },
 ] as const;
 
@@ -72,10 +74,21 @@ export default function Yontem() {
               alamayacağı fonları hesaba katmanın anlamı yok.
             </P>
             <P>
-              TEFAS geriye doğru en fazla beş yıllık fiyat veriyor; bizim de
-              bakabildiğimiz en uzak nokta bu. Enflasyon için TÜİK’in tüketici
-              fiyat endeksini kullanıyoruz, onu da Merkez Bankası’nın EVDS
-              servisinden çekiyoruz.
+              TEFAS geriye doğru en fazla beş yıllık fiyat veriyor. Sitede iki
+              ayrı pencere var ve hangisinin nerede kullanıldığını bilmek önemli.{" "}
+              <strong>{TOOL.name}</strong>, fonlarınızın fiyatını her seferinde
+              TEFAS’tan yeniden çekiyor ve bu beş yılın tamamına bakıyor.{" "}
+              <strong>Fon sayfaları, piyasa haritası ve dönemler</strong> ise her
+              pazartesi kaydettiğimiz haftalık fiyat tablosunu kullanıyor. O
+              tablo en uzun getiri dönemimiz olan 48 ayı ve enflasyon verisinin
+              gecikmesi kadar birkaç haftalık bir payı kapsıyor; yani yaklaşık
+              dört yıl. Beş yılın hepsini saklamıyoruz, çünkü hiçbir fon sayfası
+              sayısı 48 aydan uzun bir pencereye dayanmıyor.
+            </P>
+            <P>
+              Enflasyon için TÜİK’in tüketici fiyat endeksini, dolar kuru için
+              Merkez Bankası’nın döviz alış kurunu kullanıyoruz; ikisini de
+              Merkez Bankası’nın EVDS servisinden çekiyoruz.
             </P>
             <P>
               Her pazartesi sabah 03:00’te bütün hesabı baştan yapıyoruz:
@@ -242,12 +255,14 @@ z &= \operatorname{artanh}(r) = \tfrac{1}{2}\ln\frac{1+r}{1-r} \\[4pt]
             </P>
             <P>
               <strong>İki ölçü ayrıştığında.</strong> Pearson korelasyonunun bir
-              zaafı var: birkaç uç hafta onu epey oynatabiliyor. 24 Aralık 2021
-              haftasını hatırlayın. Kur sert döndü; altın fonları bir haftada
-              yaklaşık %24, hisse fonları %20 civarında düştü. O tek hafta, bazı
-              fon çiftlerinin korelasyonunu neredeyse iki katına çıkarıyor. Bu
-              yüzden yanına sıralamaya dayanan Spearman korelasyonunu da
-              hesaplıyoruz; o bu tür haftalardan pek etkilenmiyor. İkisi
+              zaafı var: birkaç uç hafta onu epey oynatabiliyor. 9 Haziran 2023’te
+              biten haftayı ele alalım: hisse fonları bir haftada %13, altın
+              fonları %10 yükseldi. Dolar cinsi fonlarla TL tahvil fonlarının
+              korelasyonu dört yıl boyunca −0,17; yalnızca o haftayı çıkarınca
+              −0,03’e geliyor. Rastgele seçilmiş bir haftayı çıkarmak ise aynı
+              sayıyı ancak 0,001 kadar oynatıyor. Sıralamaya dayanan Spearman
+              korelasyonu aynı haftayı çıkarınca yalnızca 0,02 değişiyor. Bu
+              yüzden Pearson’ın yanında Spearman’ı da hesaplıyoruz. İkisi
               arasındaki fark 0,10’u geçen çiftleri ayrıca gösteriyoruz. Grupları
               yine Pearson’la kuruyoruz; aradaki fark size ek bilgi olarak
               veriliyor.
@@ -341,7 +356,65 @@ z &= \operatorname{artanh}(r) = \tfrac{1}{2}\ln\frac{1+r}{1-r} \\[4pt]
             </P>
           </Bolum>
 
-          <Bolum id="donemler" no={8} baslik="Dönemler">
+          <Bolum id="harita" no={8} baslik="Piyasa haritası ve grup adları">
+            <P>
+              Piyasa haritası, ölçebildiğimiz her fonu diğer hepsiyle fon
+              sayfalarındaki yöntemle karşılaştırıp gruplara ayırıyor. Grupları
+              tam bağlantılı (complete linkage) kümelemeyle kuruyoruz: bir
+              grupta <strong>her</strong> fon çiftinin güven aralığı alt ucu
+              0,85’in üstünde olmak zorunda. Zincirleme yok; A B’ye, B C’ye
+              benziyor diye A ile C aynı gruba düşmüyor. Her fon tek bir gruba
+              giriyor, ama bu bölünme tek değil: bir fon başka bir grubun bir
+              kısmıyla da örtüşebilir. Grup sayısını bu yüzden “ayrı hareket
+              sayısının temkinli bir üst sınırı” olarak veriyoruz.
+            </P>
+            <P>
+              Grubun adı, eşit ağırlıklı haftalık getirisinin neyden oluştuğuna
+              bakılarak konuyor (Sharpe’ın stil analizi). Sekiz varlık sınıfının
+              her birini uzun geçmişli, pasif bir TEFAS fonu temsil ediyor: Türk
+              hissesi TIE, altın AFO, gümüş GTZ, dolar AKE, avro IUF, TL faiz DLY,
+              TL tahvil APT, yabancı hisse TFF. Bu fonları bir kez, her türün
+              adayları arasında en tipik olanı seçerek belirledik ve sabitledik;
+              her hafta yeniden seçmek, gruba hiçbir şey olmadan adının
+              değişmesine yol açabilirdi. Temsilci fonu, üyesi olduğu grubun
+              hesabından çıkarıyoruz: altın grubunu AFO’yla açıklamaya
+              çalışırken AFO’yu grubun içinde bırakmak, fonu kendisiyle
+              açıklamak olurdu. (Çıkardığımızda altın grubunun açıklama gücü
+              0,98’de kaldı.)
+            </P>
+            <Formula
+              tex={String.raw`\min_{w}\ \sum_t \Big(r_{\text{grup},t} - \sum_k w_k\, f_{k,t}\Big)^2 \quad \text{öyle ki}\quad w_k \ge 0,\ \ \sum_k w_k = 1`}
+            >
+              f varlık sınıflarının haftalık getirileri, w payları. Paylar eksi
+              olamıyor ve toplamları 1; sonuç bir portföy gibi okunuyor.
+            </Formula>
+            <P>
+              Varlık sınıfları birbirinden bağımsız değil; dolar ve avro fonları
+              dört yılda 0,82 korelasyonla hareket etti. Bu durumda kısıtlı
+              regresyon, birbirine benzeyen iki sınıf arasında payı kaydırıp
+              neredeyse aynı iyilikte bir çözüm bulabiliyor. Bir payın ne kadar
+              kesin olduğunu görmek için haftaları sekizer haftalık bloklar
+              halinde yeniden örnekleyip hesabı yüz kez tekrarlıyoruz ve her payın
+              yüzde 5–95 aralığını veriyoruz. Aralık 20 puandan genişse grubun
+              adında o payın yüzdesini yazmıyoruz. Ölçtüğümüz dağılım: grupların
+              en büyük payında aralık genişliğinin ortancası 12 puan, en geniş
+              yüzde 10’unda 26 puanın üstünde. Türk hissesi ve altın gruplarında
+              aralıklar dar (ör. altın %89, aralık 85–93); dolar ağırlıklı serbest
+              fon gruplarında geniş (bir grupta dolar payı 37 ile 80 arasında).
+            </P>
+            <P>
+              Sekiz sınıf bazı grupları ayıramıyor; katılım hisseleri, temettü
+              hisseleri ve geniş borsa aynı “Türk hisse” sınıfına yükleniyor. Bu
+              yüzden grubun adına, fonlarının adlarında ortak geçen bir kelimeyi
+              ekliyoruz: kelime grubun en az yarısında geçmeli ve grup dışında
+              en fazla yarısı kadar yaygın olmalı. Kurucu şirketin adındaki
+              kelimeleri saymıyoruz. Buna rağmen aynı adı taşıyan gruplar
+              kalıyor; her grubun sayfasında en yakın grubu ve ikisini ayıran
+              en zayıf çifti gösteriyoruz.
+            </P>
+          </Bolum>
+
+          <Bolum id="donemler" no={9} baslik="Dönemler">
             <P>
               Dört yıl boyunca ölçülen bir korelasyon, farklı dönemlerin
               ortalamasıdır. Türk hisseleri ile altın 2025’te çoğunlukla ters
@@ -351,8 +424,8 @@ z &= \operatorname{artanh}(r) = \tfrac{1}{2}\ln\frac{1+r}{1-r} \\[4pt]
               takvim yılını ayrı ölçüyor.
             </P>
             <P>
-              Sekiz varlık sınıfını, adlar bölümünde anlattığımız temsilci
-              fonlarla temsil ediyoruz. Her yıl ve her ikili için o yılın
+              Sekiz varlık sınıfını, <a href="#harita" className="text-accent underline-offset-4 hover:underline">piyasa
+              haritası bölümünde</a> anlattığımız temsilci fonlarla temsil ediyoruz. Her yıl ve her ikili için o yılın
               korelasyonunu, <strong>diğer yılların haftalarındaki</strong>{" "}
               korelasyonla karşılaştırıyoruz. Bütün dönemle değil, çünkü bütün
               dönem o yılı da içeriyor; iki örneklem ortak hafta paylaşmayınca
@@ -376,13 +449,68 @@ z &= \operatorname{artanh}(r) = \tfrac{1}{2}\ln\frac{1+r}{1-r} \\[4pt]
               söylüyoruz.
             </P>
             <P>
-              Fiyat tablomuz 2022’nin ortasından başladığı için ilk ve son yıl
-              eksik; ikisini de kapsadıkları aylarla birlikte gösteriyoruz. Bir
-              yılı en az 20 hafta veri varsa ölçüyoruz.
+              Haftalık fiyat tablomuz yaklaşık dört yılı kapsadığı için ilk ve
+              son yıl eksik kalıyor; ikisini de kapsadıkları aylarla birlikte
+              gösteriyoruz. Bu yüzden 2021 sonundaki kur şoku da bu bölümde yok.
+              Bir yılı en az 20 hafta veri varsa ölçüyoruz.
             </P>
           </Bolum>
 
-          <Bolum id="ilkeler" no={9} baslik="Ne yapmıyoruz">
+          <Bolum id="sinirlar" no={10} baslik="Sınırlamalar">
+            <P>
+              Bir yöntemin ne zaman yanılabileceğini bilmek, sonuçlarını doğru
+              okumanın parçası. Aşağıdakilerin bir kısmını ölçtük; ölçtüklerimizi
+              sayılarıyla yazıyoruz.
+            </P>
+            <ul className="flex flex-col gap-4">
+              <Ilke baslik="Güven aralığı bazı fonlarda olduğundan dar.">
+                Fisher aralığı, haftalık getirilerin birbirinden bağımsız ve
+                normal dağıldığını varsayıyor. Getiriler böyle değil: sert haftalar
+                art arda geliyor ve uç haftalar sanıldığından sık. Bunu sekiz
+                varlık sınıfının 28 çifti üzerinde ölçtük: haftaları sekizer
+                haftalık bloklar halinde yeniden örnekleyince aralık, Fisher’ınkinden
+                ortanca 1,43 kat, en fazla 3,3 kat genişliyor. Bloksuz yeniden
+                örneklemede bile 1,19 kat; yani sorun yalnızca kümelenme değil,
+                kalın kuyruklar da. Hükümlere etkisini dört büyük grubun 188
+                “örtüşen” çiftinde denedik: Türk hissesi, altın ve katılım
+                gruplarındaki 160 çiftin hiçbiri değişmedi; dolar cinsi serbest
+                fonlardan oluşan grubun 28 çiftinin 23’ü ise 0,85 eşiğinin altına
+                düştü. O grupta örtüşme, birkaç büyük kur haftasına dayanıyor.
+                (Ölçüm tarihi: 27 Eylül 2026.)
+              </Ilke>
+              <Ilke baslik="Dönem sınamaları da aynı varsayıma dayanıyor.">
+                Dönemler bölümündeki z testi de Fisher standart hatasını
+                kullanıyor; aralıklar dar olduğu için “belirgin fark” diye
+                gösterdiğimiz ikililer olması gerekenden biraz fazla olabilir.
+                Bonferroni düzeltmesi bunu kısmen dengeliyor, tamamen değil.
+              </Ilke>
+              <Ilke baslik="Varlık sınıfları fonlarla temsil ediliyor.">
+                Temsilci fonlar endeks değil; ücretleri, yönetim kararları ve
+                fiyatlama gecikmeleri var. Bunları, sitedeki diğer fonlarla aynı
+                gün ve aynı biçimde fiyatlandıkları için seçtik. Dolar sınıfını
+                temsil eden AKE bir eurobond fonu, yani saf dolar değil; tam
+                geçmişi olan saf bir dolar fonu yok.
+              </Ilke>
+              <Ilke baslik="Haftalık ölçüm hafta içini görmüyor.">
+                Oynaklığı ve en büyük düşüşü haftalık fiyatlardan ölçüyoruz; hafta
+                içinde görülüp aynı hafta geri dönülen bir dip görünmüyor. En büyük
+                düşüş bu yüzden günlük ölçümün alt sınırı.
+              </Ilke>
+              <Ilke baslik="Yalnızca bugün işlem gören fonlar var.">
+                Evrenimiz TEFAS’ta bugün işlem gören fonlar. Kapanmış ya da
+                birleşmiş fonlar hesapta yok; piyasa haritası bugünün fonlarının
+                geçmişini gösteriyor, geçmişin fon evrenini değil.
+              </Ilke>
+              <Ilke baslik="Pencere dört ya da beş yıl.">
+                Fon sayfaları ve harita yaklaşık dört yıla, {TOOL.name} beş yıla
+                bakıyor. İkisi de uzun bir dönem için kısa; 2021 sonundaki kur
+                şoku haritada ve dönemlerde yok, {TOOL.name}’nde ise önümüzdeki
+                aylarda pencereden çıkacak.
+              </Ilke>
+            </ul>
+          </Bolum>
+
+          <Bolum id="ilkeler" no={11} baslik="Ne yapmıyoruz">
             <ul className="flex flex-col gap-3">
               <Ilke baslik="Yatırım tavsiyesi vermiyoruz.">
                 Hangi fonu almanız ya da satmanız gerektiğini söylemiyoruz.

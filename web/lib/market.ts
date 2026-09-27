@@ -56,7 +56,19 @@ export interface Bilesen {
   anahtar: string;
   ad: string;
   pay: number;
+  /** 5th and 95th percentile over bootstrap resamples, when sent. */
+  aralik: [number, number] | null;
+  /** Whether the range is narrow enough to print the share at all. */
+  kesin: boolean;
 }
+
+/**
+ * Widest bootstrap range, in share points, at which a composition's
+ * percentage is still printed. Wider and the name carries the factor with
+ * no number: "Dolar · TL faiz" rather than "Dolar %72 · TL faiz %28" for a
+ * group whose dollar weight ran from 37% to 80% over the resamples.
+ */
+export const KESIN_ARALIK = 0.2;
 
 export function bilesim(style: Style | null | undefined): Bilesen[] | null {
   if (!style || !style.reportable) return null;
@@ -64,7 +76,16 @@ export function bilesim(style: Style | null | undefined): Bilesen[] | null {
     .filter(([, w]) => w >= BILESEN_ESIGI)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
-    .map(([k, w]) => ({ anahtar: k, ad: ETKEN_ADLARI[k] ?? k, pay: w }));
+    .map(([k, w]) => {
+      const aralik = style.ranges?.[k] ?? null;
+      return {
+        anahtar: k,
+        ad: ETKEN_ADLARI[k] ?? k,
+        pay: w,
+        aralik,
+        kesin: !aralik || aralik[1] - aralik[0] <= KESIN_ARALIK,
+      };
+    });
 }
 
 /**
@@ -86,7 +107,7 @@ export function grupAdi(c: MarketCluster): string {
 export function bilesimAdi(c: MarketCluster): string {
   const b = bilesim(c.style);
   return b && b.length > 0
-    ? b.map((x) => `${x.ad} %${Math.round(x.pay * 100)}`).join(" · ")
+    ? b.map((x) => (x.kesin ? `${x.ad} %${Math.round(x.pay * 100)}` : x.ad)).join(" · ")
     : `${c.top_category ?? "Karışık"} · bileşimi belirlenemedi`;
 }
 
@@ -213,3 +234,23 @@ export const OLCULEMEDI: Record<string, string> = {
   short_history: "karşılaştırmaya yetecek kadar geçmişi yok (52 haftadan az)",
   stale_prices: "fiyatı haftaların çoğunda hiç değişmiyor",
 };
+
+/**
+ * Why a group and its nearest neighbour are two groups, in one sentence.
+ * Null when the API sent no nearest group.
+ */
+export function yakinGrupCumlesi(c: MarketCluster, esik: number): string | null {
+  const n = c.nearest;
+  if (!n) return null;
+  const virgul = (x: number, d: number) => x.toFixed(d).replace(".", ",");
+  const temel =
+    `En yakın grup ${n.rank}. grup: iki grubun ortalama haftalık getirileri ` +
+    `arasındaki korelasyon ${virgul(n.corr, 2)}.`;
+  if (n.weakest_ci_low === null) return temel;
+  return (
+    `${temel} Yine de ayrı gruplar, çünkü birinden ve diğerinden birer fon ` +
+    `alınca oluşan çiftlerin en zayıfında güven aralığının alt ucu ` +
+    `${virgul(n.weakest_ci_low, 3)}; örtüşme için gereken ${virgul(esik, 3)} ` +
+    `eşiğinin altında.`
+  );
+}

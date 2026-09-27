@@ -608,6 +608,7 @@ export interface MarketCluster {
   anchor?: string | null;
   /** What sets the group apart beyond its style. */
   qualifiers?: Qualifier[];
+  nearest?: NearestGroup | null;
   /** Lowest and highest applied fee among members with a non-zero one. */
   fee_low?: number | null;
   fee_high?: number | null;
@@ -625,6 +626,16 @@ export interface Style {
   r2: number;
   weeks: number;
   reportable: boolean;
+  /** Factor key -> [5th, 95th] percentile over block-bootstrap resamples. */
+  ranges?: Record<string, [number, number]>;
+}
+
+/** The group closest to this one, and the weakest pair across the two. */
+export interface NearestGroup {
+  rank: number;
+  anchor: string | null;
+  corr: number;
+  weakest_ci_low: number | null;
 }
 
 export interface StyleFactor {

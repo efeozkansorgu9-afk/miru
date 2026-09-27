@@ -56,7 +56,7 @@ import {
 } from "recharts";
 
 import type { CPISeries, FundReturn, WeeklySeries } from "@/lib/api";
-import { ayYilKisa, tarih, yuzde, yuzdeIsaretli } from "@/lib/format";
+import { ayYilKisa, tarih, yuzdeHassas, yuzdeIsaretli } from "@/lib/format";
 import type { TerimAdi } from "@/lib/terms";
 import {
   defaultPeriod,
@@ -165,13 +165,17 @@ export function Returns({
               <Olcu
                 label="Yıllık oynaklık"
                 term="oynaklik"
-                value={active.ret?.volatility != null ? yuzde(active.ret.volatility) : "—"}
+                value={active.ret?.volatility != null ? yuzdeHassas(active.ret.volatility) : "—"}
               />
               <Olcu
                 label="En büyük düşüş"
                 term="dusus"
                 value={
-                  active.ret?.max_drawdown != null ? yuzdeIsaretli(active.ret.max_drawdown) : "—"
+                  active.ret?.max_drawdown == null
+                    ? "—"
+                    : active.ret.max_drawdown === 0
+                      ? "düşüş yok"
+                      : yuzdeHassas(active.ret.max_drawdown)
                 }
               />
             </dl>

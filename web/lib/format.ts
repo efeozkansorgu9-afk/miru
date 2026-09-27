@@ -31,6 +31,20 @@ export function yuzdeIsaretli(x: number): string {
   return x < 0 ? `-%${n}` : `%${n}`;
 }
 
+/**
+ * A percentage that keeps a decimal below ten: "%0,8", "%4,2", "%22".
+ *
+ * For volatility and drawdown, where a money market fund sits at a fraction
+ * of a percent and whole numbers turned it into "%1" and "%0" — the second
+ * reading as no movement at all when there was some.
+ */
+export function yuzdeHassas(x: number): string {
+  if (!Number.isFinite(x)) return "hesaplanamadı";
+  const a = Math.abs(x) * 100;
+  const sign = x < 0 ? "-" : "";
+  return a < 10 ? `${sign}%${a.toFixed(1).replace(".", ",")}` : `${sign}%${Math.round(a)}`;
+}
+
 /** Two decimals, for a ratio nobody reads as a percentage. */
 export function oran(x: number): string {
   return x.toFixed(2).replace(".", ",");

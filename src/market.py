@@ -282,7 +282,7 @@ WRAPPER_WORDS: dict[str, re.Pattern] = {
     "index": re.compile(r"ENDEKS"),
 }
 #: A word restating a style factor adds nothing to the style's own name.
-_RESTATES = {"gold": "gold", "silver": "silver", "usd": "usd", "eur": "eur"}
+_RESTATES = {"gold": "gold", "silver": "silver", "usd": "usd", "eur": "eur", "foreign": "foreign_equity"}
 
 #: A word or a house qualifies when at least this share of the group has it
 QUALIFIER_MIN_SHARE = 0.5

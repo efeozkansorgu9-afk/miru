@@ -44,6 +44,7 @@ Imports `precompute` and nothing that touches the network or a database.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -239,3 +240,135 @@ def risk_shares(returns: pd.DataFrame, weights: dict[str, float]) -> dict[str, f
     if not np.isfinite(total) or total <= 0:
         return {}
     return {c: float(w[i] * marginal[i] / total) for i, c in enumerate(codes)}
+
+
+# ----------------------------------------------------------------------
+# What sets a group apart
+# ----------------------------------------------------------------------
+
+#: Words in fund titles that say what a fund holds, as the API's codes.
+#: Themes first: a theme ("katılım", "temettü") says what the money is in;
+#: a wrapper ("serbest", "emeklilik") says only what legal form holds it,
+#: and is used only when no theme qualifies.
+THEME_WORDS: dict[str, re.Pattern] = {
+    "participation": re.compile(r"KATILIM"),
+    "dividend": re.compile(r"TEMETTÜ|KAR PAYI|KÂR PAYI"),
+    "bank": re.compile(r"BANKA"),
+    "tech": re.compile(r"TEKNOLOJ|BİLİŞİM"),
+    "bist30": re.compile(r"B[Iİ]ST 30\b"),
+    "bist100": re.compile(r"B[Iİ]ST 100\b"),
+    "sustainability": re.compile(r"SÜRDÜRÜLEBİLİR"),
+    "energy": re.compile(r"ENERJİ"),
+    "health": re.compile(r"SAĞLIK"),
+    "industry": re.compile(r"SANAYİ"),
+    "export": re.compile(r"İHRACAT"),
+    "sme": re.compile(r"KOBİ|HALKA ARZ"),
+    "real_estate": re.compile(r"GAYRİMENKUL"),
+    "foreign": re.compile(r"YABANCI"),
+    "eurobond": re.compile(r"EUROBOND"),
+    "fund_of_funds": re.compile(r"FON SEPETİ"),
+    "short_term": re.compile(r"KISA VADELİ"),
+    "money_market": re.compile(r"PARA PİYASASI"),
+    "gold": re.compile(r"ALTIN"),
+    "silver": re.compile(r"GÜMÜŞ"),
+    "usd": re.compile(r"DOLAR|USD"),
+    "eur": re.compile(r"AVRO|EURO(?!BOND)"),
+}
+WRAPPER_WORDS: dict[str, re.Pattern] = {
+    "hedge": re.compile(r"SERBEST"),
+    "oks": re.compile(r"\bOKS\b"),
+    "pension": re.compile(r"EMEKLİLİK"),
+    "variable": re.compile(r"DEĞİŞKEN"),
+    "index": re.compile(r"ENDEKS"),
+}
+#: A word restating a style factor adds nothing to the style's own name.
+_RESTATES = {"gold": "gold", "silver": "silver", "usd": "usd", "eur": "eur"}
+
+#: A word or a house qualifies when at least this share of the group has it
+QUALIFIER_MIN_SHARE = 0.5
+#: ... and it is at most this fraction as common outside the group.
+QUALIFIER_MAX_LIFT_RATIO = 0.5
+
+
+@dataclass(frozen=True)
+class Qualifier:
+    kind: str  # "word" or "founder"
+    key: str  # a word code, or the founder string as stored
+    count: int
+    of: int
+
+
+def _product_part(name: Optional[str], founder: Optional[str]) -> str:
+    """The title after the house's name, upper-cased the Turkish way.
+
+    Matching a word against the whole title would read the house as the
+    product: "QNB SAĞLIK HAYAT SİGORTA" made a pension group "sağlık"
+    (health) on the first try.
+    """
+    text = (name or "").strip()
+    if founder and text.upper().startswith(founder.upper()):
+        text = text[len(founder):]
+    return text.replace("i", "İ").replace("ı", "I").upper()
+
+
+def qualifiers(
+    clusters: list["MarketCluster"],
+    meta: dict[str, dict],
+    measured: list[str],
+    style_keys: dict[int, set[str]],
+) -> dict[int, list[Qualifier]]:
+    """What sets each group apart, beyond its style: a title word, a house.
+
+    A word qualifies when at least half the group carries it in the product
+    part of its title and it is at most half as common among every other
+    measured fund. The best theme word wins; a wrapper word only when no
+    theme does; a word restating one of the group's own style factors is
+    skipped. A house qualifies the same way, and is added as a second
+    qualifier: several money-market groups share every word, and which
+    house runs most of them is then what tells them apart.
+    """
+    words = {**THEME_WORDS, **WRAPPER_WORDS}
+    product = {c: _product_part(meta.get(c, {}).get("name"), meta.get(c, {}).get("founder")) for c in measured}
+    has = {k: {c for c in measured if rx.search(product[c])} for k, rx in words.items()}
+    founders: dict[str, set[str]] = {}
+    for c in measured:
+        f = meta.get(c, {}).get("founder")
+        if f:
+            founders.setdefault(f, set()).add(c)
+
+    total = len(measured)
+    out: dict[int, list[Qualifier]] = {}
+    for i, cl in enumerate(clusters):
+        members = set(cl.codes)
+        n, rest = len(members), max(total - len(members), 1)
+
+        def score(group: set[str]) -> Optional[tuple[float, int]]:
+            inside = len(members & group)
+            s_in = inside / n
+            s_out = len(group - members) / rest
+            if s_in >= QUALIFIER_MIN_SHARE and s_out <= s_in * QUALIFIER_MAX_LIFT_RATIO:
+                return s_in - s_out, inside
+            return None
+
+        found: list[Qualifier] = []
+        own = style_keys.get(i, set())
+        for pool in (THEME_WORDS, WRAPPER_WORDS):
+            best = None
+            for k in pool:
+                if _RESTATES.get(k) in own:
+                    continue
+                r = score(has[k])
+                if r and (best is None or r[0] > best[0]):
+                    best = (r[0], k, r[1])
+            if best:
+                found.append(Qualifier("word", best[1], best[2], n))
+                break
+        best_f = None
+        for f, group in founders.items():
+            r = score(group)
+            if r and (best_f is None or r[0] > best_f[0]):
+                best_f = (r[0], f, r[1])
+        if best_f:
+            found.append(Qualifier("founder", best_f[1], best_f[2], n))
+        out[i] = found
+    return out

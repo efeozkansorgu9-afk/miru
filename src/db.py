@@ -411,6 +411,18 @@ def fetch_fund(conn: psycopg.Connection, code: str) -> Optional[dict]:
     return _fund_row(row) if row else None
 
 
+def fetch_funds(conn: psycopg.Connection, codes: list[str]) -> list[dict]:
+    """Several funds' own rows in one query, ordered by code. For group pages."""
+    if not codes:
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {_FUND_COLUMNS} FROM funds f WHERE f.code = ANY(%s) ORDER BY f.code",
+            (codes,),
+        )
+        return [_fund_row(r) for r in cur.fetchall()]
+
+
 def fetch_neighbours(conn: psycopg.Connection, code: str) -> list[dict]:
     """A fund's stored neighbours, each carrying its own fund row.
 

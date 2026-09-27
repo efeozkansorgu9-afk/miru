@@ -1092,6 +1092,20 @@ class StyleFactorOut(BaseModel):
     proxy: str
 
 
+class QualifierOut(BaseModel):
+    """What sets a group apart beyond its style (`src.market.qualifiers`).
+
+    `kind` "word": `key` is a title-word code the frontend names. `kind`
+    "founder": `key` is the house as stored. `count` of the group's `of`
+    funds carry it.
+    """
+
+    kind: Literal["word", "founder"]
+    key: str
+    count: int
+    of: int
+
+
 class MarketClusterOut(BaseModel):
     """Funds of which every pair overlaps, with what they have in common.
 
@@ -1111,6 +1125,9 @@ class MarketClusterOut(BaseModel):
     #: variance (Euler decomposition, all shares summing to 1). Null when
     #: no fund sizes were known.
     risk_share: Optional[float] = None
+    #: The member the group's page is addressed by (its largest fund).
+    anchor: Optional[str] = None
+    qualifiers: list[QualifierOut] = Field(default_factory=list)
     #: Lowest and highest applied fee among members with a non-zero one,
     #: over management fees when the group has any, else operating expenses.
     fee_low: Optional[float] = None
@@ -1183,3 +1200,25 @@ class MarketPeriodsResponse(BaseModel):
     #: Family-wise error rate per year, and the |z| line it implies.
     alpha: float
     z_critical: Optional[float]
+
+
+class GroupMemberOut(BaseModel):
+    fund: FundIdentity
+    #: The last year of the fund's weekly line, base 100.
+    recent: Optional[WeeklySeriesOut] = None
+
+
+class MarketGroupResponse(BaseModel):
+    """One market group and every fund in it."""
+
+    #: 1-based position among the groups, largest first.
+    rank: int
+    groups: int
+    cluster: MarketClusterOut
+    members: list[GroupMemberOut]
+    style_factors: list[StyleFactorOut] = Field(default_factory=list)
+    style_min_r2: Optional[float] = None
+    overlapping_threshold: float
+    window_start: Optional[_date] = None
+    window_end: Optional[_date] = None
+    last_run_at: Optional[_date_time] = None

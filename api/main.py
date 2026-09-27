@@ -877,6 +877,22 @@ def _market(conn) -> sc.MarketResponse:
         rates = [f.rate for f in known if f.kind == kind]
         return (round(min(rates), 6), round(max(rates), 6)) if rates else (None, None)
 
+    # What sets each group apart from others of the same style: a word from
+    # its funds' titles, and the house running most of them (src.market).
+    style_keys = {
+        i: {k for k, v in s.weights.items() if v >= 0.10}
+        for i, s in group_styles.items()
+        if sty.reportable(s)
+    }
+    measured_all_codes = [x for c in g.clusters for x in c.codes] + list(g.singletons)
+    quals = mk.qualifiers(g.clusters, meta, measured_all_codes, style_keys)
+
+    def anchor(codes: list[str]) -> str:
+        # The member a group's page is addressed by: its largest fund, which
+        # is the one a reader is most likely to know. Any member's code
+        # resolves to the same page, so the address survives this changing.
+        return max(codes, key=lambda x: (meta.get(x, {}).get("total_assets") or 0.0, x))
+
     clusters = []
     for i, c in enumerate(g.clusters):
         cats = [meta.get(x, {}).get("category") for x in c.codes]
@@ -897,6 +913,11 @@ def _market(conn) -> sc.MarketResponse:
                 top_category_share=round(share, 4) if share is not None else None,
                 total_assets=size_of(c.codes),
                 risk_share=risk_of(c.codes),
+                anchor=anchor(c.codes),
+                qualifiers=[
+                    sc.QualifierOut(kind=q.kind, key=q.key, count=q.count, of=q.of)
+                    for q in quals.get(i, [])
+                ],
                 fee_low=fee_range(c.codes)[0],
                 fee_high=fee_range(c.codes)[1],
                 style=style_out(group_styles.get(i)),
@@ -949,6 +970,58 @@ def market_clusters() -> sc.MarketResponse:
     """
     with _db() as conn:
         return _market(conn)
+
+
+#: Weeks of each member's line on a group page: a year, as on the
+#: neighbour cards.
+GROUP_RECENT_WEEKS = 52
+
+
+@app.get(
+    "/market/group/{code}",
+    response_model=sc.MarketGroupResponse,
+    tags=["funds"],
+    summary="One market group, found by any of its funds' codes.",
+)
+def market_group(code: str) -> sc.MarketGroupResponse:
+    """The group containing `code`: its figures and every member.
+
+    404 when the code is in no multi-fund group — a fund with no twin, one
+    that could not be measured, or no such fund. The page sends those to
+    the fund's own page.
+    """
+    code = code.strip().upper()
+    with _db() as conn:
+        m = _market(conn)
+        idx = next((i for i, c in enumerate(m.clusters) if code in c.codes), None)
+        if idx is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"{code!r} is not in any group of the last run",
+            )
+        cl = m.clusters[idx]
+        rows = db.fetch_funds(conn, cl.codes)
+        recent = db.fetch_recent_prices(conn, cl.codes, GROUP_RECENT_WEEKS)
+    fees = _fees()
+    members = [
+        sc.GroupMemberOut(
+            fund=_with_fee(sc.FundIdentity.from_row(r), fees),
+            recent=_weekly_series(recent.get(r["code"], []), digits=2),
+        )
+        for r in rows
+    ]
+    return sc.MarketGroupResponse(
+        rank=idx + 1,
+        groups=len(m.clusters),
+        cluster=cl,
+        members=members,
+        style_factors=m.style_factors,
+        style_min_r2=m.style_min_r2,
+        overlapping_threshold=m.overlapping_threshold,
+        window_start=m.window_start,
+        window_end=m.window_end,
+        last_run_at=m.last_run_at,
+    )
 
 
 def _period_out(p: prd.Period) -> sc.PeriodOut:

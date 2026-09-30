@@ -104,4 +104,4 @@ Marka adı her yerde küçük harfle yazılır: **miru**.
 
 ## Lisans
 
-[MIT](LICENSE) © 2026 Efe Özkan Sorgu
+Tüm hakları saklıdır © 2026 Efe Özkan Sorgu. Kod inceleme amacıyla görünür durumdadır; izin alınmadan kopyalanamaz, değiştirilemez, dağıtılamaz veya ticari olarak kullanılamaz.

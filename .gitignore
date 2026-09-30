@@ -3,8 +3,19 @@ __pycache__/
 *.pyc
 data/
 cache/
-.env
 fonradar.code-workspace
+
+# secrets: never commit. .env.example is the only env file that belongs here.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
 
 # web/ frontend
 node_modules/

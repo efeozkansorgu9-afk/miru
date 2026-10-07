@@ -18,6 +18,11 @@ export const SITE = {
   /** Fallback language for the document and for date and number formatting. */
   locale: "tr-TR",
   lang: "tr",
+  /**
+   * Where a reader writes to. A shared alias rather than a person's own
+   * address, so it can move to someone else without a deploy saying so.
+   */
+  contactEmail: "iletisim@miru.com.tr",
 } as const;
 
 /** One thing the brand makes. */

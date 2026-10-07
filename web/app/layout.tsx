@@ -3,6 +3,7 @@ import { Bricolage_Grotesque, Geist_Mono, Plus_Jakarta_Sans } from "next/font/go
 import Script from "next/script";
 
 import { NavBar } from "@/components/nav-bar";
+import { SiteFooter } from "@/components/site-footer";
 import { ThemeProvider, themeScript } from "@/components/theme-provider";
 import { motionScript } from "@/lib/motion";
 import { SITE, TOOL, pageTitle } from "@/lib/site";
@@ -111,6 +112,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ThemeProvider>
           <NavBar />
           <main className="flex flex-1 flex-col">{children}</main>
+          <SiteFooter />
         </ThemeProvider>
       </body>
     </html>
